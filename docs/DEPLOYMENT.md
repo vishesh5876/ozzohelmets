@@ -1,0 +1,63 @@
+# Deployment
+
+Phase 1 ships container images and a compose file; AWS infrastructure is deliberately out of
+scope until Phase 7.
+
+## Images
+
+| Image          | Dockerfile                                                | Notes                                                                                                                                                                                                                                  |
+| -------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API            | `apps/api/Dockerfile`                                     | Multi-stage; `pnpm deploy --prod` tree on `node:22-bookworm-slim`, runs as `node`. On start: `prisma migrate deploy && node dist/main.js`. Healthcheck `GET /api/v1/health`. Run with an init process (`init: true`).                  |
+| Admin / Portal | `docker/spa.Dockerfile` (`--build-arg APP=admin\|portal`) | Vite build served by nginx; `/api/` proxied to `API_UPSTREAM` (default `http://api:4000`); immutable caching for hashed assets, `no-cache` for `index.html`; security headers. Portal accepts `--build-arg VITE_EMERGENCY_NUMBER=112`. |
+
+Build context is always the repo root:
+
+```bash
+docker build -f apps/api/Dockerfile -t helmet-api .
+docker build -f docker/spa.Dockerfile --build-arg APP=admin -t helmet-admin .
+docker build -f docker/spa.Dockerfile --build-arg APP=portal -t helmet-portal .
+```
+
+## Full stack locally
+
+```bash
+docker compose --profile full up -d --build
+docker compose exec api npx prisma db seed   # optional: dev seed (not in production)
+```
+
+The containerised API defaults to `NODE_ENV=development` so the dev-only placeholder secrets in
+`.env.example` are accepted. For a production-like run set real secrets and
+`API_CONTAINER_NODE_ENV=production` (startup validation rejects dev-only secrets and
+`COOKIE_SECURE=false`).
+
+## Production checklist
+
+- [ ] Real secrets from a secret manager (`node scripts/generate-secrets.mjs` for initial values);
+      `PIN_ESCROW_KEYS` and `DATA_ENCRYPTION_KEYS` stored separately from DB credentials.
+- [ ] `NODE_ENV=production`, `COOKIE_SECURE=true`, `SWAGGER_ENABLED=false` (or edge-protected).
+- [ ] `CORS_ORIGINS` = exact admin/portal origins; `PUBLIC_EMERGENCY_BASE_URL` = final QR domain
+      (**printed into labels — choose it once**; changing it later breaks printed QR codes unless
+      the old domain redirects).
+- [ ] `TRUST_PROXY` matching the load balancer hops; `TRUST_CLOUDFLARE=true` only if the origin
+      accepts traffic exclusively from Cloudflare.
+- [ ] Managed PostgreSQL with PITR backups; Redis with persistence or acceptance that rate-limit/
+      cache state is ephemeral.
+- [ ] Run migrations as a one-off job before rolling out new API versions (the image also runs
+      `migrate deploy` on start, which is safe but serialises on the migrations lock).
+- [ ] Log shipping (JSON stdout) and alerting on 5xx rate, `admin.refresh.reuse_detected`,
+      `admin.login.locked` and batch generation failures.
+- [ ] Cloudflare/CDN: cache static assets; do **not** cache `/api/v1/public/emergency/*`
+      responses beyond a few seconds (they are `no-store` today).
+
+## Scaling notes
+
+- API is stateless; scale horizontally. Rate limits and caches are shared through Redis.
+- Batch generation runs in the API process that claimed the batch (atomic claim prevents
+  duplicates; abandoned jobs are marked FAILED after 5 min and can be resumed). For very large
+  volumes move it to a dedicated worker/queue (no schema change needed). Argon2 runs on the libuv
+  pool — consider `UV_THREADPOOL_SIZE` ≥ 8 on generation-heavy instances.
+
+## AWS (Phase 7 sketch)
+
+ECS Fargate (API, SPAs or S3+CloudFront for SPAs), RDS PostgreSQL, ElastiCache Redis, KMS
+envelope encryption for keyrings, Secrets Manager, ALB + Cloudflare, CloudWatch/OTel.

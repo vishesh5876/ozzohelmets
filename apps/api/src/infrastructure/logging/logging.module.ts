@@ -28,6 +28,16 @@ export const REDACT_PATHS = [
   '*.emergencyNotes',
 ];
 
+/** pino-pretty is a dev dependency; production images run in development mode without it. */
+function hasPrettyPrinter(): boolean {
+  try {
+    require.resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 @Module({
   imports: [
     LoggerModule.forRootAsync({
@@ -54,7 +64,7 @@ export const REDACT_PATHS = [
           },
           autoLogging: { ignore: (req: IncomingMessage) => req.url === '/api/v1/health' },
           transport:
-            config.get('NODE_ENV') === 'development'
+            config.get('NODE_ENV') === 'development' && hasPrettyPrinter()
               ? {
                   target: 'pino-pretty',
                   options: { singleLine: true, translateTime: 'SYS:HH:MM:ss' },

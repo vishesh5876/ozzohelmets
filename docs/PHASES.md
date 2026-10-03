@@ -2,7 +2,7 @@
 
 Each phase ends with lint, typecheck, tests and build passing, docs updated, and a demoable flow.
 
-## Phase 1 — Foundation + manufacturing *(current)*
+## Phase 1 — Foundation + manufacturing _(current)_
 
 Monorepo, NestJS API, PostgreSQL/Prisma migrations, Redis, Docker dev setup, env validation,
 admin authentication (JWT + rotating refresh), RBAC foundation, helmet models, manufacturing

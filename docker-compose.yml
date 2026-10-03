@@ -1,0 +1,87 @@
+# Local development:
+#   docker compose up -d                   → PostgreSQL + Redis (run apps with `pnpm dev`)
+#   docker compose --profile full up -d    → also API, admin and portal containers
+# Values come from .env (copy .env.example). Ports are configurable there.
+
+name: helmet-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-helmet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-helmet_platform}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--save', '60', '1000']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: ${API_CONTAINER_NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-helmet}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-helmet_platform}?schema=public
+      REDIS_URL: redis://redis:6379/0
+      API_PORT: 4000
+      TRUST_PROXY: '1'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${API_PORT:-4000}:4000'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  admin:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: docker/spa.Dockerfile
+      args: { APP: admin }
+    restart: unless-stopped
+    ports:
+      - '${ADMIN_PORT:-3000}:80'
+    depends_on:
+      api: { condition: service_healthy }
+
+  portal:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: docker/spa.Dockerfile
+      args: { APP: portal }
+    restart: unless-stopped
+    ports:
+      - '${PORTAL_PORT:-3001}:80'
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  redis-data:

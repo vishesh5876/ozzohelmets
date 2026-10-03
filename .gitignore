@@ -13,3 +13,6 @@ coverage/
 .vscode/*
 !.vscode/extensions.json
 exports/
+dump.rdb
+*.rdb
+.sandbox-ca.crt
