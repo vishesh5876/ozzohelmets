@@ -17,24 +17,26 @@ export class LabelsService {
   }
 
   barcodeSvg(helmetCode: string): string {
-    return bwipjs.toSVG({
-      bcid: 'code128',
-      text: helmetCode,
-      scale: 3,
-      height: 12,
-      includetext: true,
-      textxalign: 'center',
-    });
+    return bwipjs.toSVG(this.barcodeOptions(helmetCode));
   }
 
   barcodePng(helmetCode: string): Promise<Buffer> {
-    return bwipjs.toBuffer({
+    return bwipjs.toBuffer(this.barcodeOptions(helmetCode));
+  }
+
+  /** 10-module quiet zones and an opaque white background so printed labels scan reliably. */
+  private barcodeOptions(text: string): bwipjs.RenderOptions {
+    return {
       bcid: 'code128',
-      text: helmetCode,
+      text,
       scale: 3,
       height: 12,
       includetext: true,
       textxalign: 'center',
-    });
+      textyoffset: -3,
+      paddingwidth: 10,
+      paddingheight: 4,
+      backgroundcolor: 'FFFFFF',
+    };
   }
 }
