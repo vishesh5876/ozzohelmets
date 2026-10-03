@@ -253,7 +253,7 @@ test.describe
 
   test('old password fails, new password works, old recovery code is dead', async ({ browser }) => {
     await signIn(owner, PASSWORD);
-    await expect(owner.getByText('The Helmet ID or password is incorrect.')).toBeVisible();
+    await expect(owner.getByText('The ID or password is incorrect.')).toBeVisible();
 
     await signIn(owner, NEW_PASSWORD);
     await expect(owner.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
@@ -263,7 +263,7 @@ test.describe
     await device.fill('#rec-helmet', helmet.helmetCode);
     await device.fill('#rec-code', recoveryCode);
     await device.getByRole('button', { name: 'Continue' }).click();
-    await expect(device.getByText('The Helmet ID or recovery code is incorrect.')).toBeVisible();
+    await expect(device.getByText('The ID or recovery code is incorrect.')).toBeVisible();
     await device.context().close();
   });
 

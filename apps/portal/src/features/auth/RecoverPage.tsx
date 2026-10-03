@@ -4,8 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   type CustomerRecoverResponse,
   type CustomerResetPasswordResponse,
-  isValidHelmetCode,
-  normalizeHelmetCode,
+  parseAccountIdentifier,
 } from '@helmet/types';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
 import { InlineError } from '../../components/States';
@@ -18,7 +17,7 @@ import { RecoveryCodeNotice } from './RecoveryCodeNotice';
 
 type Step = 'verify' | 'reset' | 'code';
 
-/** Forgot password: Helmet ID + recovery code → new password → new recovery code (shown once). */
+/** Forgot password: Helmet ID or Customer ID + recovery code → new password → new recovery code (shown once). */
 export function RecoverPage() {
   const navigate = useNavigate();
   const { signIn, restored } = useCustomerAuth();
@@ -34,7 +33,7 @@ export function RecoverPage() {
   const verify = useMutation({
     mutationFn: (code: string) =>
       api.post<CustomerRecoverResponse>('/customer/auth/recover', {
-        helmetCode: code,
+        identifier: code,
         recoveryCode,
       }),
     onSuccess: (res) => {
@@ -61,9 +60,9 @@ export function RecoverPage() {
 
   const submitVerify = (e: FormEvent) => {
     e.preventDefault();
-    const code = normalizeHelmetCode(helmetCode);
-    if (!code || !isValidHelmetCode(code))
-      return setCodeError('That Helmet ID doesn’t look right.');
+    const id = parseAccountIdentifier(helmetCode);
+    if (!id) return setCodeError('That ID doesn’t look right.');
+    const code = id.code;
     setCodeError(null);
     verify.mutate(code);
   };
@@ -82,14 +81,18 @@ export function RecoverPage() {
         </h1>
         {step === 'verify' && (
           <p className="mt-2 text-body">
-            You need one of your Helmet IDs and the recovery code you saved when you activated.
+            You need your Customer ID (or one of your Helmet IDs) and the recovery code you saved.
           </p>
         )}
         <Card className="mt-8">
           <CardContent>
             {step === 'verify' && (
               <form onSubmit={submitVerify} noValidate className="flex flex-col gap-4">
-                <Field label="Helmet ID" htmlFor="rec-helmet" error={codeError ?? undefined}>
+                <Field
+                  label="Helmet or Customer ID"
+                  htmlFor="rec-helmet"
+                  error={codeError ?? undefined}
+                >
                   <Input
                     id="rec-helmet"
                     autoCapitalize="characters"

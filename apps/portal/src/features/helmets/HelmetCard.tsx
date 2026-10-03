@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { CustomerHelmetDto } from '@helmet/types';
 import { Badge, buttonVariants, HelmetStatusBadge } from '@helmet/ui';
 import { ACTION_PAGES } from './lifecycle-labels';
+import { warrantyLine } from '../warranty/warranty-labels';
 import { PROFILE_LABEL } from './profile-label';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -34,6 +35,9 @@ export function HelmetCard({ helmet }: { helmet: CustomerHelmetDto }) {
             <span>Activated {dateFmt.format(new Date(helmet.activatedAt))}</span>
           )}
         </div>
+        {helmet.group !== 'RETIRED' && (
+          <p className="text-sm text-body">{warrantyLine(helmet.warranty)}</p>
+        )}
         {helmet.replacedBy && (
           <p className="text-sm text-body">
             Replaced by <span className="font-mono">{helmet.replacedBy.helmetCode}</span>

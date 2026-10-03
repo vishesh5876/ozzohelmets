@@ -21,10 +21,10 @@ function readRootEnv(): Record<string, string> {
   return env;
 }
 
-/** Serves the standalone emergency entry for /e/* in dev and preview (nginx does this in production). */
+/** Serves the standalone emergency entry for /e/* and /verify/* in dev and preview (nginx does this in production). */
 function emergencyRoute(): Plugin {
   const rewrite: Connect.NextHandleFunction = (req, _res, next) => {
-    if (req.url && /^\/e\/[^/?#]+\/?(\?.*)?$/.test(req.url)) req.url = '/emergency.html';
+    if (req.url && /^\/(e|verify)\/[^/?#]+\/?(\?.*)?$/.test(req.url)) req.url = '/emergency.html';
     next();
   };
   return {

@@ -44,6 +44,7 @@ export function AccountPage() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       <PageTitle title="Account" />
+      <CustomerIdCard />
       <DetailsCard />
       <ChangePasswordCard />
       <RecoveryCodeCard />
@@ -299,6 +300,42 @@ function SessionsCard() {
             Sign out of all devices
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Permanent public Customer ID — not a secret; the password is still required to sign in. */
+function CustomerIdCard() {
+  const { customer } = useCustomerAuth();
+  const [copied, setCopied] = useState(false);
+  if (!customer) return null;
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-display-sm font-bold">Customer ID</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-mono text-xl font-bold tracking-wide" data-testid="customer-id">
+            {customer.customerId}
+          </span>
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={() =>
+              void navigator.clipboard?.writeText(customer.customerId).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              })
+            }
+          >
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </div>
+        <p className="text-sm text-body">
+          Use your Customer ID to sign in even if you no longer own a helmet. You can share it with
+          support. Your password is still needed to sign in, and your recovery code remains the way
+          to reset it.
+        </p>
       </CardContent>
     </Card>
   );

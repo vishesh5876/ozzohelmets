@@ -106,7 +106,7 @@ export function OwnershipCard({ helmet }: { helmet: HelmetDetailDto }) {
               {history.data?.items.map((p) => (
                 <tr key={p.id}>
                   <td className="py-2 pr-4">
-                    <span className="font-mono text-xs">{p.customerId.slice(0, 8)}</span>
+                    <span className="font-mono text-xs">{p.customerId}</span>
                     {p.maskedMobile ? ` · ${p.maskedMobile}` : ''}
                   </td>
                   <td className="py-2 pr-4">

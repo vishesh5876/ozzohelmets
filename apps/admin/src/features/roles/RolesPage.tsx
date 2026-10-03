@@ -22,6 +22,12 @@ const LABELS: Record<Permission, string> = {
   'transfer:cancel': 'Cancel pending transfers',
   'replacement:manage': 'Link replacement helmets',
   'helmet-lifecycle:manage': 'Restore / deactivate customer-owned helmets',
+  'warranty:view': 'View warranties',
+  'warranty:manage': 'Correct warranty dates and purchase details',
+  'warranty:void': 'Void / restore warranties',
+  'warranty:document-view': 'View proof-of-purchase documents',
+  'product-report:view': 'View product reports',
+  'product-report:manage': 'Review product reports',
 };
 
 export function RolesPage() {

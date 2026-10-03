@@ -63,7 +63,7 @@ export function ClaimPage() {
     mutationFn: async () => {
       await restored();
       const session = await api.post<CustomerLoginResponse>('/customer/auth/login', {
-        helmetCode: loginHelmet,
+        identifier: loginHelmet,
         password: loginPassword,
       });
       signIn(session);
@@ -199,7 +199,7 @@ export function ClaimPage() {
                         }}
                       >
                         <Field
-                          label="Helmet ID of a helmet you already own"
+                          label="Your Customer ID or a Helmet ID you own"
                           htmlFor="claim-login-helmet"
                         >
                           <Input

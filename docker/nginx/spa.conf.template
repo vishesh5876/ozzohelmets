@@ -34,6 +34,13 @@ server {
     try_files /emergency.html /index.html;
   }
 
+  # Public product verification (same QR token, same lightweight entry).
+  location ^~ /verify/ {
+    include /etc/nginx/snippets/security-headers.conf;
+    add_header Cache-Control "no-cache";
+    try_files /emergency.html /index.html;
+  }
+
   location / {
     include /etc/nginx/snippets/security-headers.conf;
     add_header Cache-Control "no-cache";

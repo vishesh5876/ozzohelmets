@@ -18,6 +18,7 @@ const HelmetActionPage = page(
   () => import('./features/lifecycle/HelmetActionPage'),
   'HelmetActionPage',
 );
+const WarrantyPage = page(() => import('./features/warranty/WarrantyPage'), 'WarrantyPage');
 const ActivatePage = page(() => import('./features/activation/ActivatePage'), 'ActivatePage');
 const DashboardPage = page(() => import('./features/dashboard/DashboardPage'), 'DashboardPage');
 const HelmetsPage = page(() => import('./features/helmets/HelmetsPage'), 'HelmetsPage');
@@ -66,6 +67,7 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="helmets" element={<HelmetsPage />} />
           <Route path="helmets/:id" element={<HelmetDetailPage />} />
+          <Route path="helmets/:id/warranty" element={<WarrantyPage />} />
           <Route path="helmets/:id/:action" element={<HelmetActionPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="profile" element={<ProfilePage />} />

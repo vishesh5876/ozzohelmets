@@ -7,6 +7,7 @@ import type {
   PublicEmergencyContactDto,
   PublicEmergencyDto,
   PublicEmergencyProfileDto,
+  PublicProductVerificationDto,
 } from '@helmet/types';
 import './emergency.css';
 
@@ -249,13 +250,19 @@ function render(token: string, result: Lookup | null): void {
         );
         break;
       case 'DAMAGED':
+      case 'RECALLED':
       case 'REPLACED':
-      case 'DEACTIVATED':
-      case 'RECALLED': {
-        // Lifecycle notices never carry personal or medical information.
+      case 'DEACTIVATED': {
         const title = INACTIVE_TITLES[d.state];
-        top = header(title, 'Helmet ID', true);
-        main.append(messageCard(title, d.message));
+        top = header(title, d.profile ? 'Helmet ID · Emergency' : 'Helmet ID', true);
+        if (d.profile) {
+          // Phase 4: a damaged/recalled helmet that was already sharing keeps the approved
+          // information, with the lifecycle warning shown first.
+          main.append(messageCard(title, d.warning ?? d.message, 'danger'), ...profileView(d));
+        } else {
+          // Lifecycle notices without a profile never carry personal or medical information.
+          main.append(messageCard(title, d.message));
+        }
         break;
       }
       default:
@@ -292,7 +299,218 @@ function render(token: string, result: Lookup | null): void {
       ),
     );
   }
+  if (result?.kind === 'ok') main.append(verifyLink(token));
   app.replaceChildren(top, main);
+}
+
+/** Same QR, second purpose: product identity verification (no personal data). */
+function verifyLink(token: string): HTMLElement {
+  return h(
+    'p',
+    { class: 'muted', style: 'text-align:center;margin-top:8px' },
+    h('a', { href: `/verify/${encodeURIComponent(token)}` }, 'Verify product identity'),
+  );
+}
+
+// ───────────── /verify/:token ─────────────
+
+const REPORT_REASONS: [string, string][] = [
+  ['QR_COPIED', 'QR appears copied'],
+  ['DETAILS_MISMATCH', 'Helmet details do not match'],
+  ['LOOKS_COUNTERFEIT', 'Product looks counterfeit'],
+  ['ID_DAMAGED', 'Helmet ID damaged'],
+  ['OTHER', 'Other'],
+];
+
+const monthFmt = new Intl.DateTimeFormat(undefined, {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const dayFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' });
+
+function warrantyText(w: NonNullable<PublicProductVerificationDto['warranty']>): string {
+  const end = w.endsOn ? dayFmt.format(new Date(`${w.endsOn}T00:00:00Z`)) : '';
+  switch (w.status) {
+    case 'ACTIVE':
+      return `Active until ${end}`;
+    case 'EXPIRED':
+      return `Expired on ${end}`;
+    case 'NOT_REGISTERED':
+      return 'Not registered';
+    case 'REPLACED':
+      return 'Moved to a replacement helmet';
+    default:
+      return 'Not active';
+  }
+}
+
+function fact(label: string, value: string, mono = false): HTMLElement {
+  return h(
+    'div',
+    { class: 'fact' },
+    h('p', { class: 'muted' }, label),
+    h('p', mono ? { class: 'mono' } : {}, value),
+  );
+}
+
+function reportForm(token: string): HTMLElement {
+  const status = h('p', { class: 'muted', role: 'status' });
+  const select = h('select', { id: 'report-reason', name: 'reason', required: 'true' });
+  for (const [value, label] of REPORT_REASONS) select.append(h('option', { value }, label));
+  const text = h('textarea', { id: 'report-description', maxlength: '1000', rows: '3' });
+  const email = h('input', {
+    id: 'report-email',
+    type: 'email',
+    maxlength: '254',
+    autocomplete: 'email',
+  });
+  const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Send report');
+  const form = h(
+    'form',
+    { class: 'card', id: 'report-form', hidden: 'true' },
+    h('h3', {}, 'Report a problem with this product'),
+    h('label', { for: 'report-reason' }, 'What is wrong?'),
+    select,
+    h('label', { for: 'report-description' }, 'Details (optional)'),
+    text,
+    h('label', { for: 'report-email' }, 'Email, if you want us to contact you (optional)'),
+    email,
+    submit,
+    status,
+  );
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit.setAttribute('disabled', 'true');
+    void fetch(`${API_BASE}/public/product-reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        publicToken: TOKEN_RE.test(token) ? token : undefined,
+        reason: (select as HTMLSelectElement).value,
+        description: (text as HTMLTextAreaElement).value.trim() || undefined,
+        contactEmail: (email as HTMLInputElement).value.trim() || undefined,
+      }),
+    })
+      .then((res) => {
+        if (res.ok) {
+          form.replaceChildren(
+            h('h3', {}, 'Thank you'),
+            h('p', { class: 'lead' }, 'Your report has been received and will be reviewed.'),
+          );
+          return;
+        }
+        status.textContent =
+          res.status === 429
+            ? 'Too many reports from this network. Please try again later.'
+            : 'Please check the form and try again.';
+        submit.removeAttribute('disabled');
+      })
+      .catch(() => {
+        status.textContent = 'Check your connection and try again.';
+        submit.removeAttribute('disabled');
+      });
+  });
+  return form;
+}
+
+function reportButton(form: HTMLElement): HTMLElement {
+  const btn = h(
+    'button',
+    { class: 'btn btn-secondary', type: 'button' },
+    'Report a problem with this product',
+  );
+  btn.addEventListener('click', () => {
+    form.removeAttribute('hidden');
+    btn.remove();
+    form.querySelector('select')?.focus();
+  });
+  return btn;
+}
+
+async function verifyLookup(token: string): Promise<PublicProductVerificationDto | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}/public/verify/${encodeURIComponent(token)}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (res.ok) return ((await res.json()) as { data: PublicProductVerificationDto }).data;
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+  }
+  return null;
+}
+
+function renderVerify(token: string, d: PublicProductVerificationDto | null | 'loading'): void {
+  const app = document.getElementById('app');
+  if (!app) return;
+  const main = h('main', { class: 'content' });
+  const top = header('Product verification', 'Helmet ID');
+  if (d === 'loading') {
+    main.append(
+      h(
+        'section',
+        { class: 'card' },
+        h('p', { class: 'lead' }, 'Checking…'),
+        h('div', { class: 'skeleton' }),
+      ),
+    );
+  } else if (d === null) {
+    main.append(messageCard('Couldn’t check this helmet', 'Check your connection and try again.'));
+  } else {
+    const form = reportForm(token);
+    if (d.state === 'VERIFIED' && d.product) {
+      const p = d.product;
+      main.append(
+        h(
+          'section',
+          { class: 'card strong verified' },
+          h('p', { class: 'verified-mark' }, '✓ Product identity verified'),
+          h('h2', {}, `${p.brand} ${p.modelName}`),
+          h(
+            'div',
+            { class: 'facts' },
+            fact('Helmet ID', p.helmetCode, true),
+            fact('SKU', p.sku, true),
+            fact('Manufactured', monthFmt.format(new Date(`${p.manufactured}-01T00:00:00Z`))),
+            fact('Batch', p.batchRef, true),
+            fact('Status', d.lifecycle?.label ?? '—'),
+            d.warranty ? fact('Warranty', warrantyText(d.warranty)) : null,
+          ),
+        ),
+      );
+      if (d.recallWarning) main.append(messageCard('Recall notice', d.recallWarning, 'danger'));
+      if (d.lifecycle?.warning)
+        main.append(messageCard(d.lifecycle.label, d.lifecycle.warning, 'danger'));
+      main.append(
+        h('p', { class: 'disclaimer' }, d.message),
+        h(
+          'a',
+          { class: 'btn btn-primary', href: `/e/${encodeURIComponent(token)}` },
+          'Emergency information',
+        ),
+      );
+    } else {
+      main.append(
+        h(
+          'section',
+          { class: 'card' },
+          h('h2', {}, 'We could not verify this Helmet ID'),
+          h('p', { class: 'lead' }, 'Check the QR code or contact support.'),
+        ),
+      );
+    }
+    main.append(reportButton(form), form);
+  }
+  app.replaceChildren(top, main);
+}
+
+async function startVerify(token: string): Promise<void> {
+  renderVerify(token, 'loading');
+  renderVerify(token, await verifyLookup(token));
 }
 
 async function start(token: string): Promise<void> {
@@ -306,4 +524,7 @@ if (call) {
   call.setAttribute('aria-label', `Call emergency services on ${EMERGENCY_NUMBER}`);
   call.textContent = `Call emergency ${EMERGENCY_NUMBER}`;
 }
-void start(decodeURIComponent(location.pathname.replace(/^\/e\//, '').replace(/\/$/, '')));
+const path = location.pathname.replace(/\/$/, '');
+if (path.startsWith('/verify/'))
+  void startVerify(decodeURIComponent(path.slice('/verify/'.length)));
+else void start(decodeURIComponent(path.replace(/^\/e\//, '')));

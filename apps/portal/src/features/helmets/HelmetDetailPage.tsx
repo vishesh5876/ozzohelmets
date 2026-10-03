@@ -7,6 +7,7 @@ import { ErrorState, InlineError, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { keys } from '../../lib/query';
 import { ACTION_PAGES, TIMELINE_LABELS } from './lifecycle-labels';
+import { warrantyLine } from '../warranty/warranty-labels';
 import { PROFILE_LABEL } from './profile-label';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
@@ -134,6 +135,23 @@ export function HelmetDetailPage() {
                 </a>
               </div>
               <InlineError error={emergency.error} />
+            </CardContent>
+          </Card>
+
+          <Card data-testid="warranty-section">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">Warranty</p>
+                <p className="text-sm text-body">{warrantyLine(helmet.warranty)}</p>
+              </div>
+              <Link
+                to={`/app/helmets/${helmet.id}/warranty`}
+                className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+              >
+                {helmet.warranty.status === 'NOT_REGISTERED'
+                  ? 'Register warranty'
+                  : 'View warranty'}
+              </Link>
             </CardContent>
           </Card>
 

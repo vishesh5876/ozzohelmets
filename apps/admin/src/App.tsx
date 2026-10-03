@@ -34,6 +34,19 @@ const HelmetsPage = lazy(() =>
 const ModelsPage = lazy(() =>
   import('./features/models/ModelsPage').then((m) => ({ default: m.ModelsPage })),
 );
+const WarrantiesPage = lazy(() =>
+  import('./features/warranty/WarrantiesPage').then((m) => ({ default: m.WarrantiesPage })),
+);
+const WarrantyDetailPage = lazy(() =>
+  import('./features/warranty/WarrantyDetailPage').then((m) => ({
+    default: m.WarrantyDetailPage,
+  })),
+);
+const ProductReportsPage = lazy(() =>
+  import('./features/product-reports/ProductReportsPage').then((m) => ({
+    default: m.ProductReportsPage,
+  })),
+);
 const RolesPage = lazy(() =>
   import('./features/roles/RolesPage').then((m) => ({ default: m.RolesPage })),
 );
@@ -126,6 +139,30 @@ export function App() {
           element={
             <Guard permission={Permission.HELMETS_READ}>
               <HelmetDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="warranties"
+          element={
+            <Guard permission={Permission.WARRANTY_VIEW}>
+              <WarrantiesPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="warranties/:id"
+          element={
+            <Guard permission={Permission.WARRANTY_VIEW}>
+              <WarrantyDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="product-reports"
+          element={
+            <Guard permission={Permission.PRODUCT_REPORT_VIEW}>
+              <ProductReportsPage />
             </Guard>
           }
         />

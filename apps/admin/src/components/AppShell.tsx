@@ -6,6 +6,7 @@ import {
   Boxes,
   ClipboardList,
   Factory,
+  Flag,
   HardHat,
   LayoutDashboard,
   LifeBuoy,
@@ -125,6 +126,18 @@ const NAV: NavSection[] = [
   {
     title: 'Operations',
     items: [
+      {
+        label: 'Warranties',
+        to: '/warranties',
+        icon: <ShieldCheck className={ICON} />,
+        permission: Permission.WARRANTY_VIEW,
+      },
+      {
+        label: 'Product reports',
+        to: '/product-reports',
+        icon: <Flag className={ICON} />,
+        permission: Permission.PRODUCT_REPORT_VIEW,
+      },
       { label: 'Customers', icon: <Users className={ICON} />, soon: true },
       { label: 'Analytics', icon: <BarChart3 className={ICON} />, soon: true },
       { label: 'Support', icon: <LifeBuoy className={ICON} />, soon: true },

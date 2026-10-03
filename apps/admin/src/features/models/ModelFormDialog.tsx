@@ -19,6 +19,8 @@ const schema = z.object({
   brand: z.string().trim().min(1, 'Required').max(80),
   description: z.string().trim().max(2000).optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED']),
+  warrantyEnabled: z.enum(['yes', 'no']),
+  warrantyMonths: z.coerce.number().int().min(0, '0–240 months').max(240, '0–240 months'),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -47,24 +49,32 @@ export function ModelFormDialog({
         brand: model?.brand ?? '',
         description: model?.description ?? '',
         status: model?.status ?? 'ACTIVE',
+        warrantyEnabled: model?.warrantyEnabled === false ? 'no' : 'yes',
+        warrantyMonths: model?.warrantyMonths ?? 24,
       });
   }, [open, model, reset]);
 
   const mutation = useMutation({
     mutationFn: (values: FormValues) => {
       const description = values.description || undefined;
+      const warranty = {
+        warrantyEnabled: values.warrantyEnabled === 'yes',
+        warrantyMonths: values.warrantyMonths,
+      };
       return model
         ? api.patch<HelmetModelDto>(`/admin/helmet-models/${model.id}`, {
             name: values.name,
             brand: values.brand,
             description,
             status: values.status,
+            ...warranty,
           })
         : api.post<HelmetModelDto>('/admin/helmet-models', {
             name: values.name,
             sku: values.sku,
             brand: values.brand,
             description,
+            ...warranty,
           });
     },
     onSuccess: async () => {
@@ -116,6 +126,28 @@ export function ModelFormDialog({
         <Field label="Description" htmlFor="m-desc" error={errors.description?.message}>
           <Textarea id="m-desc" rows={3} {...register('description')} />
         </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Warranty" htmlFor="m-warranty">
+            <Select id="m-warranty" {...register('warrantyEnabled')}>
+              <option value="yes">Included</option>
+              <option value="no">Not offered</option>
+            </Select>
+          </Field>
+          <Field
+            label="Warranty length (months)"
+            htmlFor="m-warranty-months"
+            error={errors.warrantyMonths?.message}
+            hint="Applies to new registrations; coverage is computed by the server."
+          >
+            <Input
+              id="m-warranty-months"
+              type="number"
+              min={0}
+              max={240}
+              {...register('warrantyMonths')}
+            />
+          </Field>
+        </div>
         {model && (
           <Field
             label="Status"
