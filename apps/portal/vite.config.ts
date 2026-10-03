@@ -28,7 +28,7 @@ export default defineConfig(() => {
       .filter(([key]) => key.startsWith('VITE_'))
       .map(([key, value]) => [`import.meta.env.${key}`, JSON.stringify(value)]),
   );
-  const port = Number(env.ADMIN_PORT ?? 3000);
+  const port = Number(env.PORTAL_PORT ?? 3001);
   return {
     plugins: [react(), tailwindcss()],
     define: clientEnv,

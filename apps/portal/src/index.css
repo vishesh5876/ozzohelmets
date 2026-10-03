@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+@import '@helmet/ui/theme.css';
+@source '../../../packages/ui/src';
+
+/* The portal uses the system font stack: no web-font request on the emergency path. */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
