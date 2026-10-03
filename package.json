@@ -1,0 +1,31 @@
+{
+  "name": "helmet-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Helmet Emergency Identity & Product Authentication Platform",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/** dev",
+    "dev:api": "pnpm --filter @helmet/api dev",
+    "dev:admin": "pnpm --filter @helmet/admin dev",
+    "dev:portal": "pnpm --filter @helmet/portal dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @helmet/api test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prisma": "pnpm --filter @helmet/api prisma:migrate:deploy && pnpm --filter @helmet/api prisma:seed",
+    "prisma:migrate": "pnpm --filter @helmet/api prisma:migrate:dev",
+    "prisma:generate": "pnpm --filter @helmet/api prisma:generate",
+    "prisma:studio": "pnpm --filter @helmet/api prisma:studio"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3"
+  }
+}
