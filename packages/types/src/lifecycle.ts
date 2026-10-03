@@ -13,7 +13,7 @@ const O = ActorType.OWNER;
 
 export const HELMET_STATUS_TRANSITIONS: TransitionTable = {
   GENERATED: { PRINTED: [A, S], DEACTIVATED: [A] },
-  PRINTED: { IN_INVENTORY: [A], ACTIVATED: [S], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
+  PRINTED: { IN_INVENTORY: [A], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   IN_INVENTORY: { SOLD: [A], ACTIVATED: [S], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   SOLD: { ACTIVATED: [S], IN_INVENTORY: [A], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   ACTIVATED: {
@@ -25,6 +25,8 @@ export const HELMET_STATUS_TRANSITIONS: TransitionTable = {
     DEACTIVATED: [A],
   },
   ACTIVE: {
+    // Owner disabled the emergency profile.
+    ACTIVATED: [S, O],
     LOST: [O, A],
     STOLEN: [O, A],
     DAMAGED: [O, A],
@@ -40,11 +42,14 @@ export const HELMET_STATUS_TRANSITIONS: TransitionTable = {
   DEACTIVATED: {},
 };
 
-/** Statuses from which a customer may activate a helmet (flagged business decision). */
-export const ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [
-  HelmetStatus.PRINTED,
+/**
+ * Statuses from which a customer may always activate a helmet. The API's ActivationPolicy is
+ * the single place that applies this (plus the configurable IN_INVENTORY allowance).
+ */
+export const ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [HelmetStatus.SOLD];
+/** Activatable only while the temporary `ACTIVATION_ALLOW_IN_INVENTORY` allowance is on. */
+export const CONDITIONALLY_ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [
   HelmetStatus.IN_INVENTORY,
-  HelmetStatus.SOLD,
 ];
 
 export function allowedTransitions(from: HelmetStatus, actor: ActorType): HelmetStatus[] {

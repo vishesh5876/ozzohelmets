@@ -114,6 +114,7 @@ function StateCard({ data, token }: { data: PublicEmergencyDto; token: string })
           <p className="mt-2 text-lg">{data.message}</p>
         </section>
       );
+    case 'ACTIVATED_PROFILE_INCOMPLETE':
     case 'ACTIVE':
     case 'UNAVAILABLE':
       return (

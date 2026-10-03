@@ -101,6 +101,7 @@ Status legend: `[x]` done · `[ ]` pending
 7. Emergency services number shown on the public page (portal `VITE_EMERGENCY_NUMBER`, default 112).
 
 ## Verification performed
+
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` (86 unit tests), `pnpm test:e2e` (26 integration
   tests on PostgreSQL + Redis), `pnpm build` — all passing.
 - Browser walkthrough (Playwright): login → create model → create batch (100) → live generation →

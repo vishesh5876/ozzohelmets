@@ -97,6 +97,8 @@ export class HelmetsService {
 
     return {
       ...toListItem(helmet),
+      // Populated by the Phase 2 ownership lookup.
+      owner: null,
       qrUrl: this.config.publicHelmetUrl(helmet.publicToken),
       activationPinUsed: helmet.activationPinUsed,
       pinEscrowed: helmet.activationSecret !== null,

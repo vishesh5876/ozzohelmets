@@ -76,3 +76,13 @@ export function isValidHelmetCode(code: string): boolean {
 export function isValidPublicToken(token: string): boolean {
   return PUBLIC_TOKEN_REGEX.test(token);
 }
+
+/** `+919876543210` → `+91******3210` (display only). */
+export function maskPhone(e164: string): string {
+  if (e164.length <= 7) return '*'.repeat(e164.length);
+  return `${e164.slice(0, 3)}${'*'.repeat(e164.length - 7)}${e164.slice(-4)}`;
+}
+
+export const OTP_LENGTH = 6;
+export const OTP_REGEX = /^\d{6}$/;
+export const MAX_EMERGENCY_CONTACTS = 5;

@@ -1,5 +1,9 @@
 import type {
   ActorType,
+  BloodGroup,
+  EmergencyProfileStatus,
+  Gender,
+  ReadinessRequirement,
   AdminRole,
   AdminUserStatus,
   BatchGenerationStatus,
@@ -91,7 +95,15 @@ export interface HelmetStatusHistoryDto {
   createdAt: IsoDateString;
 }
 
+/** Operational ownership summary for admins — no personal or medical data beyond a masked number. */
+export interface HelmetOwnerSummaryDto {
+  maskedMobile: string | null;
+  since: IsoDateString;
+  emergencyProfileStatus: EmergencyProfileStatus;
+}
+
 export interface HelmetDetailDto extends HelmetListItemDto {
+  owner: HelmetOwnerSummaryDto | null;
   qrUrl: string;
   activationPinUsed: boolean;
   pinEscrowed: boolean;
@@ -127,8 +139,164 @@ export interface DashboardStatsDto {
 /** Public, unauthenticated QR resolution. Never contains internal identifiers. */
 export interface PublicEmergencyDto {
   state: PublicHelmetState;
-  helmet: { modelName: string; brand: string };
+  /** `helmetCode` is included only while an emergency profile is shown (for identification). */
+  helmet: { modelName: string; brand: string; helmetCode?: string };
   message: string;
-  /** Present only once Phase 2 emergency profiles exist and visibility allows. */
-  profile?: null;
+  /** Present only in the ACTIVE state; contains only fields the owner made visible. */
+  profile?: PublicEmergencyProfileDto | null;
+  contacts?: PublicEmergencyContactDto[];
+}
+
+/** Every key is optional and omitted (not null) when hidden by the owner. */
+export interface PublicEmergencyProfileDto {
+  name?: string;
+  /** Relative URL served by the API; present only when the photo is visible. */
+  photoUrl?: string;
+  bloodGroup?: BloodGroup;
+  bloodGroupLabel?: string;
+  dateOfBirth?: string;
+  age?: number;
+  gender?: Gender;
+  allergies?: string[];
+  medicalConditions?: string[];
+  medications?: string[];
+  emergencyNotes?: string;
+  organDonor?: boolean;
+}
+
+export interface PublicEmergencyContactDto {
+  name: string;
+  relationship: string;
+  phone: string;
+  alternatePhone?: string;
+}
+
+// ─────────────────────────── Customer ───────────────────────────
+
+export interface CustomerProfile {
+  id: string;
+  mobile: string;
+  name: string | null;
+  email: string | null;
+  createdAt: IsoDateString;
+}
+
+export interface OtpRequestResponse {
+  sent: true;
+  /** Seconds until the code expires. */
+  expiresIn: number;
+  /** Seconds before another code can be requested. */
+  resendAfter: number;
+  /** Normalised E.164 number the code was sent to. */
+  mobile: string;
+  /** DEVELOPMENT ONLY — present only when the development OTP provider is active. */
+  devOtp?: string;
+}
+
+export interface CustomerLoginResponse {
+  accessToken: string;
+  accessTokenExpiresIn: number;
+  customer: CustomerProfile;
+  isNewCustomer: boolean;
+}
+
+export interface CustomerSessionDto {
+  id: string;
+  userAgent: string | null;
+  createdAt: IsoDateString;
+  lastUsedAt: IsoDateString;
+  current: boolean;
+}
+
+export interface ActivationValidateResponse {
+  activatable: true;
+  helmet: { modelName: string; brand: string; helmetCode: string };
+}
+
+export interface CustomerHelmetDto {
+  id: string;
+  helmetCode: string;
+  serialNumber: string;
+  status: HelmetStatus;
+  model: { name: string; brand: string };
+  activatedAt: IsoDateString | null;
+  ownedSince: IsoDateString;
+  publicUrl: string;
+  emergencyProfileStatus: EmergencyProfileStatus;
+}
+
+export interface ActivationResultDto {
+  helmet: CustomerHelmetDto;
+  customer: CustomerProfile;
+}
+
+export interface EmergencyProfileDto {
+  name: string | null;
+  hasPhoto: boolean;
+  bloodGroup: BloodGroup | null;
+  dateOfBirth: string | null;
+  gender: Gender | null;
+  allergies: string[];
+  medicalConditions: string[];
+  medications: string[];
+  emergencyNotes: string | null;
+  organDonor: boolean | null;
+  emergencyProfileEnabled: boolean;
+  updatedAt: IsoDateString | null;
+}
+
+export interface EmergencyProfileInput {
+  name?: string | null;
+  bloodGroup?: BloodGroup | null;
+  dateOfBirth?: string | null;
+  gender?: Gender | null;
+  allergies?: string[];
+  medicalConditions?: string[];
+  medications?: string[];
+  emergencyNotes?: string | null;
+  organDonor?: boolean | null;
+}
+
+export interface EmergencyContactDto {
+  id: string;
+  name: string;
+  relationship: string;
+  phone: string;
+  alternatePhone: string | null;
+  priority: number;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+}
+
+export interface EmergencyVisibilityDto {
+  showName: boolean;
+  showPhoto: boolean;
+  showBloodGroup: boolean;
+  showDateOfBirth: boolean;
+  showGender: boolean;
+  showAllergies: boolean;
+  showMedicalConditions: boolean;
+  showMedications: boolean;
+  showEmergencyNotes: boolean;
+  showOrganDonor: boolean;
+  showEmergencyContacts: boolean;
+  confirmedAt: IsoDateString | null;
+}
+
+export type EmergencyVisibilityInput = Omit<EmergencyVisibilityDto, 'confirmedAt'>;
+
+export interface EmergencyReadinessDto {
+  status: EmergencyProfileStatus;
+  enabled: boolean;
+  canEnable: boolean;
+  missing: ReadinessRequirement[];
+  /** UX-only progress indicator (0–100). Never used for authorisation. */
+  completionPercent: number;
+  steps: { key: 'ACTIVATED' | 'DETAILS' | 'CONTACTS' | 'PRIVACY' | 'ENABLED'; done: boolean }[];
+}
+
+export interface CustomerDashboardDto {
+  helmets: CustomerHelmetDto[];
+  readiness: EmergencyReadinessDto;
+  contactCount: number;
 }
