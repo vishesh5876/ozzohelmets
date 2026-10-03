@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { AdminRole } from '@helmet/types';
-import { ErrorCode } from '@helmet/types';
+import { type CustomerSessionDto, ErrorCode } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
@@ -13,13 +12,11 @@ import {
 } from '../../security/refresh-token-rotator';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
-import { ADMIN_JWT_AUDIENCE, type AdminJwtPayload } from './admin-auth.types';
-
-export type { IssuedRefreshToken };
+import { CUSTOMER_JWT_AUDIENCE, type CustomerJwtPayload } from './customer-auth.types';
 
 @Injectable()
-export class AdminTokenService {
-  private readonly logger = new Logger(AdminTokenService.name);
+export class CustomerTokenService {
+  private readonly logger = new Logger(CustomerTokenService.name);
   private readonly rotator: RefreshTokenRotator;
 
   constructor(
@@ -28,14 +25,14 @@ export class AdminTokenService {
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
   ) {
-    const table = prisma.adminRefreshToken;
+    const table = prisma.customerRefreshToken;
     const store: RefreshTokenStore = {
       findByHash: async (tokenHash) => {
         const row = await table.findUnique({ where: { tokenHash } });
         return (
           row && {
             id: row.id,
-            subjectId: row.adminId,
+            subjectId: row.userId,
             familyId: row.familyId,
             expiresAt: row.expiresAt,
             revokedAt: row.revokedAt,
@@ -46,7 +43,7 @@ export class AdminTokenService {
       create: (d) =>
         table.create({
           data: {
-            adminId: d.subjectId,
+            userId: d.subjectId,
             familyId: d.familyId,
             tokenHash: d.tokenHash,
             expiresAt: d.expiresAt,
@@ -69,61 +66,54 @@ export class AdminTokenService {
           where: { familyId, revokedAt: null },
           data: { revokedAt: new Date() },
         })),
-      revokeAllForSubject: async (adminId) =>
+      revokeAllForSubject: async (userId) =>
         void (await table.updateMany({
-          where: { adminId, revokedAt: null },
+          where: { userId, revokedAt: null },
           data: { revokedAt: new Date() },
         })),
     };
     this.rotator = new RefreshTokenRotator(
       store,
-      () => this.config.get('ADMIN_REFRESH_TTL_DAYS') * 86_400_000,
+      () => this.config.get('CUSTOMER_REFRESH_TTL_DAYS') * 86_400_000,
     );
   }
 
-  signAccessToken(adminId: string, role: AdminRole): Promise<string> {
-    const payload: AdminJwtPayload = { sub: adminId, role, typ: 'admin' };
+  signAccessToken(userId: string, sessionId: string): Promise<string> {
+    const payload: CustomerJwtPayload = { sub: userId, typ: 'customer', sid: sessionId };
     return this.jwt.signAsync(payload, {
-      secret: this.config.get('JWT_ACCESS_SECRET'),
-      expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS'),
-      audience: ADMIN_JWT_AUDIENCE,
+      secret: this.config.get('JWT_CUSTOMER_ACCESS_SECRET'),
+      expiresIn: this.config.get('JWT_CUSTOMER_ACCESS_TTL_SECONDS'),
+      audience: CUSTOMER_JWT_AUDIENCE,
       issuer: this.config.get('JWT_ISSUER'),
       algorithm: 'HS256',
     });
   }
 
-  issueRefreshToken(adminId: string, meta: RequestMeta): Promise<IssuedRefreshToken> {
-    return this.rotator.issue(adminId, meta);
+  issueRefreshToken(userId: string, meta: RequestMeta): Promise<IssuedRefreshToken> {
+    return this.rotator.issue(userId, meta);
   }
 
-  /** Validates and rotates a refresh token (see RefreshTokenRotator for the reuse model). */
   async rotate(
     rawToken: string,
     meta: RequestMeta,
-  ): Promise<{ adminId: string; role: AdminRole; refresh: IssuedRefreshToken }> {
+  ): Promise<{ userId: string; refresh: IssuedRefreshToken }> {
     const result = await this.rotator.rotate(
       rawToken,
       meta,
       async (id) =>
-        (await this.prisma.adminUser.findUnique({ where: { id }, select: { status: true } }))
-          ?.status === 'ACTIVE',
+        (await this.prisma.user.findUnique({ where: { id }, select: { status: true } }))?.status ===
+        'ACTIVE',
     );
-    if (result.ok) {
-      const admin = await this.prisma.adminUser.findUniqueOrThrow({
-        where: { id: result.subjectId },
-        select: { role: true },
-      });
-      return { adminId: result.subjectId, role: admin.role, refresh: result.refresh };
-    }
+    if (result.ok) return { userId: result.subjectId, refresh: result.refresh };
     if (result.reason === 'REUSED') {
       this.logger.warn(
-        `Refresh token reuse detected for admin ${result.subjectId}; family revoked`,
+        `Refresh token reuse detected for customer ${result.subjectId}; family revoked`,
       );
       await this.audit.recordSafe({
-        action: AuditAction.ADMIN_REFRESH_REUSE_DETECTED,
-        entityType: 'admin_user',
+        action: AuditAction.CUSTOMER_REFRESH_REUSE_DETECTED,
+        entityType: 'user',
         entityId: result.subjectId,
-        adminId: result.subjectId,
+        userId: result.subjectId,
         ipHash: meta.ipHash,
         metadata: { familyId: result.familyId },
       });
@@ -140,16 +130,46 @@ export class AdminTokenService {
     );
   }
 
-  /** Revokes the family of the presented token (logout). Unknown tokens are ignored. */
-  async revoke(rawToken: string): Promise<string | null> {
-    return (await this.rotator.revoke(rawToken))?.subjectId ?? null;
+  revoke(rawToken: string) {
+    return this.rotator.revoke(rawToken);
   }
 
-  revokeFamily(familyId: string): Promise<void> {
-    return this.rotator.revokeFamily(familyId);
+  revokeAll(userId: string): Promise<void> {
+    return this.rotator.revokeAllForSubject(userId);
   }
 
-  revokeAllForAdmin(adminId: string): Promise<void> {
-    return this.rotator.revokeAllForSubject(adminId);
+  /** One entry per active login (token family), newest token's metadata. */
+  async sessions(userId: string, currentFamilyId: string): Promise<CustomerSessionDto[]> {
+    const rows = await this.prisma.customerRefreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const started = await this.prisma.customerRefreshToken.groupBy({
+      by: ['familyId'],
+      where: { userId, familyId: { in: [...new Set(rows.map((r) => r.familyId))] } },
+      _min: { createdAt: true },
+    });
+    const startedAt = new Map(started.map((g) => [g.familyId, g._min.createdAt]));
+    const byFamily = new Map<string, CustomerSessionDto>();
+    for (const row of rows) {
+      if (byFamily.has(row.familyId)) continue;
+      byFamily.set(row.familyId, {
+        id: row.familyId,
+        userAgent: row.userAgent,
+        createdAt: (startedAt.get(row.familyId) ?? row.createdAt).toISOString(),
+        lastUsedAt: row.createdAt.toISOString(),
+        current: row.familyId === currentFamilyId,
+      });
+    }
+    return [...byFamily.values()];
+  }
+
+  /** Revokes one of the customer's own sessions; other users' families are never touched. */
+  async revokeSession(userId: string, familyId: string): Promise<boolean> {
+    const result = await this.prisma.customerRefreshToken.updateMany({
+      where: { userId, familyId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count > 0;
   }
 }

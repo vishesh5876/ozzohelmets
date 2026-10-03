@@ -10,6 +10,8 @@ import { RedisModule } from './infrastructure/redis/redis.module';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { CustomerAuthModule } from './modules/customer-auth/customer-auth.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BatchesModule } from './modules/batches/batches.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
@@ -30,6 +32,8 @@ import { SecurityModule } from './security/security.module';
     // Cross-cutting domain
     AuditModule,
     AdminAuthModule,
+    NotificationsModule,
+    CustomerAuthModule,
     // Features
     HealthModule,
     AdminUsersModule,

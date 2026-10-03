@@ -76,6 +76,26 @@ enum ActorType {
   OWNER
 }
 
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+  UNKNOWN
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  NON_BINARY
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
 enum ScanType {
   EMERGENCY_PAGE
   VERIFY
@@ -135,13 +155,114 @@ model User {
   mobileVerified Boolean    @default(false) @map("mobile_verified")
   emailVerified  Boolean    @default(false) @map("email_verified")
   status         UserStatus @default(ACTIVE)
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(3)
   createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  ownerships HelmetOwnership[]
-  auditLogs  AuditLog[]
+  ownerships          HelmetOwnership[]
+  auditLogs           AuditLog[]
+  refreshTokens       CustomerRefreshToken[]
+  emergencyProfiles   EmergencyProfile[]
+  emergencyContacts   EmergencyContact[]
+  emergencyVisibility EmergencyVisibility?
 
   @@map("users")
+}
+
+/// Customer refresh tokens — same rotation/reuse-detection model as admin tokens.
+model CustomerRefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedBy String?   @map("replaced_by") @db.Uuid
+  userAgent  String?   @map("user_agent") @db.VarChar(255)
+  ipHash     String?   @map("ip_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("customer_refresh_tokens")
+}
+
+/// Emergency profile owned by a customer. `helmetId` is reserved for future per-helmet
+/// overrides (NULL = the customer's default profile; partial unique indexes in SQL).
+/// *_ciphertext columns hold AES-256-GCM payloads bound to (profile id, field) via AAD.
+model EmergencyProfile {
+  id                          String      @id @db.Uuid
+  userId                      String      @map("user_id") @db.Uuid
+  helmetId                    String?     @map("helmet_id") @db.Uuid
+  name                        String?     @db.VarChar(120)
+  bloodGroup                  BloodGroup? @map("blood_group")
+  gender                      Gender?
+  organDonor                  Boolean?    @map("organ_donor")
+  dateOfBirthCiphertext       String?     @map("date_of_birth_ciphertext")
+  allergiesCiphertext         String?     @map("allergies_ciphertext")
+  medicalConditionsCiphertext String?     @map("medical_conditions_ciphertext")
+  medicationsCiphertext       String?     @map("medications_ciphertext")
+  emergencyNotesCiphertext    String?     @map("emergency_notes_ciphertext")
+  photoKey                    String?     @map("photo_key") @db.VarChar(255)
+  photoContentType            String?     @map("photo_content_type") @db.VarChar(40)
+  photoUpdatedAt              DateTime?   @map("photo_updated_at") @db.Timestamptz(3)
+  emergencyProfileEnabled     Boolean     @default(false) @map("emergency_profile_enabled")
+  enabledAt                   DateTime?   @map("enabled_at") @db.Timestamptz(3)
+  createdAt                   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  helmet Helmet? @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("emergency_profiles")
+}
+
+model EmergencyContact {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  name           String   @db.VarChar(120)
+  relationship   String   @db.VarChar(60)
+  phone          String   @db.VarChar(20)
+  alternatePhone String?  @map("alternate_phone") @db.VarChar(20)
+  /// 1 = called first. Unique among a user's active contacts (partial index in SQL).
+  priority       Int
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("emergency_contacts")
+}
+
+/// What the public QR page may show. Everything defaults to hidden.
+model EmergencyVisibility {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  userId                String    @unique @map("user_id") @db.Uuid
+  showName              Boolean   @default(false) @map("show_name")
+  showPhoto             Boolean   @default(false) @map("show_photo")
+  showBloodGroup        Boolean   @default(false) @map("show_blood_group")
+  showDateOfBirth       Boolean   @default(false) @map("show_date_of_birth")
+  showGender            Boolean   @default(false) @map("show_gender")
+  showAllergies         Boolean   @default(false) @map("show_allergies")
+  showMedicalConditions Boolean   @default(false) @map("show_medical_conditions")
+  showMedications       Boolean   @default(false) @map("show_medications")
+  showEmergencyNotes    Boolean   @default(false) @map("show_emergency_notes")
+  showOrganDonor        Boolean   @default(false) @map("show_organ_donor")
+  showEmergencyContacts Boolean   @default(false) @map("show_emergency_contacts")
+  /// Set when the owner explicitly reviews and saves their public visibility choices.
+  confirmedAt           DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("emergency_visibility")
 }
 
 // ─────────────────────────────── Catalogue & manufacturing ───────────────────────────────
@@ -193,26 +314,29 @@ model HelmetBatch {
 
 /// One physical helmet. `id` is the internal helmet UUID and never appears in public URLs.
 model Helmet {
-  id                String       @id @default(uuid(7)) @db.Uuid
-  helmetCode        String       @unique @map("helmet_code") @db.VarChar(16)
-  publicToken       String       @unique @map("public_token") @db.VarChar(32)
-  activationPinHash String       @map("activation_pin_hash")
-  activationPinUsed Boolean      @default(false) @map("activation_pin_used")
-  activationAttempts Int         @default(0) @map("activation_attempts")
-  serialNumber      String       @unique @map("serial_number") @db.VarChar(40)
-  helmetModelId     String       @map("helmet_model_id") @db.Uuid
-  batchId           String       @map("batch_id") @db.Uuid
-  status            HelmetStatus @default(GENERATED)
-  activatedAt       DateTime?    @map("activated_at") @db.Timestamptz(3)
-  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                    String       @id @default(uuid(7)) @db.Uuid
+  helmetCode            String       @unique @map("helmet_code") @db.VarChar(16)
+  publicToken           String       @unique @map("public_token") @db.VarChar(32)
+  activationPinHash     String       @map("activation_pin_hash")
+  activationPinUsed     Boolean      @default(false) @map("activation_pin_used")
+  activationAttempts    Int          @default(0) @map("activation_attempts")
+  /// Progressive lockout after repeated wrong PINs.
+  activationLockedUntil DateTime?    @map("activation_locked_until") @db.Timestamptz(3)
+  serialNumber          String       @unique @map("serial_number") @db.VarChar(40)
+  helmetModelId         String       @map("helmet_model_id") @db.Uuid
+  batchId               String       @map("batch_id") @db.Uuid
+  status                HelmetStatus @default(GENERATED)
+  activatedAt           DateTime?    @map("activated_at") @db.Timestamptz(3)
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmetModel      HelmetModel             @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
-  batch            HelmetBatch             @relation(fields: [batchId], references: [id], onDelete: Restrict)
-  activationSecret HelmetActivationSecret?
-  ownerships       HelmetOwnership[]
-  statusHistory    HelmetStatusHistory[]
-  scans            HelmetScan[]
+  helmetModel       HelmetModel             @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
+  batch             HelmetBatch             @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  activationSecret  HelmetActivationSecret?
+  ownerships        HelmetOwnership[]
+  emergencyProfiles EmergencyProfile[]
+  statusHistory     HelmetStatusHistory[]
+  scans             HelmetScan[]
 
   @@index([status])
   @@index([batchId])

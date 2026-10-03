@@ -16,3 +16,5 @@ exports/
 dump.rdb
 *.rdb
 .sandbox-ca.crt
+storage/
+apps/api/storage/

@@ -107,7 +107,7 @@ export class AdminAuthService {
         accessTokenExpiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS'),
         admin: this.toProfile(updated),
       },
-      refresh: { token: refresh.token, expiresAt: refresh.expiresAt },
+      refresh,
     };
   }
 

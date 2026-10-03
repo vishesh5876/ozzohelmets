@@ -78,6 +78,36 @@ export const envSchema = z
     ADMIN_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
     ADMIN_LOGIN_LOCKOUT_SECONDS: z.coerce.number().int().min(30).default(900),
 
+    JWT_CUSTOMER_ACCESS_SECRET: secret('JWT_CUSTOMER_ACCESS_SECRET'),
+    JWT_CUSTOMER_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+    CUSTOMER_REFRESH_TTL_DAYS: z.coerce.number().int().min(1).max(180).default(30),
+
+    OTP_PROVIDER: z.enum(['development', 'sms']).default('sms'),
+    OTP_HASH_SECRET: secret('OTP_HASH_SECRET'),
+    OTP_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
+    OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(10).max(600).default(60),
+    OTP_MAX_PER_MOBILE_PER_HOUR: z.coerce.number().int().min(1).default(5),
+    OTP_MAX_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
+    OTP_GLOBAL_MAX_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+    DEFAULT_PHONE_REGION: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .default('IN'),
+
+    ACTIVATION_ALLOW_IN_INVENTORY: bool.default('false'),
+    ACTIVATION_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(5),
+    ACTIVATION_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
+    ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR: z.coerce.number().int().min(1).default(10),
+    ACTIVATION_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
+
+    FILE_STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+    FILE_STORAGE_LOCAL_DIR: z.string().min(1).default('./storage'),
+    PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(5_242_880),
+
+    PUBLIC_CACHE_TTL_SECONDS: z.coerce.number().int().min(5).max(60).default(30),
+    SCAN_DEDUP_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
+
     PIN_HASH_PEPPER: secret('PIN_HASH_PEPPER'),
     PIN_ESCROW_KEYS: keyring('PIN_ESCROW_KEYS'),
     DATA_ENCRYPTION_KEYS: keyring('DATA_ENCRYPTION_KEYS'),
@@ -97,6 +127,8 @@ export const envSchema = z
     if (env.NODE_ENV !== 'production') return;
     const devSecrets: [string, string][] = [
       ['JWT_ACCESS_SECRET', env.JWT_ACCESS_SECRET],
+      ['JWT_CUSTOMER_ACCESS_SECRET', env.JWT_CUSTOMER_ACCESS_SECRET],
+      ['OTP_HASH_SECRET', env.OTP_HASH_SECRET],
       ['PIN_HASH_PEPPER', env.PIN_HASH_PEPPER],
       ['IP_HASH_SECRET', env.IP_HASH_SECRET],
     ];
@@ -117,6 +149,20 @@ export const envSchema = z
           message: 'dev-only key used in production',
         });
       }
+    }
+    if (env.OTP_PROVIDER === 'development') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OTP_PROVIDER'],
+        message: 'development OTP provider is not allowed in production',
+      });
+    }
+    if (env.JWT_CUSTOMER_ACCESS_SECRET === env.JWT_ACCESS_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['JWT_CUSTOMER_ACCESS_SECRET'],
+        message: 'must differ from JWT_ACCESS_SECRET',
+      });
     }
     if (!env.COOKIE_SECURE) {
       ctx.addIssue({
