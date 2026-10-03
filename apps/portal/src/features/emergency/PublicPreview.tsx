@@ -52,7 +52,7 @@ export function PreviewBody({ data }: { data: Pick<PublicEmergencyDto, 'profile'
           <p className="text-sm text-body">
             {[
               p.age !== undefined ? `Age ${p.age}` : null,
-              p.gender,
+              p.gender ? humanizeEnum(p.gender) : null,
               p.organDonor === undefined
                 ? null
                 : p.organDonor
