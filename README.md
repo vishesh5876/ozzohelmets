@@ -5,16 +5,18 @@ human-readable Helmet ID (`HM-A8F3-KL92`), ≥128-bit QR token, Code128 barcode,
 activation PIN, serial number — bound to a model/SKU and a manufacturing batch. Customers activate
 and own helmets; first responders scan the QR code to see only what the owner chose to share.
 
-**Status: Phase 1 (foundation + manufacturing) complete.** See [`docs/PHASES.md`](docs/PHASES.md).
+**Status: Phase 2 complete** — foundation + manufacturing (Phase 1) and customer authentication,
+helmet activation and emergency profiles (Phase 2). See [`docs/PHASES.md`](docs/PHASES.md).
 
 ```
 apps/
   api/      NestJS 11 + Prisma 6 (PostgreSQL) + Redis — modular monolith, /api/v1, Swagger
   admin/    React 19 + Vite admin portal (manufacturing, helmets, audit, admin users)
-  portal/   React 19 + Vite customer portal + public emergency page (/e/:token)
+  portal/   React 19 + Vite customer portal + standalone lightweight emergency page (/e/:token)
 packages/
   types/    shared enums, permissions, lifecycle rules, identifier formats, API contracts
   ui/       shared React primitives + Tailwind 4 design tokens
+  api-client/ typed fetch client (envelope, errors, single-flight refresh) for both SPAs
   tsconfig/ eslint-config/
 docs/       architecture, database, security, API, lifecycle, development, deployment
 ```
@@ -54,11 +56,25 @@ activationPin`) — SUPER_ADMIN/ADMIN only, audited.
 6. Open a `qrUrl` → _"This helmet has not yet been activated."_
 7. **Mark printed** once labels are on the helmets: status → PRINTED, escrowed PINs destroyed.
 
+## Phase 2 walkthrough (customer)
+
+1. Admin: export the batch CSV (gives the activation PIN), **Mark printed**, then on the helmet page
+   move it **In inventory → Sold** (customers can only activate SOLD helmets by default).
+2. Open the helmet's QR URL on a phone → **Activate helmet** → enter the PIN → mobile number →
+   6-digit code (shown on screen in development) → the helmet is yours (status ACTIVATED).
+3. Onboarding: emergency details → contacts → choose what's public → review → **Turn on** →
+   status ACTIVE.
+4. Scan the QR anonymously: only the information you switched on is shown, with call buttons.
+   Change privacy or turn the profile off and the next scan reflects it.
+
+No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → OTP.
+
 ## Quality gates
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test && pnpm build
 pnpm test:e2e            # API integration tests against real PostgreSQL + Redis (helmet_platform_test)
+pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 ```
 
 ## Key decisions (details in docs)
@@ -72,17 +88,21 @@ pnpm test:e2e            # API integration tests against real PostgreSQL + Redis
 - **Admin auth**: Argon2id, 15-min JWT in memory, rotating hashed refresh tokens with reuse
   detection, backend RBAC — [SECURITY §4–5](docs/SECURITY.md)
 - **Resumable, chunked, transactional batch generation** — [DATABASE](docs/DATABASE.md)
+- **Customer OTP auth** with HMAC'd Redis OTPs and layered abuse limits — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
+- **Atomic, row-locked activation** with progressive PIN lockouts — [ACTIVATION](docs/ACTIVATION.md)
+- **Encrypted emergency profile** and allow-list public sanitizer (hidden fields omitted) — [EMERGENCY-PROFILE](docs/EMERGENCY-PROFILE.md)
 
 ## Flagged for product decisions
 
-Listed in [`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation):
-activatable statuses, ACTIVATED vs ACTIVE, whether MANUFACTURING may export PINs, serial number
-format, escrow purge trigger, and the final QR domain (`PUBLIC_EMERGENCY_BASE_URL` is printed on
-labels).
+Open items are listed in [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
+(SMS provider, retail SOLD flow, lost/stolen behaviour, emergency number per market) and
+[`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation)
+(MANUFACTURING PIN export, serial format, final QR domain printed on labels).
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1 checklist](docs/PHASE-1.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) ·
+[Customer auth](docs/CUSTOMER-AUTH.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
 [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [API](docs/API.md) ·
 [Helmet lifecycle](docs/HELMET-LIFECYCLE.md) · [Development](docs/DEVELOPMENT.md) ·
 [Deployment](docs/DEPLOYMENT.md)

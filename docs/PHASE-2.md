@@ -1,6 +1,6 @@
 # Phase 2 — Customer authentication, helmet activation, emergency profile
 
-Status legend: `[x]` done · `[ ]` pending
+Status: **complete**. Legend: `[x]` done · `[ ]` pending
 
 ## Target flow
 
@@ -31,38 +31,87 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 
 ### Backend
 
-- [ ] Migration: customer refresh tokens, emergency profiles/contacts/visibility, photo metadata, activation lockout column, constraints
-- [ ] Shared types: BloodGroup, Gender, EmergencyProfileStatus, PublicEmergencyState v2, customer/activation/profile contracts, error codes
-- [ ] Config: customer JWT, OTP, activation policy, storage, public cache TTL
-- [ ] Redis fixed-window limiter service (reused by OTP + activation)
-- [ ] Phone normalisation (E.164, libphonenumber-js)
-- [ ] Notifications foundation (SMS/email provider interfaces)
-- [ ] OTP subsystem (store, providers, limits)
-- [ ] Refresh-token rotation core shared by admin + customer
-- [ ] Customer auth: OTP login/sign-up, refresh, logout, logout-all, me, sessions
-- [ ] CustomerJwtGuard + CurrentCustomer
-- [ ] Activation module: validate + atomic complete + lockouts
-- [ ] Customer helmets: list, detail, QR
-- [ ] File storage (local + S3 placeholder) + profile photo upload
-- [ ] Emergency profile (encrypted), contacts (max 5, priorities, reorder), visibility
-- [ ] Readiness/completion domain service, enable/disable with status transitions
-- [ ] Public emergency v2 + sanitizer + photo endpoint + cache invalidation + scan dedup
-- [ ] Admin helmet detail: owner (masked) + emergency profile status
+- [x] Migration: customer refresh tokens, emergency profiles/contacts/visibility, photo metadata, activation lockout column, constraints
+- [x] Shared types: BloodGroup, Gender, EmergencyProfileStatus, PublicEmergencyState v2, customer/activation/profile contracts, error codes
+- [x] Config: customer JWT, OTP, activation policy, storage, public cache TTL
+- [x] Redis fixed-window limiter service (reused by OTP + activation)
+- [x] Phone normalisation (E.164, libphonenumber-js)
+- [x] Notifications foundation (SMS/email provider interfaces)
+- [x] OTP subsystem (store, providers, limits)
+- [x] Refresh-token rotation core shared by admin + customer
+- [x] Customer auth: OTP login/sign-up, refresh, logout, logout-all, me, sessions
+- [x] CustomerJwtGuard + CurrentCustomer
+- [x] Activation module: validate + atomic complete + lockouts
+- [x] Customer helmets: list, detail, QR
+- [x] File storage (local + S3 placeholder) + profile photo upload
+- [x] Emergency profile (encrypted), contacts (max 5, priorities, reorder), visibility
+- [x] Readiness/completion domain service, enable/disable with status transitions
+- [x] Public emergency v2 + sanitizer + photo endpoint + cache invalidation + scan dedup
+- [x] Admin helmet detail: owner (masked) + emergency profile status
 
 ### Frontend
 
-- [ ] Shared API client package used by admin + portal
-- [ ] Portal auth (phone → OTP), in-memory access token, silent refresh
-- [ ] Activation (QR context + manual Helmet ID with checksum validation)
-- [ ] Dashboard, My helmets, helmet detail
-- [ ] Onboarding wizard (activated → details → contacts → visibility → review → enable → success)
-- [ ] Profile, contacts, privacy, account/sessions pages
-- [ ] Lightweight emergency page entry; bundle size before/after documented
-- [ ] Admin helmet detail owner/profile status
+- [x] Shared API client package used by admin + portal
+- [x] Portal auth (phone → OTP), in-memory access token, silent refresh
+- [x] Activation (QR context + manual Helmet ID with checksum validation)
+- [x] Dashboard, My helmets, helmet detail
+- [x] Onboarding wizard (activated → details → contacts → visibility → review → enable → success)
+- [x] Profile, contacts, privacy, account/sessions pages
+- [x] Lightweight emergency page entry; bundle size before/after documented
+- [x] Admin helmet detail owner/profile status
 
 ### Quality
 
-- [ ] Unit + integration tests listed in the brief (incl. concurrency)
-- [ ] Playwright end-to-end (admin → activation → profile → public page)
-- [ ] Docs: README, ARCHITECTURE, DATABASE, SECURITY, API, HELMET-LIFECYCLE, DEVELOPMENT, CUSTOMER-AUTH, ACTIVATION, EMERGENCY-PROFILE
-- [ ] lint · typecheck · tests · build · Docker build
+- [x] Unit + integration tests listed in the brief (incl. concurrency)
+- [x] Playwright end-to-end (admin → activation → profile → public page)
+- [x] Docs: README, ARCHITECTURE, DATABASE, SECURITY, API, HELMET-LIFECYCLE, DEVELOPMENT, CUSTOMER-AUTH, ACTIVATION, EMERGENCY-PROFILE
+- [x] lint · typecheck · tests · build · Docker build
+
+## Results
+
+### Emergency page bundle (production build)
+
+|                                     | JS (raw / gzip)                                                         | CSS (raw / gzip) | Framework            |
+| ----------------------------------- | ----------------------------------------------------------------------- | ---------------- | -------------------- |
+| Before (Phase 1 React route)        | 268.8 kB / 86.4 kB (react chunk 260.6 kB + route 5.0 kB + entry 3.2 kB) | 14.3 kB / 3.9 kB | React + React Router |
+| After (standalone `emergency.html`) | 5.9 kB / 2.6 kB (page 5.1 kB + modulepreload polyfill 0.8 kB)           | 3.3 kB / 1.3 kB  | none                 |
+
+≈ 46× less JavaScript on the safety-critical path.
+
+### Verification
+
+| Check                                                               | Result                                                                                                                                                                                               |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint` / `pnpm typecheck` / `pnpm build` / `pnpm format:check` | pass                                                                                                                                                                                                 |
+| API unit tests                                                      | 150 passed (21 suites; Phase 1: 86)                                                                                                                                                                  |
+| API integration tests (PostgreSQL + Redis)                          | 60 passed (8 suites; Phase 1: 26)                                                                                                                                                                    |
+| Playwright end-to-end                                               | 7/7 steps passed                                                                                                                                                                                     |
+| Docker                                                              | API + portal images built; container applied the Phase 2 migration, passed health, OTP sign-in and photo upload (sharp in the slim image); nginx served `/e/*` → `emergency.html` and proxied `/api` |
+
+### Migrations
+
+`20261003093118_phase2_customer_activation_profile`. Not yet applied to the external database
+(the build sandbox cannot reach it) — apply with `prisma migrate deploy` (see DATABASE.md).
+
+## Business decisions still open
+
+1. **SMS provider** (MSG91, Twilio, AWS SNS …, plus Indian DLT template registration). Until bound,
+   production OTP delivery fails closed with `OTP_DELIVERY_FAILED`.
+2. **Retail flow for SOLD**: with `ACTIVATION_ALLOW_IN_INVENTORY=false`, someone must mark helmets
+   SOLD before customers can activate (admin today; dealer scanning is Phase 5). Turn the allowance
+   on temporarily if retail sales are not recorded yet.
+3. **Lost/stolen public behaviour**: currently a status message only, no owner data (Phase 3).
+4. **Emergency number** shown on the public page (`VITE_EMERGENCY_NUMBER`, default 112) — per
+   market?
+5. **Recalled helmets**: emergency profile still shown (safety first); a separate recall notice
+   on the public page is not shown yet.
+
+## Deferred to Phase 3 (intentional)
+
+- Ownership transfer (codes in Redis, new-owner OTP claim, previous owner's data never carried
+  over), owner-initiated lost/stolen, admin support tools (ownership history, PIN re-issue).
+- Per-helmet emergency profile overrides (schema ready: `emergency_profiles.helmet_id`).
+- S3 storage provider implementation; photo storage is local-disk (volume) for now.
+- Email + password customer login (schema supports `users.email`/`password_hash`).
+- Server-side / edge rendering of the emergency page HTML (current page is already ~6 kB JS).
+- Scan notifications, anti-counterfeit analytics (Phase 6).

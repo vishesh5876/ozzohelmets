@@ -30,13 +30,12 @@ never used).
 | `users`                     | Customers (schema only; Phase 2)                                                                     | unique `email`, `mobile`                                                                                                                        |
 | `helmet_ownerships`         | Ownership history, never overwritten                                                                 | partial unique index: one `ACTIVE` row per helmet                                                                                               |
 
-Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
+Migrations: `20261003082113_init` (Phase 1) and `20261003093118_phase2_customer_activation_profile`
+(Phase 2). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
 partial unique ownership index and CHECK constraints.
 
 ## Planned (later phases)
 
-- **Phase 2:** `emergency_profiles` (sensitive columns stored as AES-256-GCM ciphertext text),
-  `emergency_contacts`, `emergency_visibility` (all flags default `false`), `user_refresh_tokens`.
 - **Phase 3:** `ownership_transfers` (or Redis-only codes) with audit.
 - **Phase 4:** `warranties` (`helmet_id`, `purchase_date`, `dealer_id`, `invoice_number`,
   `warranty_start_date`, `warranty_end_date`, `warranty_status`).
@@ -58,3 +57,17 @@ pnpm prisma:migrate --name <change>      # dev: create + apply a migration (pris
 pnpm prisma                              # apply committed migrations + seed
 pnpm --filter @helmet/api prisma:migrate:deploy   # CI / production
 ```
+
+The Phase 2 migration adds hand-written partial unique indexes (default profile per user, active
+contact priority), CHECK constraints (enabled profile requires a name, contact priority range,
+non-negative activation attempts). OTPs are never stored in PostgreSQL (Redis only).
+
+### Applying to an external database
+
+```bash
+DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<db>?schema=public&sslmode=require" \
+  pnpm --filter @helmet/api prisma:migrate:deploy
+```
+
+`migrate deploy` only applies committed migrations (non-destructive). Never run the dev seed
+against a shared or production database.

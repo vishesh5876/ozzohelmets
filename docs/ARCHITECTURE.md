@@ -21,6 +21,8 @@ manufacturing, inventory and support.
 │ NestJS API (modular monolith)  apps/api  :4000                         │
 │  admin-auth · admin-users · helmet-models · batches · helmets ·        │
 │  labels · exports · public-emergency · audit · dashboard · health      │
+│  customer-auth · otp · activation · customer-helmets · emergency ·     │
+│  emergency-readiness · file-storage · notifications                    │
 └──────────────┬───────────────────────────────────┬─────────────────────┘
                ▼                                   ▼
         ┌─────────────┐                     ┌─────────────┐
@@ -167,3 +169,30 @@ No internal IDs, PIN data, owner data or history is ever returned.
 - Batch generation can move to a worker process consuming a Redis queue without schema changes.
 - Public emergency reads are cacheable at the edge (Cloudflare) with short TTL + purge on change.
 - `helmet_scans` is append-only; partition by month when volume requires.
+
+## 11. Phase 2 additions
+
+### Dependency direction
+
+```
+customer-auth ─► otp ─► notifications
+activation ─► helmets (status service), customer-helmets ─► emergency-readiness
+emergency ─► helmets (status service), emergency-readiness, file-storage, public-emergency-cache
+public-emergency ─► emergency (publicView), file-storage, public-emergency-cache
+helmets (admin owner summary) ─► emergency-readiness
+```
+
+Readiness and the public cache live in their own small global modules so the graph stays acyclic.
+
+### Key decisions
+
+| #   | Decision                                                                           | Rationale                                                                                                                                  |
+| --- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 16  | **Shared `RefreshTokenRotator`** used by admin and customer token services         | One audited implementation of rotation + family reuse detection; separate tables, secrets, audiences and cookies keep the realms isolated. |
+| 17  | **OTP state only in Redis**, keys and values HMAC'd                                | No OTP persistence; neither phone numbers nor codes stored in plaintext.                                                                   |
+| 18  | **PIN verified only in the authenticated activation call**                         | Unauthenticated callers can't test PINs; `validate` is enumeration-safe.                                                                   |
+| 19  | **`ActivationPolicy` is the single eligibility rule** (SOLD; IN_INVENTORY via env) | Temporary business allowances live in one place.                                                                                           |
+| 20  | **Allow-list public sanitizer; hidden fields omitted**                             | A response never reveals that a hidden field exists.                                                                                       |
+| 21  | **Cache the filtered DTO, invalidate per owner on every change**                   | Privacy changes take effect on the next scan; raw medical data is never cached.                                                            |
+| 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                     |
+| 23  | **Photos re-encoded by `sharp`**                                                   | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                |

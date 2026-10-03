@@ -19,15 +19,35 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     // Use the pre-installed Chromium when PLAYWRIGHT_CHROMIUM_PATH is set (CI images, sandboxes).
-    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {},
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+      : {},
   },
   metadata: { ADMIN_URL, PORTAL_URL, API_URL },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: process.env.E2E_START_SERVERS
     ? [
-        { command: 'pnpm --filter @helmet/api dev', url: `${API_URL}/api/v1/health`, reuseExistingServer: true, timeout: 120_000, cwd: '..' },
-        { command: 'pnpm --filter @helmet/admin dev', url: ADMIN_URL, reuseExistingServer: true, timeout: 120_000, cwd: '..' },
-        { command: 'pnpm --filter @helmet/portal dev', url: PORTAL_URL, reuseExistingServer: true, timeout: 120_000, cwd: '..' },
+        {
+          command: 'pnpm --filter @helmet/api dev',
+          url: `${API_URL}/api/v1/health`,
+          reuseExistingServer: true,
+          timeout: 120_000,
+          cwd: '..',
+        },
+        {
+          command: 'pnpm --filter @helmet/admin dev',
+          url: ADMIN_URL,
+          reuseExistingServer: true,
+          timeout: 120_000,
+          cwd: '..',
+        },
+        {
+          command: 'pnpm --filter @helmet/portal dev',
+          url: PORTAL_URL,
+          reuseExistingServer: true,
+          timeout: 120_000,
+          cwd: '..',
+        },
       ]
     : undefined,
 });

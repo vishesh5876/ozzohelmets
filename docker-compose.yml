@@ -52,6 +52,9 @@ services:
       API_PORT: 4000
       TRUST_PROXY: '1'
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      FILE_STORAGE_LOCAL_DIR: /app/storage
+    volumes:
+      - api-storage:/app/storage
     ports:
       - '${API_PORT:-4000}:4000'
     depends_on:
@@ -85,3 +88,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  api-storage:

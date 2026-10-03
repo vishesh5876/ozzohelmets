@@ -23,11 +23,12 @@ Each change writes a `helmet_status_history` row; admin changes are also audited
 ## Transitions (actor: A = admin, S = system, O = owner)
 
 ```
-GENERATED ──A,S──► PRINTED ──A──► IN_INVENTORY ──A──► SOLD
-    │                 │  └──S──► ACTIVATED ◄──S──┘ │  └──S──► ACTIVATED
-    └─A─► DEACTIVATED │                            └──A──► IN_INVENTORY (return)
+GENERATED ──A,S──► PRINTED ──A──► IN_INVENTORY ──A──► SOLD ──S──► ACTIVATED
+    │                                │                  └──A──► IN_INVENTORY (return)
+    └─A─► DEACTIVATED                └──S──► ACTIVATED  (only while ACTIVATION_ALLOW_IN_INVENTORY=true)
 
-ACTIVATED ──S,O──► ACTIVE
+ACTIVATED ──S,O──► ACTIVE   (owner enables the emergency profile)
+ACTIVE ──S,O──► ACTIVATED   (owner disables the emergency profile)
 ACTIVATED / ACTIVE ──O,A──► LOST | STOLEN | DAMAGED
 ACTIVE ──A──► REPLACED | RECALLED | DEACTIVATED
 LOST ──O,A──► ACTIVE | STOLEN      LOST/STOLEN ──A──► REPLACED | DEACTIVATED
@@ -43,6 +44,7 @@ only `SYSTEM` can activate, owners can report lost/stolen but not deactivate/rec
 
 ## Design rules
 
+- **Eligibility** is decided only by `ActivationPolicy` (see ACTIVATION.md).
 - **Activation is system-only.** No admin can move a helmet to `ACTIVATED`; only the Phase 2
   activation flow (PIN + OTP, row-locked transaction) can, so ownership always exists.
 - **Concurrency.** Single changes lock the row (`SELECT … FOR UPDATE`) and update with
@@ -63,8 +65,9 @@ only `SYSTEM` can activate, owners can report lost/stolen but not deactivate/rec
 
 ## Flagged business decisions
 
-1. Activation is allowed from `PRINTED`, `IN_INVENTORY` and `SOLD` (`ACTIVATABLE_STATUSES`), because
-   retail sales are often not recorded. Restrict to `SOLD` if dealers will always scan sales.
-2. `ACTIVATED` → `ACTIVE` happens when the emergency profile is completed (Phase 2). Alternatively
-   both could be merged.
+1. **Decided (Phase 2):** customers activate from `SOLD`; `IN_INVENTORY` only via the temporary
+   `ACTIVATION_ALLOW_IN_INVENTORY` allowance (`ActivationPolicy`). `PRINTED → ACTIVATED` was removed.
+   Retailers must therefore move helmets to SOLD (admin today, dealer scanning in Phase 5).
+2. **Decided (Phase 2):** `ACTIVATED` = owned, PIN consumed; `ACTIVE` = owner explicitly enabled a
+   complete emergency profile. Disabling returns the helmet to `ACTIVATED`.
 3. Lost/stolen helmets: show emergency info or only a status message? (Phase 3.)

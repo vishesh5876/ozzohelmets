@@ -55,7 +55,7 @@ plaintext. Showing them only once in the HTTP response of an asynchronous, possi
 4. When the batch is marked **printed**, all escrow rows for the batch are **deleted** in the same
    transaction as the status change (audited as `batch.pin_escrow.purged`). From then on only
    the Argon2 hash exists; exports contain an empty PIN column.
-5. Phase 2 also deletes a helmet's escrow row the moment its PIN is used.
+5. Activation deletes the helmet's escrow row in the same transaction that consumes the PIN (Phase 2, implemented).
 
 **Residual risk.** Between generation and printing, someone holding both the database and
 `PIN_ESCROW_KEYS` can recover PINs. Mitigations: separate key (not the DB credentials), key in a
@@ -66,9 +66,10 @@ OTP-verified mobile number (Phase 2).
 **Lost escrow.** If PINs are needed after purge (reprint), Phase 3 adds an audited "re-issue PIN"
 action for _unactivated_ helmets: generates a new PIN, replaces the hash, escrows it again.
 
-**Online guessing.** 39.6 bits with Argon2id verification, a per-helmet attempt counter
-(`helmets.activation_attempts`, enforced in Phase 2), helmet-code/IP/mobile rate limits and OTP
-make brute force impractical.
+**Online guessing.** 39.6 bits with Argon2id verification; the PIN is only checked in the
+authenticated (OTP-verified) activation call; per-helmet progressive lockouts
+(`activation_attempts`, `activation_locked_until`), per-customer and per-IP failure budgets and
+route throttling make brute force impractical. See `ACTIVATION.md`.
 
 ## 4. Admin authentication
 
@@ -161,3 +162,37 @@ Returns only `{ state, helmet: { modelName, brand }, message }` in Phase 1. Neve
 Helmet ID, serial, batch, PIN data, owner data or history (asserted by integration tests).
 Malformed and unknown tokens return an identical 404 (no oracle). Responses are `no-store` and
 `noindex`. Phase 2 will add only the profile fields the owner explicitly made visible.
+
+## 12. Phase 2 — customer realm
+
+Details: [`CUSTOMER-AUTH.md`](./CUSTOMER-AUTH.md), [`ACTIVATION.md`](./ACTIVATION.md),
+[`EMERGENCY-PROFILE.md`](./EMERGENCY-PROFILE.md).
+
+- **Separate realms.** Admin and customer tokens use different secrets
+  (`JWT_ACCESS_SECRET` ≠ `JWT_CUSTOMER_ACCESS_SECRET`, enforced in production), audiences, refresh
+  tables and cookies (`helmet_admin_rt` path `/api/v1/admin/auth`, `helmet_customer_rt` path
+  `/api/v1/customer/auth`).
+- **Customer authorization.** `CustomerJwtGuard` + `@CurrentCustomer()`; every query is scoped by
+  the authenticated user id. No endpoint accepts a user id from the client (extra properties are
+  rejected by the global whitelist). Another customer's helmet/contact behaves exactly like a
+  missing one (404). Integration tests cover helmets, profile, contacts, visibility and sessions.
+- **OTP.** HMAC-hashed in Redis, 5-minute TTL, single use, 5 attempts (atomic), invalidated on
+  re-issue, 60 s cooldown, per-mobile/IP/global limits. The development provider (code in the
+  response) is refused in production by environment validation. Codes are never logged.
+- **Public boundary.** Only `{ state, helmet{modelName, brand[, helmetCode]}, message[, profile,
+contacts] }`; profile and contacts only when the helmet is ACTIVE/DAMAGED/RECALLED, owned, and
+  the owner's profile is enabled and complete; every field must be switched on and non-empty.
+  Never: internal ids, owner mobile/email, PIN data, ownership history, hidden fields (not even as
+  `null`). Asserted by unit tests on the sanitizer and integration/Playwright tests on responses.
+- **Uploads.** Magic-byte allow-list (JPEG/PNG/WebP), size and dimension limits, full decode and
+  re-encode (metadata incl. GPS stripped), random server-side keys with path-traversal-safe
+  validation, served only via authorised endpoints with `nosniff`.
+- **Audit (no sensitive values):** customer.created/login/logout/sessions.revoked,
+  customer.refresh.reuse_detected, helmet.activated, helmet.activation_pin.consumed,
+  helmet.activation.failed/locked, emergency_profile.updated (changed field names only) /
+  photo.updated / enabled / disabled, emergency_contacts.changed (counts only),
+  emergency_visibility.changed (flag names only).
+- **Admin visibility.** Admin helmet detail shows a masked owner mobile, ownership date and
+  profile status — never names, contacts or medical data.
+- **Emergency page.** Framework-free, renders owner text only via `textContent`; responses are
+  `no-store`/`noindex`; `Referrer-Policy: no-referrer` meta on the page.

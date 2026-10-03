@@ -50,8 +50,13 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await expect(page.getByRole('button', { name: 'Export CSV' })).toBeVisible({ timeout: 60_000 });
 
     // 4. Authorised manufacturing export (audited) yields the activation PIN.
-    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()]);
-    const csv = readFileSync((await download.path())!, 'utf8').trim().split('\r\n');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Export CSV' }).click(),
+    ]);
+    const csv = readFileSync((await download.path())!, 'utf8')
+      .trim()
+      .split('\r\n');
     const [helmetCode, , , , qrUrl, pin] = csv[1]!.split(',');
     helmet = { helmetCode: helmetCode!, qrUrl: qrUrl!, pin: pin! };
     expect(helmet.pin).toMatch(/^[23456789A-HJ-NP-Z]{8}$/);
@@ -76,7 +81,10 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await scan.goto(helmet.qrUrl);
     await expect(scan.getByRole('heading', { name: 'Helmet not activated' })).toBeVisible();
     await expect(scan.getByText('This helmet has not yet been activated.')).toBeVisible();
-    await expect(scan.getByRole('link', { name: /Call emergency/ })).toHaveAttribute('href', /^tel:/);
+    await expect(scan.getByRole('link', { name: /Call emergency/ })).toHaveAttribute(
+      'href',
+      /^tel:/,
+    );
     // The emergency page is the lightweight standalone entry, not the React app.
     expect(await scan.evaluate(() => document.querySelector('#root'))).toBeNull();
     await scan.context().close();
@@ -123,14 +131,17 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await owner.getByRole('button', { name: 'Continue' }).click();
 
     await expect(owner.getByRole('heading', { name: 'Choose public information' })).toBeVisible();
-    for (const key of ['showName', 'showBloodGroup', 'showAllergies', 'showEmergencyContacts']) await owner.getByTestId(`vis-${key}`).check({ force: true });
+    for (const key of ['showName', 'showBloodGroup', 'showAllergies', 'showEmergencyContacts'])
+      await owner.getByTestId(`vis-${key}`).check({ force: true });
     await owner.getByRole('button', { name: 'Save and continue' }).click();
 
     await expect(owner.getByTestId('public-preview')).toContainText(OWNER);
     await expect(owner.getByTestId('public-preview')).not.toContainText('Salbutamol');
     await owner.getByRole('button', { name: 'Looks good' }).click();
     await owner.getByRole('button', { name: 'Turn on emergency profile' }).click();
-    await expect(owner.getByRole('heading', { name: 'Your helmet emergency profile is active.' })).toBeVisible();
+    await expect(
+      owner.getByRole('heading', { name: 'Your helmet emergency profile is active.' }),
+    ).toBeVisible();
 
     await owner.getByRole('link', { name: 'Go to dashboard' }).click();
     await expect(owner.getByTestId('helmet-card')).toContainText('Profile active');
@@ -144,8 +155,13 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await expect(scan.getByText('O+', { exact: true })).toBeVisible();
     await expect(scan.getByText('Penicillin')).toBeVisible();
     await expect(scan.getByText('Ravi Verma')).toBeVisible();
-    await expect(scan.getByRole('link', { name: 'Call Ravi' })).toHaveAttribute('href', 'tel:+919812345678');
-    await expect(scan.getByText('Emergency information was provided by the helmet owner.')).toBeVisible();
+    await expect(scan.getByRole('link', { name: 'Call Ravi' })).toHaveAttribute(
+      'href',
+      'tel:+919812345678',
+    );
+    await expect(
+      scan.getByText('Emergency information was provided by the helmet owner.'),
+    ).toBeVisible();
     const body = await scan.locator('body').innerText();
     expect(body).not.toContain('Salbutamol');
     expect(body).not.toContain('Inhaler');

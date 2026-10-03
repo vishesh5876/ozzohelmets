@@ -8,6 +8,7 @@ scope until Phase 7.
 | Image          | Dockerfile                                                | Notes                                                                                                                                                                                                                                  |
 | -------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | API            | `apps/api/Dockerfile`                                     | Multi-stage; `pnpm deploy --prod` tree on `node:22-bookworm-slim`, runs as `node`. On start: `prisma migrate deploy && node dist/main.js`. Healthcheck `GET /api/v1/health`. Run with an init process (`init: true`).                  |
+| (API storage)  | volume at `/app/storage`                                  | Local profile-photo storage (`FILE_STORAGE_LOCAL_DIR`). Use a persistent volume, or implement the S3 provider for multi-instance deployments.                                                                                          |
 | Admin / Portal | `docker/spa.Dockerfile` (`--build-arg APP=admin\|portal`) | Vite build served by nginx; `/api/` proxied to `API_UPSTREAM` (default `http://api:4000`); immutable caching for hashed assets, `no-cache` for `index.html`; security headers. Portal accepts `--build-arg VITE_EMERGENCY_NUMBER=112`. |
 
 Build context is always the repo root:
@@ -35,6 +36,10 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 - [ ] Real secrets from a secret manager (`node scripts/generate-secrets.mjs` for initial values);
       `PIN_ESCROW_KEYS` and `DATA_ENCRYPTION_KEYS` stored separately from DB credentials.
 - [ ] `NODE_ENV=production`, `COOKIE_SECURE=true`, `SWAGGER_ENABLED=false` (or edge-protected).
+- [ ] `OTP_PROVIDER=sms` with a real SMS provider bound in `NotificationsModule` (the placeholder
+      fails closed). `JWT_CUSTOMER_ACCESS_SECRET` and `OTP_HASH_SECRET` set and distinct.
+- [ ] Persistent photo storage (volume or S3 provider) and backups for it.
+- [ ] Decide `ACTIVATION_ALLOW_IN_INVENTORY` (default false: only SOLD helmets can be activated).
 - [ ] `CORS_ORIGINS` = exact admin/portal origins; `PUBLIC_EMERGENCY_BASE_URL` = final QR domain
       (**printed into labels — choose it once**; changing it later breaks printed QR codes unless
       the old domain redirects).
@@ -47,7 +52,8 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 - [ ] Log shipping (JSON stdout) and alerting on 5xx rate, `admin.refresh.reuse_detected`,
       `admin.login.locked` and batch generation failures.
 - [ ] Cloudflare/CDN: cache static assets; do **not** cache `/api/v1/public/emergency/*`
-      responses beyond a few seconds (they are `no-store` today).
+      responses (they are `no-store`; privacy changes must apply immediately). `/e/*` serves
+      `emergency.html` (`no-cache`).
 
 ## Scaling notes
 

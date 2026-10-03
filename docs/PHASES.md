@@ -14,7 +14,7 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 **Milestone:** login → create model → create batch → generate N helmets → view/search → export CSV
 → open QR URL → "This helmet has not yet been activated."
 
-## Phase 2 — Customer identity, activation & emergency profile
+## Phase 2 — Customer identity, activation & emergency profile _(complete — see [`PHASE-2.md`](./PHASE-2.md))_
 
 - Customer auth: mobile + OTP (Redis-stored hashed OTP, attempt counters, resend cooldown, SMS
   provider abstraction with a console provider for dev), optional email + password.

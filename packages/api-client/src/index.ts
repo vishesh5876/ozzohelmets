@@ -110,7 +110,15 @@ export function createApiClient(baseUrl: string): ApiClient {
       const res = await send(path, options);
       if (!res.ok) throw await toError(res);
       const body = (await res.json()) as ApiSuccess<T[]>;
-      return { items: body.data, meta: body.meta ?? { page: 1, pageSize: body.data.length, total: body.data.length, totalPages: 1 } };
+      return {
+        items: body.data,
+        meta: body.meta ?? {
+          page: 1,
+          pageSize: body.data.length,
+          total: body.data.length,
+          totalPages: 1,
+        },
+      };
     },
     blob: async (path, options = {}) => {
       const res = await send(path, { ...options, headers: { Accept: '*/*', ...options.headers } });
@@ -135,10 +143,17 @@ export function errorMessage(error: unknown): string {
  * Single-flight cookie refresh: concurrent 401s share one request, because refresh tokens
  * rotate on every use and parallel refreshes would trip reuse detection.
  */
-export function createRefresher<T extends { accessToken: string }>(url: string, onResult: (session: T | null) => void): () => Promise<string | null> {
+export function createRefresher<T extends { accessToken: string }>(
+  url: string,
+  onResult: (session: T | null) => void,
+): () => Promise<string | null> {
   let inFlight: Promise<string | null> | null = null;
   return () => {
-    inFlight ??= fetch(url, { method: 'POST', credentials: 'include', headers: { 'X-Requested-With': 'fetch', Accept: 'application/json' } })
+    inFlight ??= fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Requested-With': 'fetch', Accept: 'application/json' },
+    })
       .then(async (res) => {
         if (!res.ok) {
           onResult(null);

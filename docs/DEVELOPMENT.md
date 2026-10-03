@@ -17,6 +17,11 @@ pnpm dev                      # API :4000, admin :3000, portal :3001
 
 - Admin: http://localhost:3000 — sign in with `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`.
 - Portal: http://localhost:3001 — open a `qrUrl` from the CSV export or a helmet detail page.
+  To activate in development: export the batch CSV (PIN column), mark the batch printed, move the
+  helmet to SOLD on its admin page, open the QR URL → Activate. With `OTP_PROVIDER=development`
+  the OTP is shown on screen (and returned as `devOtp`).
+- The emergency page `/e/:token` is a separate lightweight entry (`apps/portal/emergency.html`,
+  `src/emergency/main.ts`); the Vite dev server rewrites `/e/*` to it.
 - Swagger: http://localhost:4000/api/docs
 
 The Vite dev servers proxy `/api` to `VITE_API_PROXY_TARGET`, so the browser talks to one origin
@@ -62,6 +67,25 @@ The Vite dev servers proxy `/api` to `VITE_API_PROXY_TARGET`, so the browser tal
   whole manufacturing flow (generate ×2 concurrently, search, labels, CSV with PIN↔hash check,
   invalid transitions, mark printed/escrow purge), public endpoint privacy, scan logging, cache
   invalidation, rate limiting.
+
+Phase 2 suites: `customer-auth` (OTP, rotation, reuse, sessions, realm separation), `activation`
+(validate, atomic activation, PIN replay, **concurrent activation**, lockouts, budgets,
+ineligible statuses), `emergency-profile` (encryption at rest, contacts, visibility, enable →
+ACTIVE, public boundary, cache invalidation, photo, admin masking, disable, scan dedup) and
+`customer-authorization` (customer A vs B on every resource).
+
+### Browser end-to-end (Playwright)
+
+`e2e/tests/phase2-activation-emergency.spec.ts` drives the whole Phase 2 journey: admin creates a
+model and batch → exports the CSV for the PIN → marks printed → moves the helmet to SOLD →
+anonymous mobile scan shows "not activated" → activation with PIN + development OTP → onboarding
+(details, contact, visibility, review, enable) → anonymous scan shows only the approved fields →
+owner hides a field → it disappears → owner disables the profile → nothing personal remains.
+
+```bash
+pnpm dev                     # in another terminal (OTP_PROVIDER=development)
+pnpm test:e2e:browser
+```
 
 ## Creating a migration
 
