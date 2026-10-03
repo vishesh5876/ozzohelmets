@@ -6,6 +6,8 @@ import {
   type HelmetDetailDto,
   type HelmetListItemDto,
   type HelmetStatus,
+  type HelmetOwnerSummaryDto,
+  maskPhone,
   normalizeHelmetCode,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
@@ -17,7 +19,9 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import type { AuthenticatedAdmin } from '../admin-auth/admin-auth.types';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
-import { PublicEmergencyCacheService } from '../public-emergency/public-emergency-cache.service';
+import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
+import { EmergencyReadinessService } from '../emergency-readiness/emergency-readiness.service';
+import { helmetProfileStatus, profileStatus } from '../emergency-readiness/readiness';
 import { HelmetStatusService } from './domain/helmet-status.service';
 import type { HelmetQueryDto } from './dto/helmet.dto';
 
@@ -41,6 +45,7 @@ export class HelmetsService {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     private readonly publicCache: PublicEmergencyCacheService,
+    private readonly readiness: EmergencyReadinessService,
   ) {}
 
   async list(query: HelmetQueryDto): Promise<PaginatedResult<HelmetListItemDto>> {
@@ -97,8 +102,7 @@ export class HelmetsService {
 
     return {
       ...toListItem(helmet),
-      // Populated by the Phase 2 ownership lookup.
-      owner: null,
+      owner: await this.ownerSummary(id, helmet.status),
       qrUrl: this.config.publicHelmetUrl(helmet.publicToken),
       activationPinUsed: helmet.activationPinUsed,
       pinEscrowed: helmet.activationSecret !== null,
@@ -156,6 +160,27 @@ export class HelmetsService {
     });
     await this.publicCache.invalidate(publicToken);
     return this.get(id);
+  }
+
+  /**
+   * Operational owner info for support: masked mobile, since-when and the profile status.
+   * Admins never see decrypted medical data, names or contacts here.
+   */
+  private async ownerSummary(
+    helmetId: string,
+    status: HelmetStatus,
+  ): Promise<HelmetOwnerSummaryDto | null> {
+    const ownership = await this.prisma.helmetOwnership.findFirst({
+      where: { helmetId, status: 'ACTIVE' },
+      select: { activatedAt: true, user: { select: { id: true, mobile: true } } },
+    });
+    if (!ownership) return null;
+    const ownerStatus = profileStatus(await this.readiness.facts(ownership.user.id));
+    return {
+      maskedMobile: ownership.user.mobile ? maskPhone(ownership.user.mobile) : null,
+      since: ownership.activatedAt.toISOString(),
+      emergencyProfileStatus: helmetProfileStatus(ownerStatus, status),
+    };
   }
 
   private searchFilter(search: string | undefined): Prisma.HelmetWhereInput {

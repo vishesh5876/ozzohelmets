@@ -14,6 +14,9 @@ describe('Prisma ↔ @helmet/types enum sync', () => {
     ['OwnershipStatus', $Enums.OwnershipStatus, Shared.OwnershipStatus],
     ['ActorType', $Enums.ActorType, Shared.ActorType],
     ['ScanType', $Enums.ScanType, Shared.ScanType],
+    ['BloodGroup', $Enums.BloodGroup, Shared.BloodGroup],
+    ['Gender', $Enums.Gender, Shared.Gender],
+    ['CustomerStatus (users.status)', $Enums.UserStatus, Shared.CustomerStatus],
   ];
 
   it.each(pairs)('%s matches', (_name, prisma, shared) => {

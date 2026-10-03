@@ -20,8 +20,13 @@ export interface TransitionInput {
   to: HelmetStatus;
   actor: StatusActor;
   reason?: string | null;
-  /** Extra columns to set atomically with the status (e.g. activatedAt). */
-  extra?: { activatedAt?: Date };
+  /** Extra columns to set atomically with the status (activation bookkeeping). */
+  extra?: {
+    activatedAt?: Date;
+    activationPinUsed?: boolean;
+    activationAttempts?: number;
+    activationLockedUntil?: Date | null;
+  };
 }
 
 /**

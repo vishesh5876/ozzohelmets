@@ -48,7 +48,6 @@ describe('Public emergency endpoint (e2e)', () => {
         state: 'NOT_ACTIVATED',
         helmet: { modelName: 'Urban Jet', brand: 'Ozzo' },
         message: 'This helmet has not yet been activated.',
-        profile: null,
       },
     });
     const raw = JSON.stringify(res.body);

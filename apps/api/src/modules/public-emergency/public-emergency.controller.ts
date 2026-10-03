@@ -1,8 +1,9 @@
-import { Controller, Get, Header, Param, Req } from '@nestjs/common';
+import { Controller, Get, Header, Param, Req, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import type { PublicEmergencyDto } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
+import { RawResponse } from '../../common/http/raw-response.decorator';
 import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import { getCountryCode } from '../../common/utils/client-ip';
 import { ReqMeta, type RequestMeta } from '../../common/utils/request-context';
@@ -34,5 +35,16 @@ export class PublicEmergencyController {
       userAgent: meta.userAgent,
       countryCode: getCountryCode(req, this.config.get('TRUST_CLOUDFLARE')),
     });
+  }
+
+  @Get(':token/photo')
+  @RawResponse()
+  @ApiOperation({ summary: 'Owner photo, only while the owner has made it publicly visible.' })
+  async photo(@Param('token') token: string, @Res() res: Response): Promise<void> {
+    const file = await this.service.photo(token);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type(file.contentType).send(file.buffer);
   }
 }
