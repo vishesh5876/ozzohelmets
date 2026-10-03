@@ -70,7 +70,23 @@ anti-counterfeit scoring, analytics dashboards, recall campaigns, AWS changes.
 
 ## Results
 
-_Filled in at the end of the phase — see below._
+### Verification
+
+| Check                                                               | Result                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm format:check` / `pnpm lint` / `pnpm typecheck` / `pnpm build` | pass                                                                                                                                                                                                                                                                                                                                   |
+| API unit tests                                                      | 185 passed (26 suites; Phase 3: 163)                                                                                                                                                                                                                                                                                                   |
+| API integration tests (PostgreSQL + Redis)                          | 128 passed (14 suites; Phase 3: 102) — incl. concurrent warranty registration, transfer privacy, replacement policy, Customer ID login/recovery/lockouts, verification leaks, report rate limit                                                                                                                                        |
+| Playwright                                                          | 26/26 (Phase 2: 10, Phase 3: 8 — step 25 updated for the DAMAGED rule, Phase 4: 8 tests covering all 22 steps + zero-helmet Customer ID sign-in)                                                                                                                                                                                       |
+| Docker                                                              | API, portal and admin images built; API container applied all 6 migrations on an empty database, passed health and served `/public/verify`, product reports, admin guards and Customer ID login; portal nginx serves `/verify/*` and `/e/*` from `emergency.html` and `/app/*` from the SPA; production mode still refuses dev secrets |
+| Fresh migrations (Phase 1 → 4)                                      | `prisma migrate deploy` on an empty database: 6 applied, `migrate status` up to date, `migrate diff` vs schema: no drift                                                                                                                                                                                                               |
+| Existing data (Phase 3 copy → 4)                                    | Copy of the Phase 3 dev database (25 users, 26 active ownerships): both Phase 4 migrations applied; 25/25 Customer IDs backfilled, all checksum-valid and unique, none NULL; ownerships, emergency settings (20, 12 enabled) and profiles (24) unchanged; models got `warranty_enabled = true`, 24 months; no drift                    |
+
+### Migrations
+
+`20261003173121_phase4_customer_id` and `20261003173435_phase4_warranty_authenticity`. Earlier
+migrations untouched. Not yet applied to the external database — apply with
+`prisma migrate deploy` (the backfill runs inside the migration).
 
 ## Business decisions still open
 
