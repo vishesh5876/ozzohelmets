@@ -5,7 +5,7 @@ import {
   formatHelmetCode,
   HELMET_CODE_ALPHABET,
   HELMET_CODE_RANDOM_LENGTH,
-  luhnModNCheckSymbol,
+  helmetCodeCheckSymbol,
   PUBLIC_TOKEN_LENGTH,
 } from '@helmet/types';
 import { secureRandomString } from './secure-random';
@@ -17,10 +17,10 @@ import { secureRandomString } from './secure-random';
  * collision), these functions only make collisions astronomically unlikely.
  */
 
-/** `HM-XXXX-XXXY`: 7 random symbols (~34.7 bits) + Luhn mod 31 check symbol. */
+/** `HM-XXXX-XXXY`: 7 random symbols (~34.7 bits) + mod-31 weighted check symbol. */
 export function generateHelmetCode(): string {
   const payload = secureRandomString(HELMET_CODE_RANDOM_LENGTH, HELMET_CODE_ALPHABET);
-  return formatHelmetCode(payload + luhnModNCheckSymbol(payload));
+  return formatHelmetCode(payload + helmetCodeCheckSymbol(payload));
 }
 
 /** 22 base62 symbols ≈ 131 bits — the only value encoded in the QR URL. */

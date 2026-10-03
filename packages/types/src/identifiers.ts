@@ -19,24 +19,30 @@ export const BASE62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl
 export const PUBLIC_TOKEN_LENGTH = 22;
 export const PUBLIC_TOKEN_REGEX = /^[0-9A-Za-z]{22}$/;
 
-/** Luhn mod N check symbol over the given alphabet. */
-export function luhnModNCheckSymbol(
-  payload: string,
-  alphabet: string = HELMET_CODE_ALPHABET,
-): string {
-  const n = alphabet.length;
-  let factor = 2;
+/**
+ * Check symbol for helmet codes: weighted sum modulo 31 (prime), weights 1..8 over the
+ * 7 payload symbols plus the check symbol, chosen so the full weighted sum is ≡ 0 (mod 31).
+ * Because 31 is prime and the weights are distinct and non-zero, this detects every
+ * single-symbol substitution and every adjacent transposition (including with the check
+ * symbol). (Luhn mod N was rejected: its doubling step is not a bijection for odd N.)
+ */
+export function helmetCodeCheckSymbol(payload: string): string {
+  const n = HELMET_CODE_ALPHABET.length; // 31
   let sum = 0;
-  for (let i = payload.length - 1; i >= 0; i--) {
-    const codePoint = alphabet.indexOf(payload.charAt(i));
-    if (codePoint < 0) throw new Error('Invalid symbol in payload');
-    let addend = factor * codePoint;
-    factor = factor === 2 ? 1 : 2;
-    addend = Math.floor(addend / n) + (addend % n);
-    sum += addend;
+  for (let i = 0; i < payload.length; i++) {
+    const value = HELMET_CODE_ALPHABET.indexOf(payload.charAt(i));
+    if (value < 0) throw new Error('Invalid symbol in payload');
+    sum = (sum + (i + 1) * value) % n;
   }
-  const remainder = sum % n;
-  return alphabet.charAt((n - remainder) % n);
+  const checkWeight = payload.length + 1;
+  // Solve checkWeight * c ≡ -sum (mod n) using the modular inverse of checkWeight.
+  const inverse = modInverse(checkWeight, n);
+  return HELMET_CODE_ALPHABET.charAt((((n - sum) % n) * inverse) % n);
+}
+
+function modInverse(a: number, m: number): number {
+  for (let x = 1; x < m; x++) if ((a * x) % m === 1) return x;
+  throw new Error('No modular inverse');
 }
 
 /** Formats 8 raw symbols as `HM-XXXX-XXXX`. */
@@ -64,7 +70,7 @@ export function isValidHelmetCode(code: string): boolean {
   if (!HELMET_CODE_REGEX.test(code)) return false;
   const symbols = code.slice(3).replace('-', '');
   const payload = symbols.slice(0, HELMET_CODE_RANDOM_LENGTH);
-  return luhnModNCheckSymbol(payload) === symbols.charAt(HELMET_CODE_RANDOM_LENGTH);
+  return helmetCodeCheckSymbol(payload) === symbols.charAt(HELMET_CODE_RANDOM_LENGTH);
 }
 
 export function isValidPublicToken(token: string): boolean {

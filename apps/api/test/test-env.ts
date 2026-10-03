@@ -1,0 +1,33 @@
+/**
+ * Deterministic environment for integration tests. Uses a dedicated database and Redis DB so
+ * tests never touch development data. Override with TEST_DATABASE_URL / TEST_REDIS_URL.
+ */
+const key = (seed: string) => Buffer.alloc(32, seed).toString('base64');
+
+export const TEST_ENV: Record<string, string> = {
+  NODE_ENV: 'test',
+  LOG_LEVEL: 'silent',
+  DATABASE_URL:
+    process.env.TEST_DATABASE_URL ??
+    'postgresql://helmet:helmet@localhost:5432/helmet_platform_test?schema=public',
+  REDIS_URL: process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/15',
+  REDIS_KEY_PREFIX: 'helmet-test:',
+  CORS_ORIGINS: 'http://localhost:3000',
+  PUBLIC_EMERGENCY_BASE_URL: 'https://safe.example.test',
+  SWAGGER_ENABLED: 'false',
+  JWT_ACCESS_SECRET: 'test-jwt-secret-0123456789abcdefghijklmnop',
+  JWT_ACCESS_TTL_SECONDS: '900',
+  COOKIE_SECURE: 'false',
+  ADMIN_LOGIN_MAX_ATTEMPTS: '3',
+  PIN_HASH_PEPPER: 'test-pin-pepper-0123456789abcdefghijklmnop',
+  PIN_ESCROW_KEYS: `v1:${key('p')}`,
+  DATA_ENCRYPTION_KEYS: `v1:${key('d')}`,
+  IP_HASH_SECRET: 'test-ip-hash-secret-0123456789abcdefghijk',
+  PIN_ARGON2_MEMORY_KIB: '8192',
+  PIN_ARGON2_TIME_COST: '1',
+  BATCH_MAX_QUANTITY: '1000',
+  BATCH_GENERATION_CHUNK_SIZE: '40',
+  THROTTLE_DEFAULT_LIMIT: '10000',
+  THROTTLE_AUTH_LIMIT: '1000',
+  THROTTLE_PUBLIC_LIMIT: '25',
+};
