@@ -7,8 +7,10 @@ const ADMIN_PASSWORD = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'ChangeMe-Dev-On
 
 const run = Date.now().toString(36).toUpperCase();
 const SKU = `E2E-${run}`;
-const MOBILE = `+919${String(Math.floor(Math.random() * 1e9)).padStart(9, '0')}`;
 const OWNER = 'Asha Verma';
+const PASSWORD = 'river stones at dawn';
+const NEW_PASSWORD = 'quiet lanterns over hills';
+const RECOVERY_CODE = /^RK-[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}$/;
 
 interface ManufacturedHelmet {
   helmetCode: string;
@@ -21,9 +23,20 @@ async function anonymousMobilePage(browser: Browser): Promise<Page> {
   return context.newPage();
 }
 
-test.describe.serial('Phase 2: activation → emergency profile → public QR page', () => {
+test.describe
+  .serial('Phase 2: PIN activation → password account → emergency profile → recovery', () => {
   let helmet: ManufacturedHelmet;
   let owner: Page;
+  let recoveryCode: string;
+
+  const portal = (path: string) => new URL(path, helmet.qrUrl).toString();
+
+  async function signIn(page: Page, password: string) {
+    await page.goto(portal('/login'));
+    await page.fill('#login-helmet', helmet.helmetCode.toLowerCase());
+    await page.fill('#login-password', password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  }
 
   test('admin manufactures a helmet and moves it to SOLD', async ({ page }) => {
     await page.goto(`${ADMIN_URL}/login`);
@@ -90,20 +103,35 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await scan.context().close();
   });
 
-  test('customer activates with PIN + OTP', async ({ browser }) => {
+  test('customer activates with the PIN and creates a password', async ({ browser }) => {
     owner = await anonymousMobilePage(browser);
     await owner.goto(helmet.qrUrl);
     await owner.getByRole('link', { name: 'Activate helmet' }).click();
-    await expect(owner.getByText(helmet.helmetCode)).toBeVisible();
+    await expect(owner.getByText('Helmet identified from its QR code')).toBeVisible();
 
+    // PIN = proof of possession (preliminary check, nothing consumed yet).
     await owner.fill('#pin', helmet.pin.toLowerCase());
     await owner.getByRole('button', { name: 'Continue' }).click();
-    await owner.fill('#mobile', MOBILE);
-    await owner.getByRole('button', { name: 'Send code' }).click();
-    const devOtp = (await owner.getByTestId('dev-otp').locator('strong').innerText()).trim();
-    await owner.fill('#otp', devOtp);
-    await owner.getByRole('button', { name: 'Verify and activate' }).click();
+    await expect(owner.getByText(/PIN accepted/)).toBeVisible();
+    await expect(owner.getByText(helmet.helmetCode)).toBeVisible();
+
+    // Password + confirmation → atomic activation.
+    await owner.fill('#reg-new', PASSWORD);
+    await owner.fill('#reg-confirm', PASSWORD);
+    await owner.getByRole('button', { name: 'Activate helmet' }).click();
+
+    // Recovery code shown once; must be acknowledged before continuing.
+    await expect(
+      owner.getByText('Save this recovery code. It can be used if you forget your password.'),
+    ).toBeVisible();
+    recoveryCode = (await owner.getByTestId('recovery-code').innerText()).trim();
+    expect(recoveryCode).toMatch(RECOVERY_CODE);
+    const cont = owner.getByRole('button', { name: 'Continue' });
+    await expect(cont).toBeDisabled();
+    await owner.getByTestId('recovery-saved').check();
+    await cont.click();
     await expect(owner.getByText(`${helmet.helmetCode} is yours.`)).toBeVisible();
+    await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
 
     // The scan page now reports a registered helmet without a shared profile.
     const scan = await anonymousMobilePage(browser);
@@ -147,6 +175,17 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await expect(owner.getByTestId('helmet-card')).toContainText('Profile active');
   });
 
+  test('owner signs out and signs back in with Helmet ID + password', async () => {
+    await owner.goto(portal('/app/account'));
+    await owner.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await owner.goto(portal('/app'));
+    await expect(owner.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+
+    await signIn(owner, PASSWORD);
+    await expect(owner.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
+    await expect(owner.getByTestId('helmet-card')).toContainText('Profile active');
+  });
+
   test('anonymous scan shows only the approved information', async ({ browser }) => {
     const scan = await anonymousMobilePage(browser);
     await scan.goto(helmet.qrUrl);
@@ -159,18 +198,21 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
       'href',
       'tel:+919812345678',
     );
+    await expect(scan.getByRole('heading', { name: 'Emergency Contact' })).toBeVisible();
     await expect(
-      scan.getByText('Emergency information was provided by the helmet owner.'),
+      scan.getByText(
+        'Emergency information and contacts were provided by the helmet owner and are not verified.',
+      ),
     ).toBeVisible();
     const body = await scan.locator('body').innerText();
     expect(body).not.toContain('Salbutamol');
     expect(body).not.toContain('Inhaler');
-    expect(body).not.toContain(MOBILE);
+    expect(body).not.toContain(helmet.pin);
     await scan.context().close();
   });
 
   test('owner hides a field and the public page updates', async ({ browser }) => {
-    await owner.goto(new URL('/app/privacy', helmet.qrUrl).toString());
+    await owner.goto(portal('/app/privacy'));
     await owner.getByTestId('vis-showAllergies').uncheck({ force: true });
     await owner.getByRole('button', { name: 'Save privacy choices' }).click();
     await expect(owner.getByTestId('public-preview')).not.toContainText('Penicillin');
@@ -182,7 +224,51 @@ test.describe.serial('Phase 2: activation → emergency profile → public QR pa
     await scan.context().close();
   });
 
+  test('forgotten password: recover with Helmet ID + recovery code', async ({ browser }) => {
+    const device = await anonymousMobilePage(browser);
+    await device.goto(portal('/login'));
+    await device.getByRole('link', { name: 'Forgot password?' }).click();
+    await device.fill('#rec-helmet', helmet.helmetCode);
+    await device.fill('#rec-code', recoveryCode.toLowerCase().replaceAll('-', ' '));
+    await device.getByRole('button', { name: 'Continue' }).click();
+
+    await device.fill('#reset-new', NEW_PASSWORD);
+    await device.fill('#reset-confirm', NEW_PASSWORD);
+    await device.getByRole('button', { name: 'Set new password' }).click();
+
+    // A new recovery code replaces the old one, shown once.
+    await expect(device.getByRole('heading', { name: 'Password changed' })).toBeVisible();
+    const newCode = (await device.getByTestId('recovery-code').innerText()).trim();
+    expect(newCode).toMatch(RECOVERY_CODE);
+    expect(newCode).not.toBe(recoveryCode);
+    await device.getByTestId('recovery-saved').check();
+    await device.getByRole('button', { name: 'Go to my account' }).click();
+    await expect(device.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
+    await device.context().close();
+
+    // The reset signed out every other session, including the owner's page.
+    await owner.goto(portal('/app'));
+    await expect(owner.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  });
+
+  test('old password fails, new password works, old recovery code is dead', async ({ browser }) => {
+    await signIn(owner, PASSWORD);
+    await expect(owner.getByText('The Helmet ID or password is incorrect.')).toBeVisible();
+
+    await signIn(owner, NEW_PASSWORD);
+    await expect(owner.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
+
+    const device = await anonymousMobilePage(browser);
+    await device.goto(portal('/recover'));
+    await device.fill('#rec-helmet', helmet.helmetCode);
+    await device.fill('#rec-code', recoveryCode);
+    await device.getByRole('button', { name: 'Continue' }).click();
+    await expect(device.getByText('The Helmet ID or recovery code is incorrect.')).toBeVisible();
+    await device.context().close();
+  });
+
   test('owner disables the profile and public information disappears', async ({ browser }) => {
+    await owner.goto(portal('/app/privacy'));
     await owner.getByRole('button', { name: 'Turn off emergency profile' }).click();
     await expect(owner.getByRole('button', { name: 'Turn on emergency profile' })).toBeVisible();
 

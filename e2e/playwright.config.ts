@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Runs against locally started apps (`pnpm dev`, with PostgreSQL + Redis up and OTP_PROVIDER=development).
+ * Runs against locally started apps (`pnpm dev`, with PostgreSQL + Redis up).
  * Set E2E_START_SERVERS=1 to let Playwright start them. URLs are overridable for other environments.
  */
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://localhost:3000';
