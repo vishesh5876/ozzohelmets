@@ -119,7 +119,7 @@ export function HelmetDetailPage() {
                   label="Owner"
                   value={
                     helmet.owner
-                      ? `${helmet.owner.maskedMobile ?? 'Customer'} · since ${formatDateTime(helmet.owner.since)}`
+                      ? `Customer${helmet.owner.maskedMobile ? ` · ${helmet.owner.maskedMobile} (unverified)` : ''} · since ${formatDateTime(helmet.owner.since)}`
                       : 'No owner'
                   }
                 />

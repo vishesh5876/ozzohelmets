@@ -20,7 +20,7 @@ export function AppLayout() {
           <NavLink to="/app" className="text-lg font-bold">
             Helmet ID
           </NavLink>
-          <span className="truncate text-sm text-body">{customer?.name ?? customer?.mobile}</span>
+          <span className="truncate text-sm text-body">{customer?.name ?? 'My account'}</span>
         </div>
         <nav className="mx-auto max-w-5xl overflow-x-auto px-4 pb-3 sm:px-6" aria-label="Account">
           <ul className="flex gap-2">

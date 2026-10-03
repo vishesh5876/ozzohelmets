@@ -12,6 +12,7 @@ const ComingSoonPage = lazy(() =>
   import('./pages/ComingSoonPage').then((m) => ({ default: m.ComingSoonPage })),
 );
 const LoginPage = page(() => import('./features/auth/LoginPage'), 'LoginPage');
+const RecoverPage = page(() => import('./features/auth/RecoverPage'), 'RecoverPage');
 const ActivatePage = page(() => import('./features/activation/ActivatePage'), 'ActivatePage');
 const DashboardPage = page(() => import('./features/dashboard/DashboardPage'), 'DashboardPage');
 const HelmetsPage = page(() => import('./features/helmets/HelmetsPage'), 'HelmetsPage');
@@ -46,6 +47,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/recover" element={<RecoverPage />} />
         <Route path="/activate" element={<ActivatePage />} />
         <Route
           path="/app"

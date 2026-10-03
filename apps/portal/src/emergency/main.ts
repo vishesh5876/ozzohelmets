@@ -163,7 +163,7 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
   return h(
     'section',
     { class: 'card strong' },
-    h('h3', {}, 'Emergency contacts'),
+    h('h3', {}, 'Emergency Contact'),
     ...contacts.map((c, i) =>
       h(
         'div',

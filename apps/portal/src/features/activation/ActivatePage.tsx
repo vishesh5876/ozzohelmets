@@ -2,10 +2,11 @@ import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
-import { ApiError } from '@helmet/api-client';
 import {
-  type ActivationResultDto,
+  type ActivationAddHelmetResponse,
+  type ActivationRegisterResponse,
   type ActivationValidateResponse,
+  type CustomerHelmetDto,
   isValidHelmetCode,
   normalizeHelmetCode,
 } from '@helmet/types';
@@ -15,62 +16,82 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
-import { PhoneOtpForm } from '../auth/PhoneOtpForm';
+import { PasswordFields } from '../auth/PasswordFields';
+import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
+import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
 
 type Target = { publicToken: string } | { helmetCode: string };
-type Step = 'identify' | 'pin' | 'verify' | 'done';
+type Step = 'identify' | 'pin' | 'password' | 'recovery' | 'done';
 
 /**
- * Activation: QR scan (token from /e/:token → ?t=) or manual Helmet ID → PIN → mobile OTP →
- * atomic activation. The PIN stays in memory only and is checked solely by the authenticated
- * completion call.
+ * Activation with the concealed one-time PIN as proof of possession:
+ *  QR (?t=token) or manual Helmet ID → PIN (validated) →
+ *    new customer: create password → account + ownership → recovery code shown once
+ *    signed-in customer: helmet added to the existing account
+ * The PIN and password live only in component state.
  */
 export function ActivatePage() {
   const [params] = useSearchParams();
   const token = params.get('t');
-  const { status, signIn } = useCustomerAuth();
+  const { status, signIn, restored } = useCustomerAuth();
   const navigate = useNavigate();
+  const signedIn = status === 'authenticated';
 
   const [target, setTarget] = useState<Target | null>(token ? { publicToken: token } : null);
   const [helmet, setHelmet] = useState<ActivationValidateResponse['helmet'] | null>(null);
-  const [step, setStep] = useState<Step>('identify');
-  const [pin, setPin] = useState('');
+  const [step, setStep] = useState<Step>(token ? 'pin' : 'identify');
   const [manualCode, setManualCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
-  const [result, setResult] = useState<ActivationResultDto | null>(null);
+  const [pin, setPin] = useState('');
+  const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
+  const [name, setName] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [activated, setActivated] = useState<CustomerHelmetDto | null>(null);
 
   const validate = useMutation({
-    mutationFn: (t: Target) =>
-      api.post<ActivationValidateResponse>('/customer/activation/validate', t),
+    mutationFn: () =>
+      api.post<ActivationValidateResponse>('/customer/activation/validate', { ...target, pin }),
     onSuccess: (res) => {
       setHelmet(res.helmet);
-      setStep('pin');
+      if (signedIn) addHelmet.mutate();
+      else setStep('password');
     },
   });
-  const complete = useMutation({
-    mutationFn: () =>
-      api.post<ActivationResultDto>('/customer/activation/complete', { ...target, pin }),
+  const register = useMutation({
+    mutationFn: async () => {
+      await restored();
+      return api.post<ActivationRegisterResponse>('/customer/activation/register', {
+        ...target,
+        pin,
+        password: pw.password,
+        name: name.trim() || undefined,
+      });
+    },
     onSuccess: async (res) => {
-      setResult(res);
+      signIn(res);
       setPin('');
-      setStep('done');
+      setPw({ password: '', confirm: '' });
+      setActivated(res.helmet);
+      setRecoveryCode(res.recoveryCode);
+      setStep('recovery');
       await queryClient.invalidateQueries();
     },
-    onError: (err) => {
-      if (err instanceof ApiError && err.code === 'INVALID_ACTIVATION_PIN') setStep('pin');
+  });
+  const addHelmet = useMutation({
+    mutationFn: () =>
+      api.post<ActivationAddHelmetResponse>('/customer/activation/add-helmet', { ...target, pin }),
+    onSuccess: async (res) => {
+      setPin('');
+      setActivated(res.helmet);
+      setStep('done');
+      await queryClient.invalidateQueries();
     },
   });
 
   useEffect(() => {
-    if (
-      token &&
-      step === 'identify' &&
-      !validate.isPending &&
-      !validate.isSuccess &&
-      !validate.isError
-    )
-      validate.mutate({ publicToken: token });
-  }, [token, step, validate]);
+    if (token) setTarget({ publicToken: token });
+  }, [token]);
 
   const submitManual = (e: FormEvent) => {
     e.preventDefault();
@@ -81,84 +102,99 @@ export function ActivatePage() {
       return;
     }
     setCodeError(null);
-    const t = { helmetCode: code };
-    setTarget(t);
-    validate.mutate(t);
+    setTarget({ helmetCode: code });
+    setStep('pin');
   };
 
-  const submitPin = (e: FormEvent) => {
+  const submitPassword = (e: FormEvent) => {
     e.preventDefault();
-    if (status === 'authenticated') complete.mutate();
-    else setStep('verify');
+    const problem = passwordClientProblem(pw);
+    setPwError(problem);
+    if (!problem) register.mutate();
   };
+
+  const busy = validate.isPending || addHelmet.isPending;
+  const title =
+    step === 'done' || step === 'recovery'
+      ? 'Helmet activated'
+      : signedIn
+        ? 'Add a helmet'
+        : 'Activate your helmet';
 
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-10 sm:py-14">
-        <h1 className="text-display-lg font-bold">
-          {step === 'done' ? 'Helmet activated' : 'Activate your helmet'}
-        </h1>
-        {step !== 'done' && <Stepper step={step} />}
+        <h1 className="text-display-lg font-bold">{title}</h1>
+        {['identify', 'pin', 'password'].includes(step) && (
+          <Stepper step={step} signedIn={signedIn} />
+        )}
 
-        {helmet && step !== 'done' && (
+        {(helmet || target) && ['pin', 'password'].includes(step) && (
           <div className="mt-6 rounded-xl bg-canvas-soft p-4">
-            <p className="text-sm text-body">
-              {helmet.brand} {helmet.modelName}
-            </p>
-            <p className="font-mono text-lg font-bold">{helmet.helmetCode}</p>
+            {helmet ? (
+              <>
+                <p className="text-sm text-body">
+                  {helmet.brand} {helmet.modelName}
+                </p>
+                <p className="font-mono text-lg font-bold">{helmet.helmetCode}</p>
+              </>
+            ) : (
+              <p className="text-sm text-body">
+                {target && 'helmetCode' in target ? (
+                  <span className="font-mono text-lg font-bold text-ink">{target.helmetCode}</span>
+                ) : (
+                  'Helmet identified from its QR code'
+                )}
+              </p>
+            )}
           </div>
         )}
 
         <Card className="mt-6">
           <CardContent>
-            {step === 'identify' &&
-              (token ? (
-                validate.isError ? (
-                  <div className="flex flex-col gap-4">
-                    <InlineError error={validate.error} />
-                    <Link to="/activate" className="font-medium underline underline-offset-4">
-                      Enter a Helmet ID instead
-                    </Link>
-                  </div>
-                ) : (
-                  <LoadingState label="Finding your helmet…" />
-                )
-              ) : (
-                <form onSubmit={submitManual} noValidate className="flex flex-col gap-4">
-                  <Field
-                    label="Helmet ID"
-                    htmlFor="helmet-code"
-                    error={codeError ?? undefined}
-                    hint="Printed on the label inside your helmet, e.g. HM-A8F3-KL92."
-                  >
-                    <Input
-                      id="helmet-code"
-                      autoCapitalize="characters"
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="font-mono uppercase"
-                      placeholder="HM-XXXX-XXXX"
-                      value={manualCode}
-                      onChange={(e) => setManualCode(e.target.value)}
-                      aria-invalid={!!codeError}
-                    />
-                  </Field>
-                  <InlineError error={validate.error} />
-                  <Button type="submit" size="lg" loading={validate.isPending}>
-                    Continue
-                  </Button>
-                  <p className="text-sm text-body">
-                    Have the QR code? Scan it with your phone camera instead.
-                  </p>
-                </form>
-              ))}
+            {step === 'identify' && (
+              <form onSubmit={submitManual} noValidate className="flex flex-col gap-4">
+                <p className="font-medium">I have a Helmet ID</p>
+                <Field
+                  label="Helmet ID"
+                  htmlFor="helmet-code"
+                  error={codeError ?? undefined}
+                  hint="Printed on the label inside your helmet, e.g. HM-A8F3-KL92."
+                >
+                  <Input
+                    id="helmet-code"
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono uppercase"
+                    placeholder="HM-XXXX-XXXX"
+                    value={manualCode}
+                    onChange={(e) => setManualCode(e.target.value)}
+                    aria-invalid={!!codeError}
+                  />
+                </Field>
+                <Button type="submit" size="lg">
+                  Continue
+                </Button>
+                <p className="text-sm text-body">
+                  Have the QR code? Scan it with your phone camera instead.
+                </p>
+              </form>
+            )}
 
             {step === 'pin' && (
-              <form onSubmit={submitPin} noValidate className="flex flex-col gap-4">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  validate.mutate();
+                }}
+                noValidate
+                className="flex flex-col gap-4"
+              >
                 <Field
                   label="Activation PIN"
                   htmlFor="pin"
-                  hint="The 8-character code on your helmet label or card. It works only once."
+                  hint="The 8-character code under the scratch-off panel or on the activation card in the box. It works only once."
                 >
                   <Input
                     id="pin"
@@ -172,40 +208,58 @@ export function ActivatePage() {
                     autoFocus
                   />
                 </Field>
-                <InlineError error={complete.error} />
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={pin.length < 8}
-                  loading={complete.isPending}
-                >
-                  {status === 'authenticated' ? 'Activate helmet' : 'Continue'}
+                <InlineError error={validate.error ?? addHelmet.error} />
+                <Button type="submit" size="lg" disabled={pin.length < 8} loading={busy}>
+                  {signedIn ? 'Add helmet to my account' : 'Continue'}
+                </Button>
+                {!signedIn && (
+                  <p className="text-sm text-body">
+                    Already have an account for another helmet?{' '}
+                    <Link
+                      className="font-medium text-ink underline underline-offset-4"
+                      to={`/login?next=${encodeURIComponent(`/activate${token ? `?t=${encodeURIComponent(token)}` : ''}`)}`}
+                    >
+                      Sign in first
+                    </Link>{' '}
+                    to add this one.
+                  </p>
+                )}
+              </form>
+            )}
+
+            {step === 'password' && (
+              <form onSubmit={submitPassword} noValidate className="flex flex-col gap-4">
+                <p className="text-body">
+                  PIN accepted. Create a password — you’ll sign in with this Helmet ID and your
+                  password.
+                </p>
+                <Field label="Your name (optional)" htmlFor="reg-name">
+                  <Input
+                    id="reg-name"
+                    autoComplete="name"
+                    value={name}
+                    maxLength={120}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </Field>
+                <PasswordFields value={pw} onChange={setPw} idPrefix="reg" />
+                {pwError && <p className="text-sm text-danger">{pwError}</p>}
+                <InlineError error={register.error} />
+                <Button type="submit" size="lg" loading={register.isPending}>
+                  Activate helmet
                 </Button>
               </form>
             )}
 
-            {step === 'verify' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-body">
-                  Verify your mobile number. This account will own the helmet.
-                </p>
-                <PhoneOtpForm
-                  submitLabel="Verify and activate"
-                  onVerified={(session) => {
-                    signIn(session);
-                    complete.mutate();
-                  }}
-                />
-                {complete.isPending && <LoadingState label="Activating…" />}
-                <InlineError error={complete.error} />
-              </div>
+            {step === 'recovery' && (
+              <RecoveryCodeNotice code={recoveryCode} onContinue={() => setStep('done')} />
             )}
 
-            {step === 'done' && result && (
+            {step === 'done' && activated && (
               <div className="flex flex-col items-start gap-4">
                 <CheckCircle2 className="h-10 w-10" aria-hidden />
                 <div>
-                  <p className="text-display-sm font-bold">{result.helmet.helmetCode} is yours.</p>
+                  <p className="text-display-sm font-bold">{activated.helmetCode} is yours.</p>
                   <p className="mt-1 text-body">
                     Next, set up the emergency information first responders will see when they scan
                     your helmet.
@@ -219,6 +273,7 @@ export function ActivatePage() {
                 </Link>
               </div>
             )}
+            {step === 'done' && !activated && <LoadingState />}
           </CardContent>
         </Card>
       </div>
@@ -226,11 +281,11 @@ export function ActivatePage() {
   );
 }
 
-function Stepper({ step }: { step: Step }) {
+function Stepper({ step, signedIn }: { step: Step; signedIn: boolean }) {
   const steps: { key: Step; label: string }[] = [
     { key: 'identify', label: 'Helmet' },
     { key: 'pin', label: 'PIN' },
-    { key: 'verify', label: 'Mobile' },
+    ...(signedIn ? [] : [{ key: 'password' as Step, label: 'Password' }]),
   ];
   const index = steps.findIndex((s) => s.key === step);
   return (

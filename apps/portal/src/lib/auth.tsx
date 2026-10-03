@@ -14,6 +14,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
   const [status, setStatus] = useState<CustomerAuthState['status']>('loading');
   const tokenRef = useRef<string | null>(null);
+  const restoreRef = useRef<Promise<void>>(Promise.resolve());
 
   const apply = useCallback((session: CustomerLoginResponse | null) => {
     tokenRef.current = session?.accessToken ?? null;
@@ -28,8 +29,13 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api.configureAuth({ getToken: () => tokenRef.current, refresh });
-    void refresh();
+    restoreRef.current = refresh().then(
+      () => undefined,
+      () => undefined,
+    );
   }, [refresh]);
+
+  const restored = useCallback(() => restoreRef.current, []);
 
   const signOut = useCallback(async () => {
     try {
@@ -41,8 +47,8 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   }, [apply]);
 
   const value = useMemo<CustomerAuthState>(
-    () => ({ status, customer, signIn: apply, signOut, setCustomer }),
-    [status, customer, apply, signOut],
+    () => ({ status, customer, signIn: apply, signOut, setCustomer, restored }),
+    [status, customer, apply, signOut, restored],
   );
   return <CustomerAuthContext.Provider value={value}>{children}</CustomerAuthContext.Provider>;
 }

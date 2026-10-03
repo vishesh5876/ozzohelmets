@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { buttonVariants, Card, CardContent } from '@helmet/ui';
 import { SiteFrame } from './SiteFrame';
 
-/** Placeholder for Phase 2 customer flows (activation, OTP sign-in, profile). */
+/** Simple placeholder page (used for not-found routes). */
 export function ComingSoonPage({ title, description }: { title: string; description: string }) {
   const [params] = useSearchParams();
   const fromQr = params.has('t');
