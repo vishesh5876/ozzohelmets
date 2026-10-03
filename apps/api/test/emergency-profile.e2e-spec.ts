@@ -378,6 +378,7 @@ describe('Emergency profile & public boundary (e2e)', () => {
       .set(bearer(session.token))
       .expect(200);
     expect(detail.body.data.owner).toEqual({
+      customerId: expect.any(String),
       maskedMobile: '+91******1111',
       since: expect.any(String),
       emergencyProfileStatus: 'ACTIVE',

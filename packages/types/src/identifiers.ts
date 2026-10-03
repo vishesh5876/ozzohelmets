@@ -100,6 +100,23 @@ export function normalizeRecoveryCode(input: string): string | null {
   return RECOVERY_CODE_REGEX.test(formatted) ? formatted : null;
 }
 
+/** Ownership transfer code: `TR-XXXX-XXXX-XXXX`, 12 symbols ≈ 59.4 bits, single use, short TTL. */
+export const TRANSFER_CODE_PREFIX = 'TR';
+export const TRANSFER_CODE_LENGTH = 12;
+export const TRANSFER_CODE_REGEX =
+  /^TR-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
+
+/** Canonical `TR-XXXX-XXXX-XXXX` from user input (case/spaces/dashes ignored), or null. */
+export function normalizeTransferCode(input: string): string | null {
+  const compact = input.trim().toUpperCase().replace(/[\s-]/g, '');
+  const body = compact.startsWith(TRANSFER_CODE_PREFIX)
+    ? compact.slice(TRANSFER_CODE_PREFIX.length)
+    : compact;
+  if (body.length !== TRANSFER_CODE_LENGTH) return null;
+  const formatted = `${TRANSFER_CODE_PREFIX}-${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}`;
+  return TRANSFER_CODE_REGEX.test(formatted) ? formatted : null;
+}
+
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
 export const MAX_EMERGENCY_CONTACTS = 5;

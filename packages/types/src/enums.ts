@@ -74,6 +74,38 @@ export const OwnershipStatus = {
 } as const;
 export type OwnershipStatus = (typeof OwnershipStatus)[keyof typeof OwnershipStatus];
 
+export const OwnershipAcquisition = {
+  ACTIVATION: 'ACTIVATION',
+  TRANSFER: 'TRANSFER',
+} as const;
+export type OwnershipAcquisition = (typeof OwnershipAcquisition)[keyof typeof OwnershipAcquisition];
+
+export const TransferStatus = {
+  PENDING: 'PENDING',
+  CLAIMED: 'CLAIMED',
+  CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
+} as const;
+export type TransferStatus = (typeof TransferStatus)[keyof typeof TransferStatus];
+
+export const ReplacementReason = {
+  DAMAGED: 'DAMAGED',
+  DEFECTIVE: 'DEFECTIVE',
+  ACCIDENT: 'ACCIDENT',
+  SUPPORT_REPLACEMENT: 'SUPPORT_REPLACEMENT',
+  OTHER: 'OTHER',
+} as const;
+export type ReplacementReason = (typeof ReplacementReason)[keyof typeof ReplacementReason];
+
+/** Optional reason when an owner marks a helmet damaged (no free-text required). */
+export const DamageReason = {
+  ACCIDENT: 'ACCIDENT',
+  IMPACT: 'IMPACT',
+  CRACKED: 'CRACKED',
+  OTHER: 'OTHER',
+} as const;
+export type DamageReason = (typeof DamageReason)[keyof typeof DamageReason];
+
 /** Who triggered a lifecycle change. */
 export const ActorType = {
   SYSTEM: 'SYSTEM',
@@ -96,6 +128,10 @@ export const PublicHelmetState = {
   ACTIVE: 'ACTIVE',
   LOST: 'LOST',
   STOLEN: 'STOLEN',
+  DAMAGED: 'DAMAGED',
+  REPLACED: 'REPLACED',
+  DEACTIVATED: 'DEACTIVATED',
+  RECALLED: 'RECALLED',
   UNAVAILABLE: 'UNAVAILABLE',
 } as const;
 export type PublicHelmetState = (typeof PublicHelmetState)[keyof typeof PublicHelmetState];

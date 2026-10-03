@@ -38,7 +38,7 @@ export async function resetState(ctx: TestContext): Promise<void> {
   if (!dbName.endsWith('_test'))
     throw new Error(`Refusing to truncate non-test database "${dbName}"`);
   await ctx.prisma.$executeRawUnsafe(
-    'TRUNCATE customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_scans, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
+    'TRUNCATE helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_scans, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
   );
   await ctx.redis.flushdb();
 }
@@ -181,3 +181,85 @@ export async function createTestHelmet(
 }
 
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+export const VISIBLE_BASICS = {
+  showName: true,
+  showPhoto: false,
+  showBloodGroup: true,
+  showDateOfBirth: false,
+  showGender: false,
+  showAllergies: true,
+  showMedicalConditions: false,
+  showMedications: false,
+  showEmergencyNotes: false,
+  showOrganDonor: false,
+  showEmergencyContacts: true,
+};
+
+/** Completes the minimum profile (name, contact, reviewed visibility) without enabling it. */
+export async function completeProfile(
+  ctx: TestContext,
+  token: string,
+  name: string,
+  allergy = 'Penicillin',
+): Promise<void> {
+  await ctx
+    .http()
+    .put('/api/v1/customer/emergency-profile')
+    .set(bearer(token))
+    .send({ name, bloodGroup: 'O_POSITIVE', allergies: [allergy] })
+    .expect(200);
+  await ctx
+    .http()
+    .post('/api/v1/customer/emergency-contacts')
+    .set(bearer(token))
+    .send({ name: `${name} Contact`, relationship: 'Sibling', phone: '+919812345678' })
+    .expect(201);
+  await ctx
+    .http()
+    .put('/api/v1/customer/emergency-visibility')
+    .set(bearer(token))
+    .send(VISIBLE_BASICS)
+    .expect(200);
+}
+
+export async function enableOnHelmet(ctx: TestContext, token: string, helmetId: string) {
+  await ctx
+    .http()
+    .post(`/api/v1/customer/helmets/${helmetId}/emergency/enable`)
+    .set(bearer(token))
+    .expect(200);
+}
+
+/** Password re-check → X-Recent-Auth token. */
+export async function reauth(ctx: TestContext, token: string, password = TEST_PASSWORD) {
+  const res = await ctx
+    .http()
+    .post('/api/v1/customer/auth/reauthenticate')
+    .set(bearer(token))
+    .send({ password })
+    .expect(200);
+  return res.body.data.recentAuthToken as string;
+}
+
+export async function publicView(ctx: TestContext, publicToken: string) {
+  const res = await ctx.http().get(`/api/v1/public/emergency/${publicToken}`).expect(200);
+  return res.body.data as {
+    state: string;
+    message: string;
+    profile?: Record<string, unknown>;
+    contacts?: unknown[];
+    helmet: Record<string, unknown>;
+  };
+}
+
+export async function startTransfer(ctx: TestContext, token: string, helmetId: string) {
+  const recent = await reauth(ctx, token);
+  const res = await ctx
+    .http()
+    .post(`/api/v1/customer/helmets/${helmetId}/transfer`)
+    .set(bearer(token))
+    .set('X-Recent-Auth', recent)
+    .expect(200);
+  return res.body.data as { transferCode: string; expiresAt: string };
+}

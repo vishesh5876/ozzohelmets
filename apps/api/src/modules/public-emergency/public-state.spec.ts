@@ -18,23 +18,35 @@ describe('toPublicState', () => {
       PublicHelmetState.ACTIVATED_PROFILE_INCOMPLETE,
     );
     expect(toPublicState('ACTIVATED', owned)).toBe(PublicHelmetState.ACTIVATED_PROFILE_INCOMPLETE);
+    expect(toPublicState('ACTIVE', unowned)).toBe(PublicHelmetState.UNAVAILABLE);
   });
 
-  it('keeps emergency access for owned helmets that are damaged or recalled', () => {
-    expect(toPublicState('RECALLED', owned)).toBe(PublicHelmetState.ACTIVE);
-    expect(toPublicState('DAMAGED', owned)).toBe(PublicHelmetState.ACTIVE);
-    expect(toPublicState('RECALLED', unowned)).toBe(PublicHelmetState.UNAVAILABLE);
-  });
-
-  it('never exposes a profile for lost/stolen helmets (Phase 3 decision)', () => {
-    expect(toPublicState('LOST', owned)).toBe(PublicHelmetState.LOST);
-    expect(toPublicState('STOLEN', owned)).toBe(PublicHelmetState.STOLEN);
+  it('never exposes a profile in any non-active lifecycle state (Phase 3)', () => {
+    const expected = {
+      LOST: PublicHelmetState.LOST,
+      STOLEN: PublicHelmetState.STOLEN,
+      DAMAGED: PublicHelmetState.DAMAGED,
+      REPLACED: PublicHelmetState.REPLACED,
+      DEACTIVATED: PublicHelmetState.DEACTIVATED,
+      RECALLED: PublicHelmetState.RECALLED,
+    } as const;
+    for (const [status, state] of Object.entries(expected)) {
+      expect(toPublicState(status as keyof typeof expected, owned)).toBe(state);
+    }
     expect(PUBLIC_STATE_MESSAGES.STOLEN).toBe('This helmet has been reported stolen.');
     expect(PUBLIC_STATE_MESSAGES.LOST).toBe('This helmet has been reported lost.');
+    expect(PUBLIC_STATE_MESSAGES.DAMAGED).toBe('This helmet is currently marked as damaged.');
+    expect(PUBLIC_STATE_MESSAGES.REPLACED).toBe(
+      'This helmet has been replaced and is no longer active.',
+    );
+    expect(PUBLIC_STATE_MESSAGES.DEACTIVATED).toBe('This helmet is no longer active.');
   });
 
-  it('maps every status', () => {
-    for (const s of HELMET_STATUSES)
-      expect(Object.values(PublicHelmetState)).toContain(toPublicState(s, owned));
+  it('maps every status, and only ACTIVE can carry a profile', () => {
+    for (const s of HELMET_STATUSES) {
+      const state = toPublicState(s, owned);
+      expect(Object.values(PublicHelmetState)).toContain(state);
+      if (s !== 'ACTIVE') expect(state).not.toBe(PublicHelmetState.ACTIVE);
+    }
   });
 });

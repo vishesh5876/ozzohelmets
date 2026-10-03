@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   ActorType,
@@ -7,8 +7,12 @@ import {
   type HelmetListItemDto,
   type HelmetStatus,
   type HelmetOwnerSummaryDto,
+  type HelmetReplacementLinksDto,
+  LIFECYCLE_MANAGED_TARGETS,
   maskPhone,
   normalizeHelmetCode,
+  Permission,
+  roleHasPermission,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { buildMeta } from '../../common/dto/pagination.dto';
@@ -22,6 +26,7 @@ import { AuditAction } from '../audit/audit-actions';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
 import { EmergencyReadinessService } from '../emergency-readiness/emergency-readiness.service';
 import { helmetProfileStatus, profileStatus } from '../emergency-readiness/readiness';
+import { restoreTarget, SUPPORT_RESTORABLE } from '../helmet-lifecycle/domain/lifecycle-policy';
 import { HelmetStatusService } from './domain/helmet-status.service';
 import type { HelmetQueryDto } from './dto/helmet.dto';
 
@@ -77,6 +82,7 @@ export class HelmetsService {
         ...listSelect,
         publicToken: true,
         activationPinUsed: true,
+        previousOperationalStatus: true,
         updatedAt: true,
         activationSecret: { select: { helmetId: true } },
         _count: { select: { scans: true } },
@@ -100,14 +106,35 @@ export class HelmetsService {
       : [];
     const adminNames = new Map(admins.map((a) => [a.id, a.name]));
 
+    const ownership = await this.prisma.helmetOwnership.findFirst({
+      where: { helmetId: id, status: 'ACTIVE' },
+      select: { activatedAt: true, user: { select: { id: true, mobile: true } } },
+    });
+    const [owner, pending, replacement, restoreTo] = await Promise.all([
+      this.ownerSummary(id, ownership),
+      this.prisma.helmetTransfer.findFirst({
+        where: { helmetId: id, status: 'PENDING', expiresAt: { gt: new Date() } },
+        select: { id: true, createdAt: true, expiresAt: true },
+      }),
+      this.replacementLinks(id),
+      ownership && SUPPORT_RESTORABLE.includes(helmet.status)
+        ? this.readiness
+            .canExpose(ownership.user.id, id)
+            .then((ok) => restoreTarget(helmet.previousOperationalStatus, ok))
+        : Promise.resolve(null),
+    ]);
+
     return {
       ...toListItem(helmet),
-      owner: await this.ownerSummary(id, helmet.status),
+      owner,
       qrUrl: this.config.publicHelmetUrl(helmet.publicToken),
       activationPinUsed: helmet.activationPinUsed,
       pinEscrowed: helmet.activationSecret !== null,
       scanCount: helmet._count.scans,
-      allowedTransitions: this.statuses.allowed(helmet.status, ActorType.ADMIN),
+      // Operational targets are reached only via activation, enablement, transfer or support restore.
+      allowedTransitions: this.statuses
+        .allowed(helmet.status, ActorType.ADMIN)
+        .filter((s) => !LIFECYCLE_MANAGED_TARGETS.includes(s)),
       statusHistory: helmet.statusHistory.map((h) => ({
         id: h.id,
         fromStatus: h.fromStatus,
@@ -118,6 +145,15 @@ export class HelmetsService {
         reason: h.reason,
         createdAt: h.createdAt.toISOString(),
       })),
+      pendingTransfer: pending
+        ? {
+            id: pending.id,
+            createdAt: pending.createdAt.toISOString(),
+            expiresAt: pending.expiresAt.toISOString(),
+          }
+        : null,
+      replacement,
+      restoreTarget: restoreTo,
       updatedAt: helmet.updatedAt.toISOString(),
     };
   }
@@ -137,6 +173,21 @@ export class HelmetsService {
         SELECT id, status, public_token FROM helmets WHERE id = ${id}::uuid FOR UPDATE`;
       const helmet = locked[0];
       if (!helmet) throw AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.');
+      if (LIFECYCLE_MANAGED_TARGETS.includes(to)) {
+        throw new AppException(
+          ErrorCode.INVALID_STATUS_TRANSITION,
+          'Operational statuses are set by activation, the owner or the support restore action.',
+          HttpStatus.CONFLICT,
+          { from: helmet.status, to },
+        );
+      }
+      // Changing a customer-owned helmet is a support action, not a manufacturing one.
+      const owned = await tx.helmetOwnership.count({ where: { helmetId: id, status: 'ACTIVE' } });
+      if (owned > 0 && !roleHasPermission(admin.role, Permission.HELMET_LIFECYCLE_MANAGE)) {
+        throw AppException.forbidden(
+          'Changing a customer-owned helmet requires lifecycle permission.',
+        );
+      }
 
       await this.statuses.apply(tx, {
         helmetId: id,
@@ -163,23 +214,49 @@ export class HelmetsService {
   }
 
   /**
-   * Operational owner info for support: masked mobile, since-when and the profile status.
-   * Admins never see decrypted medical data, names or contacts here.
+   * Operational owner info for support: customer id, masked mobile, since-when and the profile
+   * status. Admins never see decrypted medical data, names or contacts here.
    */
   private async ownerSummary(
     helmetId: string,
-    status: HelmetStatus,
+    ownership: { activatedAt: Date; user: { id: string; mobile: string | null } } | null,
   ): Promise<HelmetOwnerSummaryDto | null> {
-    const ownership = await this.prisma.helmetOwnership.findFirst({
-      where: { helmetId, status: 'ACTIVE' },
-      select: { activatedAt: true, user: { select: { id: true, mobile: true } } },
-    });
     if (!ownership) return null;
-    const ownerStatus = profileStatus(await this.readiness.facts(ownership.user.id));
+    const [facts, enabled] = await Promise.all([
+      this.readiness.facts(ownership.user.id),
+      this.readiness.helmetEnabled(helmetId, ownership.user.id),
+    ]);
     return {
+      customerId: ownership.user.id,
       maskedMobile: ownership.user.mobile ? maskPhone(ownership.user.mobile) : null,
       since: ownership.activatedAt.toISOString(),
-      emergencyProfileStatus: helmetProfileStatus(ownerStatus, status),
+      emergencyProfileStatus: helmetProfileStatus(profileStatus(facts), enabled),
+    };
+  }
+
+  private async replacementLinks(helmetId: string): Promise<HelmetReplacementLinksDto> {
+    const rows = await this.prisma.helmetReplacement.findMany({
+      where: { OR: [{ originalHelmetId: helmetId }, { replacementHelmetId: helmetId }] },
+      include: {
+        original: { select: { id: true, helmetCode: true } },
+        replacement: { select: { id: true, helmetCode: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    const link = (r: (typeof rows)[number], other: { id: string; helmetCode: string }) => ({
+      id: r.id,
+      helmetId: other.id,
+      helmetCode: other.helmetCode,
+      reason: r.reason,
+      notes: r.notes,
+      createdAt: r.createdAt.toISOString(),
+      createdByAdminName: r.createdBy?.name ?? null,
+    });
+    const by = rows.find((r) => r.originalHelmetId === helmetId);
+    const of = rows.find((r) => r.replacementHelmetId === helmetId);
+    return {
+      replacedBy: by ? link(by, by.replacement) : null,
+      replaces: of ? link(of, of.original) : null,
     };
   }
 

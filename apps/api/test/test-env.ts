@@ -25,6 +25,7 @@ export const TEST_ENV: Record<string, string> = {
   RECOVERY_FAILURES_BEFORE_LOCK: '3',
   ACTIVATION_FAILURES_BEFORE_LOCK: '3',
   ACTIVATION_MAX_FAILURES_PER_IP_PER_HOUR: '10',
+  TRANSFER_FAILURES_BEFORE_LOCK: '3',
   FILE_STORAGE_LOCAL_DIR: '/tmp/helmet-test-storage',
   PIN_HASH_PEPPER: 'test-pin-pepper-0123456789abcdefghijklmnop',
   PIN_ESCROW_KEYS: `v1:${key('p')}`,

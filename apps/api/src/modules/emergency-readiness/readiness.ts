@@ -1,7 +1,6 @@
 import {
   type EmergencyProfileStatus,
   type EmergencyReadinessDto,
-  type HelmetStatus,
   ReadinessRequirement,
 } from '@helmet/types';
 
@@ -53,13 +52,13 @@ export function evaluateReadiness(f: ReadinessFacts): EmergencyReadinessDto {
 }
 
 /**
- * Status shown for one helmet. A helmet that is still ACTIVATED while the owner's profile is
- * enabled has not been switched on yet (e.g. a second helmet) and reports DISABLED.
+ * Status shown for one helmet. The account profile may be enabled while THIS helmet's switch is
+ * off (e.g. a second or transferred-in helmet) — that helmet reports DISABLED.
  */
 export function helmetProfileStatus(
   owner: EmergencyProfileStatus,
-  helmetStatus: HelmetStatus,
+  helmetEnabled: boolean,
 ): EmergencyProfileStatus {
-  if (owner === 'ACTIVE' && helmetStatus === 'ACTIVATED') return 'DISABLED';
+  if (owner === 'ACTIVE' && !helmetEnabled) return 'DISABLED';
   return owner;
 }

@@ -9,6 +9,7 @@ import {
   type CustomerSessionDto,
   ErrorCode,
   normalizeRecoveryCode,
+  type RecentAuthResponse,
   type RecoveryCodeIssued,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
@@ -18,6 +19,7 @@ import type { RequestMeta } from '../../common/utils/request-context';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { LockoutService } from '../../security/lockout';
+import { RecentAuthService } from '../../security/recent-auth.service';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
 import type { IssuedRefreshToken } from '../../security/refresh-token-rotator';
 import { opaqueToken } from '../../security/secure-random';
@@ -58,8 +60,55 @@ export class CustomerAuthService {
     private readonly limiter: RedisRateLimiter,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
+    private readonly recentAuth: RecentAuthService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  /**
+   * Password re-check for sensitive actions. Returns a short-lived token bound to this session.
+   * Failures count towards a per-account escalating lockout; the password is never logged.
+   */
+  async reauthenticate(
+    customer: AuthenticatedCustomer,
+    password: string,
+    meta: RequestMeta,
+  ): Promise<RecentAuthResponse> {
+    const key = `customer-reauth:user:${customer.id}`;
+    const state = await this.lockout.status(key);
+    if (state.locked) throw this.locked(state.retryAfter);
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: customer.id } });
+    if (!(await this.credentials.verifyPassword(user.passwordHash, password))) {
+      const failure = await this.lockout.fail(key, {
+        threshold: this.config.get('CUSTOMER_LOGIN_FAILURES_BEFORE_LOCK'),
+        baseSeconds: this.config.get('CUSTOMER_LOGIN_LOCKOUT_BASE_SECONDS'),
+        maxSeconds: this.config.get('CUSTOMER_LOGIN_LOCKOUT_MAX_SECONDS'),
+      });
+      await this.audit.record({
+        action: AuditAction.CUSTOMER_RECENT_AUTH_FAILED,
+        entityType: 'user',
+        entityId: user.id,
+        userId: user.id,
+        ipHash: meta.ipHash,
+        metadata: { failures: failure.failures },
+      });
+      if (failure.locked) throw this.locked(failure.retryAfter);
+      throw new AppException(
+        ErrorCode.INVALID_CREDENTIALS,
+        'Your password is incorrect.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    await this.lockout.reset(key);
+    const issued = await this.recentAuth.issue('customer', user.id, customer.sessionId);
+    await this.audit.record({
+      action: AuditAction.CUSTOMER_RECENT_AUTH_CREATED,
+      entityType: 'user',
+      entityId: user.id,
+      userId: user.id,
+      ipHash: meta.ipHash,
+    });
+    return issued;
+  }
 
   async login(
     rawHelmetCode: string,
@@ -197,6 +246,7 @@ export class CustomerAuthService {
       );
 
     await this.tokens.revokeAll(ticket.userId);
+    await this.recentAuth.revokeAll('customer', ticket.userId);
     await this.audit.record({
       action: AuditAction.CUSTOMER_PASSWORD_RESET,
       entityType: 'user',
@@ -232,6 +282,7 @@ export class CustomerAuthService {
       },
     });
     await this.tokens.revokeAllExcept(user.id, customer.sessionId);
+    await this.recentAuth.revokeAll('customer', user.id);
     await this.audit.record({
       action: AuditAction.CUSTOMER_PASSWORD_CHANGED,
       entityType: 'user',
@@ -301,6 +352,7 @@ export class CustomerAuthService {
 
   async logoutAll(customer: AuthenticatedCustomer, meta: RequestMeta): Promise<void> {
     await this.tokens.revokeAll(customer.id);
+    await this.recentAuth.revokeAll('customer', customer.id);
     await this.audit.record({
       action: AuditAction.CUSTOMER_SESSIONS_REVOKED,
       entityType: 'user',

@@ -70,6 +70,27 @@ enum OwnershipStatus {
   REVOKED
 }
 
+/// How an ownership period began.
+enum OwnershipAcquisition {
+  ACTIVATION
+  TRANSFER
+}
+
+enum TransferStatus {
+  PENDING
+  CLAIMED
+  CANCELLED
+  EXPIRED
+}
+
+enum ReplacementReason {
+  DAMAGED
+  DEFECTIVE
+  ACCIDENT
+  SUPPORT_REPLACEMENT
+  OTHER
+}
+
 enum ActorType {
   SYSTEM
   ADMIN
@@ -118,6 +139,7 @@ model AdminUser {
   refreshTokens  AdminRefreshToken[]
   auditLogs      AuditLog[]
   createdBatches HelmetBatch[]
+  replacements   HelmetReplacement[]
 
   @@map("admin_users")
 }
@@ -172,6 +194,9 @@ model User {
   emergencyProfiles   EmergencyProfile[]
   emergencyContacts   EmergencyContact[]
   emergencyVisibility EmergencyVisibility?
+  helmetEmergency     HelmetEmergencySetting[]
+  transfersFrom       HelmetTransfer[]         @relation("TransferFrom")
+  transfersTo         HelmetTransfer[]         @relation("TransferTo")
 
   @@map("users")
 }
@@ -321,29 +346,36 @@ model HelmetBatch {
 
 /// One physical helmet. `id` is the internal helmet UUID and never appears in public URLs.
 model Helmet {
-  id                    String       @id @default(uuid(7)) @db.Uuid
-  helmetCode            String       @unique @map("helmet_code") @db.VarChar(16)
-  publicToken           String       @unique @map("public_token") @db.VarChar(32)
-  activationPinHash     String       @map("activation_pin_hash")
-  activationPinUsed     Boolean      @default(false) @map("activation_pin_used")
-  activationAttempts    Int          @default(0) @map("activation_attempts")
+  id                        String        @id @default(uuid(7)) @db.Uuid
+  helmetCode                String        @unique @map("helmet_code") @db.VarChar(16)
+  publicToken               String        @unique @map("public_token") @db.VarChar(32)
+  activationPinHash         String        @map("activation_pin_hash")
+  activationPinUsed         Boolean       @default(false) @map("activation_pin_used")
+  activationAttempts        Int           @default(0) @map("activation_attempts")
   /// Progressive lockout after repeated wrong PINs.
-  activationLockedUntil DateTime?    @map("activation_locked_until") @db.Timestamptz(3)
-  serialNumber          String       @unique @map("serial_number") @db.VarChar(40)
-  helmetModelId         String       @map("helmet_model_id") @db.Uuid
-  batchId               String       @map("batch_id") @db.Uuid
-  status                HelmetStatus @default(GENERATED)
-  activatedAt           DateTime?    @map("activated_at") @db.Timestamptz(3)
-  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  activationLockedUntil     DateTime?     @map("activation_locked_until") @db.Timestamptz(3)
+  serialNumber              String        @unique @map("serial_number") @db.VarChar(40)
+  helmetModelId             String        @map("helmet_model_id") @db.Uuid
+  batchId                   String        @map("batch_id") @db.Uuid
+  status                    HelmetStatus  @default(GENERATED)
+  /// Operational status (ACTIVATED/ACTIVE) held before entering LOST/STOLEN/DAMAGED, so a
+  /// restore returns to the right place. Maintained only by HelmetStatusService.apply.
+  previousOperationalStatus HelmetStatus? @map("previous_operational_status")
+  activatedAt               DateTime?     @map("activated_at") @db.Timestamptz(3)
+  createdAt                 DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmetModel       HelmetModel             @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
-  batch             HelmetBatch             @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  helmetModel       HelmetModel              @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
+  batch             HelmetBatch              @relation(fields: [batchId], references: [id], onDelete: Restrict)
   activationSecret  HelmetActivationSecret?
   ownerships        HelmetOwnership[]
   emergencyProfiles EmergencyProfile[]
   statusHistory     HelmetStatusHistory[]
   scans             HelmetScan[]
+  emergencySettings HelmetEmergencySetting[]
+  transfers         HelmetTransfer[]
+  replacedBy        HelmetReplacement?       @relation("ReplacementOriginal")
+  replaces          HelmetReplacement?       @relation("ReplacementNew")
 
   @@index([status])
   @@index([batchId])
@@ -373,6 +405,8 @@ model HelmetStatusHistory {
   actorType  ActorType     @map("actor_type")
   actorId    String?       @map("actor_id") @db.Uuid
   reason     String?       @db.VarChar(500)
+  /// Machine-readable reason (e.g. TRANSFER, LOST_REPORTED, DAMAGED:ACCIDENT). Never free text.
+  reasonCode String?       @map("reason_code") @db.VarChar(60)
   createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
@@ -384,21 +418,93 @@ model HelmetStatusHistory {
 /// Ownership history — never overwritten. Exactly one ACTIVE row per helmet (partial unique
 /// index added in migration SQL).
 model HelmetOwnership {
-  id            String          @id @default(uuid(7)) @db.Uuid
-  helmetId      String          @map("helmet_id") @db.Uuid
-  userId        String          @map("user_id") @db.Uuid
-  status        OwnershipStatus @default(ACTIVE)
-  activatedAt   DateTime        @default(now()) @map("activated_at") @db.Timestamptz(3)
-  transferredAt DateTime?       @map("transferred_at") @db.Timestamptz(3)
-  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String               @id @default(uuid(7)) @db.Uuid
+  helmetId       String               @map("helmet_id") @db.Uuid
+  userId         String               @map("user_id") @db.Uuid
+  status         OwnershipStatus      @default(ACTIVE)
+  acquiredVia    OwnershipAcquisition @default(ACTIVATION) @map("acquired_via")
+  /// Start of the ownership period.
+  activatedAt    DateTime             @default(now()) @map("activated_at") @db.Timestamptz(3)
+  transferredAt  DateTime?            @map("transferred_at") @db.Timestamptz(3)
+  /// End of the period (transfer or admin revocation); NULL while ACTIVE.
+  endedAt        DateTime?            @map("ended_at") @db.Timestamptz(3)
+  endReason      String?              @map("end_reason") @db.VarChar(60)
+  /// Transfer that started (to) or ended (from) this period.
+  transferId     String?              @map("transfer_id") @db.Uuid
+  endedByAdminId String?              @map("ended_by_admin_id") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Restrict)
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@index([helmetId])
-  @@index([userId])
+  @@index([helmetId, activatedAt])
+  @@index([userId, status])
   @@map("helmet_ownerships")
+}
+
+/// Whether a helmet exposes its owner's emergency profile. The profile itself (medical data,
+/// contacts, visibility) belongs to the user; this row is per (helmet, owner) so a new owner
+/// never inherits the previous owner's switch.
+model HelmetEmergencySetting {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  helmetId    String    @map("helmet_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  enabled     Boolean   @default(false)
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([helmetId, userId])
+  @@index([userId])
+  @@map("helmet_emergency_settings")
+}
+
+/// Ownership transfer offers. Only an HMAC of the transfer code is stored; at most one PENDING
+/// row per helmet (partial unique index in SQL). Expiry is computed from `expiresAt`.
+model HelmetTransfer {
+  id                 String         @id @default(uuid(7)) @db.Uuid
+  helmetId           String         @map("helmet_id") @db.Uuid
+  fromUserId         String         @map("from_user_id") @db.Uuid
+  toUserId           String?        @map("to_user_id") @db.Uuid
+  status             TransferStatus @default(PENDING)
+  codeHash           String         @map("code_hash") @db.Char(64)
+  expiresAt          DateTime       @map("expires_at") @db.Timestamptz(3)
+  claimedAt          DateTime?      @map("claimed_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?      @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason       String?        @map("cancel_reason") @db.VarChar(60)
+  cancelledByAdminId String?        @map("cancelled_by_admin_id") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet   Helmet @relation(fields: [helmetId], references: [id], onDelete: Restrict)
+  fromUser User   @relation("TransferFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUser   User?  @relation("TransferTo", fields: [toUserId], references: [id], onDelete: Restrict)
+
+  @@index([helmetId, createdAt])
+  @@index([fromUserId])
+  @@map("helmet_transfers")
+}
+
+/// A physically different helmet that replaces another. Each helmet appears at most once as
+/// original and at most once as replacement; cycles are rejected by the domain service.
+model HelmetReplacement {
+  id                  String            @id @default(uuid(7)) @db.Uuid
+  originalHelmetId    String            @unique @map("original_helmet_id") @db.Uuid
+  replacementHelmetId String            @unique @map("replacement_helmet_id") @db.Uuid
+  reason              ReplacementReason
+  notes               String?           @db.VarChar(500)
+  createdByAdminId    String?           @map("created_by_admin_id") @db.Uuid
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  original    Helmet     @relation("ReplacementOriginal", fields: [originalHelmetId], references: [id], onDelete: Restrict)
+  replacement Helmet     @relation("ReplacementNew", fields: [replacementHelmetId], references: [id], onDelete: Restrict)
+  createdBy   AdminUser? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@map("helmet_replacements")
 }
 
 // ─────────────────────────────── Telemetry & audit ───────────────────────────────

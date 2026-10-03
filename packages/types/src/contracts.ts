@@ -10,8 +10,13 @@ import type {
   BatchPrintStatus,
   HelmetModelStatus,
   HelmetStatus,
+  OwnershipAcquisition,
+  OwnershipStatus,
   PublicHelmetState,
+  ReplacementReason,
+  TransferStatus,
 } from './enums';
+import type { HelmetListGroup, OwnerHelmetAction } from './lifecycle';
 import type { Permission } from './permissions';
 
 /** ISO-8601 timestamp string as serialised by the API. */
@@ -97,6 +102,8 @@ export interface HelmetStatusHistoryDto {
 
 /** Operational ownership summary for admins — no personal or medical data beyond a masked number. */
 export interface HelmetOwnerSummaryDto {
+  /** Internal customer id, for support cross-reference only. */
+  customerId: string;
   /** Owner-provided, unverified contact number (masked). */
   maskedMobile: string | null;
   since: IsoDateString;
@@ -111,7 +118,60 @@ export interface HelmetDetailDto extends HelmetListItemDto {
   scanCount: number;
   allowedTransitions: HelmetStatus[];
   statusHistory: HelmetStatusHistoryDto[];
+  pendingTransfer: AdminPendingTransferDto | null;
+  replacement: HelmetReplacementLinksDto;
+  /** Target a support "restore" would apply now, or null when nothing can be restored. */
+  restoreTarget: HelmetStatus | null;
   updatedAt: IsoDateString;
+}
+
+export interface AdminPendingTransferDto {
+  id: string;
+  createdAt: IsoDateString;
+  expiresAt: IsoDateString;
+}
+
+export interface ReplacementLinkDto {
+  id: string;
+  helmetId: string;
+  helmetCode: string;
+  reason: ReplacementReason;
+  notes: string | null;
+  createdAt: IsoDateString;
+  createdByAdminName: string | null;
+}
+
+/** `replacedBy`: the helmet that replaced this one. `replaces`: the helmet this one replaced. */
+export interface HelmetReplacementLinksDto {
+  replacedBy: ReplacementLinkDto | null;
+  replaces: ReplacementLinkDto | null;
+}
+
+export interface OwnershipPeriodDto {
+  id: string;
+  customerId: string;
+  maskedMobile: string | null;
+  status: OwnershipStatus;
+  acquiredVia: OwnershipAcquisition;
+  startedAt: IsoDateString;
+  endedAt: IsoDateString | null;
+  endReason: string | null;
+  endedByAdminName: string | null;
+}
+
+export interface TransferHistoryItemDto {
+  id: string;
+  status: TransferStatus;
+  createdAt: IsoDateString;
+  expiresAt: IsoDateString;
+  claimedAt: IsoDateString | null;
+  cancelledAt: IsoDateString | null;
+  cancelReason: string | null;
+}
+
+export interface AdminRecentAuthResponse {
+  recentAuthToken: string;
+  expiresIn: number;
 }
 
 export interface AuditLogDto {
@@ -226,7 +286,71 @@ export interface CustomerHelmetDto {
   ownedSince: IsoDateString;
   publicUrl: string;
   emergencyProfileStatus: EmergencyProfileStatus;
+  /** Whether THIS helmet exposes the owner's emergency profile (per-helmet switch). */
+  emergencyEnabled: boolean;
+  acquiredVia: OwnershipAcquisition;
+  group: HelmetListGroup;
+  /** Owner actions valid in the current status (computed by the API). */
+  availableActions: OwnerHelmetAction[];
+  pendingTransfer: { expiresAt: IsoDateString } | null;
+  replacedBy: { helmetCode: string } | null;
+  replaces: { helmetCode: string } | null;
 }
+
+export type HelmetTimelineEventType =
+  | 'ACTIVATED'
+  | 'RECEIVED_BY_TRANSFER'
+  | 'EMERGENCY_ENABLED'
+  | 'EMERGENCY_DISABLED'
+  | 'REPORTED_LOST'
+  | 'FOUND'
+  | 'REPORTED_STOLEN'
+  | 'RECOVERED'
+  | 'MARKED_DAMAGED'
+  | 'RETIRED'
+  | 'REPLACED'
+  | 'RESTORED_BY_SUPPORT'
+  | 'STATUS_CHANGED';
+
+/** Owner-facing timeline: only events since THIS owner's ownership began; no admin details. */
+export interface HelmetTimelineEntryDto {
+  type: HelmetTimelineEventType;
+  status: HelmetStatus;
+  at: IsoDateString;
+  detail: string | null;
+}
+
+export interface CustomerHelmetDetailDto extends CustomerHelmetDto {
+  timeline: HelmetTimelineEntryDto[];
+}
+
+export interface RecentAuthResponse {
+  recentAuthToken: string;
+  expiresIn: number;
+}
+
+export interface TransferCreatedResponse {
+  /** Shown once; only an HMAC is stored. */
+  transferCode: string;
+  expiresAt: IsoDateString;
+}
+
+export interface PendingTransferDto {
+  pending: boolean;
+  expiresAt: IsoDateString | null;
+}
+
+export interface TransferClaimPreviewResponse {
+  helmet: { helmetCode: string; modelName: string; brand: string };
+}
+
+export interface TransferClaimResponse {
+  helmet: CustomerHelmetDto;
+}
+
+/** New customer claiming a transfer: account created, signed in, recovery code shown once. */
+export type TransferClaimRegisterResponse = CustomerLoginResponse &
+  RecoveryCodeIssued & { helmet: CustomerHelmetDto };
 
 /** First activation: account created, signed in, recovery code shown once. */
 export type ActivationRegisterResponse = CustomerLoginResponse &

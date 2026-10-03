@@ -16,6 +16,11 @@ export const Permission = {
   LABELS_READ: 'labels:read',
   EXPORT_MANUFACTURING: 'export:manufacturing',
   AUDIT_READ: 'audit:read',
+  OWNERSHIP_VIEW: 'ownership:view',
+  OWNERSHIP_REVOKE: 'ownership:revoke',
+  TRANSFER_CANCEL: 'transfer:cancel',
+  REPLACEMENT_MANAGE: 'replacement:manage',
+  HELMET_LIFECYCLE_MANAGE: 'helmet-lifecycle:manage',
   ADMIN_USERS_MANAGE: 'admin-users:manage',
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -24,7 +29,10 @@ const ALL = Object.values(Permission);
 
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
   SUPER_ADMIN: ALL,
-  ADMIN: ALL.filter((p) => p !== Permission.ADMIN_USERS_MANAGE),
+  // Revoking a customer's ownership is reserved for SUPER_ADMIN.
+  ADMIN: ALL.filter(
+    (p) => p !== Permission.ADMIN_USERS_MANAGE && p !== Permission.OWNERSHIP_REVOKE,
+  ),
   MANUFACTURING: [
     Permission.DASHBOARD_READ,
     Permission.MODELS_READ,
@@ -42,6 +50,10 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.BATCHES_READ,
     Permission.HELMETS_READ,
     Permission.LABELS_READ,
+    Permission.OWNERSHIP_VIEW,
+    Permission.TRANSFER_CANCEL,
+    Permission.REPLACEMENT_MANAGE,
+    Permission.HELMET_LIFECYCLE_MANAGE,
   ],
   ANALYTICS_VIEWER: [
     Permission.DASHBOARD_READ,

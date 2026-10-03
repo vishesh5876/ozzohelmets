@@ -45,16 +45,29 @@ describe('HelmetStatusService', () => {
     }
   });
 
-  it('owners can report lost/stolen but never deactivate or recall', () => {
-    expect(() => service.assertTransition('ACTIVE', 'LOST', ActorType.OWNER)).not.toThrow();
-    expect(() => service.assertTransition('ACTIVE', 'STOLEN', ActorType.OWNER)).not.toThrow();
-    expect(() => service.assertTransition('ACTIVE', 'DEACTIVATED', ActorType.OWNER)).toThrow();
+  it('owners can report lost/stolen/damaged and retire, but never recall or replace', () => {
+    for (const to of ['LOST', 'STOLEN', 'DAMAGED', 'DEACTIVATED'] as const) {
+      expect(() => service.assertTransition('ACTIVE', to, ActorType.OWNER)).not.toThrow();
+      expect(() => service.assertTransition('ACTIVATED', to, ActorType.OWNER)).not.toThrow();
+    }
     expect(() => service.assertTransition('ACTIVE', 'RECALLED', ActorType.OWNER)).toThrow();
+    expect(() => service.assertTransition('ACTIVE', 'REPLACED', ActorType.OWNER)).toThrow();
   });
 
-  it('treats REPLACED and DEACTIVATED as terminal', () => {
-    expect(allowedTransitions('REPLACED', ActorType.ADMIN)).toEqual([]);
-    expect(allowedTransitions('DEACTIVATED', ActorType.ADMIN)).toEqual([]);
+  it('lets owners restore lost/stolen helmets but only support can undo damage or retirement', () => {
+    for (const from of ['LOST', 'STOLEN'] as const) {
+      expect(() => service.assertTransition(from, 'ACTIVE', ActorType.OWNER)).not.toThrow();
+      expect(() => service.assertTransition(from, 'ACTIVATED', ActorType.OWNER)).not.toThrow();
+    }
+    expect(() => service.assertTransition('DAMAGED', 'ACTIVATED', ActorType.OWNER)).toThrow();
+    expect(() => service.assertTransition('DAMAGED', 'ACTIVATED', ActorType.ADMIN)).not.toThrow();
+    expect(() => service.assertTransition('DEACTIVATED', 'ACTIVATED', ActorType.OWNER)).toThrow();
+    expect(allowedTransitions('DEACTIVATED', ActorType.ADMIN)).toEqual(['ACTIVATED']);
+  });
+
+  it('treats REPLACED as terminal', () => {
+    for (const actor of Object.values(ActorType))
+      expect(allowedTransitions('REPLACED', actor)).toEqual([]);
   });
 
   it('rejects no-op transitions', () => {
@@ -103,6 +116,7 @@ describe('HelmetStatusService', () => {
       return {
         helmet: { updateMany: jest.fn().mockResolvedValue({ count: updatedCount }) },
         helmetStatusHistory: { create: jest.fn().mockResolvedValue({}) },
+        helmetTransfer: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       };
     }
 
@@ -117,7 +131,7 @@ describe('HelmetStatusService', () => {
       });
       expect(tx.helmet.updateMany).toHaveBeenCalledWith({
         where: { id: 'h1', status: 'GENERATED' },
-        data: { status: 'PRINTED' },
+        data: { status: 'PRINTED', previousOperationalStatus: null },
       });
       expect(tx.helmetStatusHistory.create).toHaveBeenCalledWith({
         data: {
@@ -127,8 +141,56 @@ describe('HelmetStatusService', () => {
           actorType: 'ADMIN',
           actorId: 'a1',
           reason: 'printed',
+          reasonCode: null,
         },
       });
+    });
+
+    it('remembers the operational status when a helmet is interrupted', async () => {
+      const tx = mockTx(1);
+      await service.apply(tx as unknown as PrismaTx, {
+        helmetId: 'h1',
+        from: 'ACTIVE',
+        to: 'LOST',
+        actor: { type: ActorType.OWNER, id: 'u1' },
+      });
+      expect(tx.helmet.updateMany).toHaveBeenCalledWith({
+        where: { id: 'h1', status: 'ACTIVE' },
+        data: { status: 'LOST', previousOperationalStatus: 'ACTIVE' },
+      });
+      const lostToStolen = mockTx(1);
+      await service.apply(lostToStolen as unknown as PrismaTx, {
+        helmetId: 'h1',
+        from: 'LOST',
+        to: 'STOLEN',
+        actor: { type: ActorType.OWNER, id: 'u1' },
+      });
+      // Moving between interruptions keeps the original operational status.
+      expect(lostToStolen.helmet.updateMany).toHaveBeenCalledWith({
+        where: { id: 'h1', status: 'LOST' },
+        data: { status: 'STOLEN' },
+      });
+    });
+
+    it('cancels a pending transfer when the helmet leaves a transferable status', async () => {
+      const tx = mockTx(1);
+      await service.apply(tx as unknown as PrismaTx, {
+        helmetId: 'h1',
+        from: 'ACTIVE',
+        to: 'STOLEN',
+        actor: { type: ActorType.OWNER, id: 'u1' },
+      });
+      expect(tx.helmetTransfer.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { helmetId: 'h1', status: 'PENDING' } }),
+      );
+      const enable = mockTx(1);
+      await service.apply(enable as unknown as PrismaTx, {
+        helmetId: 'h1',
+        from: 'ACTIVATED',
+        to: 'ACTIVE',
+        actor: { type: ActorType.OWNER, id: 'u1' },
+      });
+      expect(enable.helmetTransfer.updateMany).not.toHaveBeenCalled();
     });
 
     it('fails when the status changed concurrently', async () => {

@@ -16,11 +16,14 @@ import { isUniqueViolation } from '../../infrastructure/prisma/prisma-errors';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import { HashingService } from '../../security/hashing.service';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
-import { uuidv7 } from '../../security/uuid';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
 import type { AuthenticatedCustomer } from '../customer-auth/customer-auth.types';
 import { CustomerAuthService } from '../customer-auth/customer-auth.service';
+import {
+  CustomerAccountsService,
+  type PreparedAccount,
+} from '../customer-auth/customer-accounts.service';
 import { CustomerCredentialsService } from '../customer-auth/customer-credentials.service';
 import { CustomerHelmetsService } from '../customer-helmets/customer-helmets.service';
 import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
@@ -48,8 +51,7 @@ interface LockedHelmet {
 
 /** Who becomes the owner: a brand-new account (first activation) or an existing customer. */
 type NewOwner =
-  | { kind: 'new-account'; passwordHash: string; recoveryCodeHash: string; name?: string }
-  | { kind: 'existing'; userId: string };
+  { kind: 'new-account'; account: PreparedAccount } | { kind: 'existing'; userId: string };
 
 type PinCheck = { ok: true; helmet: LockedHelmet } | { ok: false; lockedUntil: Date | null };
 
@@ -71,6 +73,7 @@ export class ActivationService {
     private readonly customerHelmets: CustomerHelmetsService,
     private readonly customerAuth: CustomerAuthService,
     private readonly credentials: CustomerCredentialsService,
+    private readonly accounts: CustomerAccountsService,
     private readonly config: AppConfigService,
   ) {}
 
@@ -118,18 +121,15 @@ export class ActivationService {
       where: { id: helmetId },
       select: { helmetCode: true },
     });
-    this.credentials.assertAcceptablePassword(dto.password, { helmetCode, activationPin: dto.pin });
-
-    // Expensive hashing happens before taking the row lock.
-    const [passwordHash, recovery] = await Promise.all([
-      this.credentials.hashPassword(dto.password),
-      this.credentials.newRecoveryCode(),
-    ]);
+    // Policy check + expensive hashing happen before taking the row lock.
+    const account = await this.accounts.prepare(dto.password, {
+      helmetCode,
+      activationPin: dto.pin,
+      name: dto.name,
+    });
     const { userId, publicToken } = await this.activate(helmetId, dto.pin, meta, {
       kind: 'new-account',
-      passwordHash,
-      recoveryCodeHash: recovery.hash,
-      name: dto.name,
+      account,
     });
 
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -137,7 +137,7 @@ export class ActivationService {
     await this.publicCache.invalidate(publicToken);
     const helmet = await this.customerHelmets.get(userId, helmetId);
     return {
-      result: { ...session.response, recoveryCode: recovery.code, helmet },
+      result: { ...session.response, recoveryCode: account.recoveryCode, helmet },
       refresh: session.refresh,
     };
   }
@@ -177,36 +177,19 @@ export class ActivationService {
           const helmet = check.helmet;
           const now = new Date();
 
-          let userId: string;
-          if (owner.kind === 'new-account') {
-            userId = uuidv7();
-            await tx.user.create({
-              data: {
-                id: userId,
-                name: owner.name,
-                passwordHash: owner.passwordHash,
-                passwordChangedAt: now,
-                recoveryCodeHash: owner.recoveryCodeHash,
-                recoveryCodeCreatedAt: now,
-              },
-            });
-            await this.audit.record(
-              {
-                action: AuditAction.CUSTOMER_CREATED,
-                entityType: 'user',
-                entityId: userId,
-                userId,
-                ipHash: meta.ipHash,
-                metadata: { via: 'activation' },
-              },
-              tx,
-            );
-          } else {
-            userId = owner.userId;
-          }
+          const userId =
+            owner.kind === 'new-account'
+              ? await this.accounts.create(tx, owner.account, meta, 'activation')
+              : owner.userId;
 
           await tx.helmetOwnership.create({
-            data: { helmetId: helmet.id, userId, status: 'ACTIVE', activatedAt: now },
+            data: {
+              helmetId: helmet.id,
+              userId,
+              status: 'ACTIVE',
+              acquiredVia: 'ACTIVATION',
+              activatedAt: now,
+            },
           });
           const purged = await tx.helmetActivationSecret.deleteMany({
             where: { helmetId: helmet.id },

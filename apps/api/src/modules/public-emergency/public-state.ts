@@ -2,13 +2,19 @@ import { type HelmetStatus, PublicHelmetState } from '@helmet/types';
 
 export interface OwnerContext {
   hasOwner: boolean;
-  /** True when the owner's profile is enabled, meets the minimum requirements and may be shown. */
+  /**
+   * True when this helmet's per-helmet switch is on and the owner's profile is enabled, meets the
+   * minimum requirements and may be shown.
+   */
   profilePublishable: boolean;
 }
 
-/** Statuses where an owner's enabled emergency profile is shown. Recalled/damaged helmets keep
- *  emergency access: a rider wearing one still needs first responders to see their profile. */
-const PROFILE_STATUSES: readonly HelmetStatus[] = ['ACTIVE', 'DAMAGED', 'RECALLED'];
+/**
+ * The ONLY status in which emergency information may be returned. Every other state is an
+ * explicit, data-free message (Phase 3: lost/stolen/damaged/replaced/deactivated/recalled never
+ * expose medical data or contacts).
+ */
+export const PROFILE_VISIBLE_STATUS: HelmetStatus = 'ACTIVE';
 
 /** Maps the internal lifecycle onto what the unauthenticated QR page may reveal. */
 export function toPublicState(status: HelmetStatus, owner: OwnerContext): PublicHelmetState {
@@ -22,15 +28,19 @@ export function toPublicState(status: HelmetStatus, owner: OwnerContext): Public
       return PublicHelmetState.LOST;
     case 'STOLEN':
       return PublicHelmetState.STOLEN;
+    case 'DAMAGED':
+      return PublicHelmetState.DAMAGED;
     case 'REPLACED':
+      return PublicHelmetState.REPLACED;
     case 'DEACTIVATED':
-      return PublicHelmetState.UNAVAILABLE;
+      return PublicHelmetState.DEACTIVATED;
+    case 'RECALLED':
+      return PublicHelmetState.RECALLED;
     case 'ACTIVATED':
     case 'ACTIVE':
-    case 'DAMAGED':
-    case 'RECALLED':
+      // e.g. ownership revoked by support: no owner, nothing to show.
       if (!owner.hasOwner) return PublicHelmetState.UNAVAILABLE;
-      return PROFILE_STATUSES.includes(status) && owner.profilePublishable
+      return status === PROFILE_VISIBLE_STATUS && owner.profilePublishable
         ? PublicHelmetState.ACTIVE
         : PublicHelmetState.ACTIVATED_PROFILE_INCOMPLETE;
   }
@@ -44,5 +54,9 @@ export const PUBLIC_STATE_MESSAGES: Record<PublicHelmetState, string> = {
     'Emergency information and contacts were provided by the helmet owner and are not verified.',
   LOST: 'This helmet has been reported lost.',
   STOLEN: 'This helmet has been reported stolen.',
-  UNAVAILABLE: 'This helmet is no longer in service.',
+  DAMAGED: 'This helmet is currently marked as damaged.',
+  REPLACED: 'This helmet has been replaced and is no longer active.',
+  DEACTIVATED: 'This helmet is no longer active.',
+  RECALLED: 'This helmet is subject to a manufacturer recall.',
+  UNAVAILABLE: 'This helmet is not currently in service.',
 };

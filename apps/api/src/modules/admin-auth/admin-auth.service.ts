@@ -4,6 +4,7 @@ import type Redis from 'ioredis';
 import {
   type AdminLoginResponse,
   type AdminProfile,
+  type AdminRecentAuthResponse,
   ErrorCode,
   ROLE_PERMISSIONS,
 } from '@helmet/types';
@@ -13,8 +14,11 @@ import type { RequestMeta } from '../../common/utils/request-context';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { HashingService } from '../../security/hashing.service';
+import { LockoutService } from '../../security/lockout';
+import { RecentAuthService } from '../../security/recent-auth.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
+import type { AuthenticatedAdmin } from './admin-auth.types';
 import { AdminTokenService, type IssuedRefreshToken } from './admin-token.service';
 
 export interface LoginResult {
@@ -33,6 +37,8 @@ export class AdminAuthService {
     private readonly tokens: AdminTokenService,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
+    private readonly lockout: LockoutService,
+    private readonly recentAuth: RecentAuthService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -137,6 +143,57 @@ export class AdminAuthService {
         ipHash: meta.ipHash,
       });
     }
+  }
+
+  /**
+   * Password re-check before highly sensitive support actions (ownership revocation, forced
+   * deactivation). Returns a short-lived recent-auth token; failures use an escalating lockout.
+   */
+  async reauthenticate(
+    admin: AuthenticatedAdmin,
+    password: string,
+    meta: RequestMeta,
+  ): Promise<AdminRecentAuthResponse> {
+    const key = `admin-reauth:${admin.id}`;
+    const state = await this.lockout.status(key);
+    if (state.locked) {
+      throw new AppException(
+        ErrorCode.ACCOUNT_LOCKED,
+        'Too many attempts. Try again later.',
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retryAfter: state.retryAfter },
+      );
+    }
+    const row = await this.prisma.adminUser.findUniqueOrThrow({ where: { id: admin.id } });
+    if (!(await this.hashing.verifyPassword(row.passwordHash, password))) {
+      await this.lockout.fail(key, {
+        threshold: this.config.get('ADMIN_LOGIN_MAX_ATTEMPTS'),
+        baseSeconds: 60,
+        maxSeconds: 3600,
+      });
+      await this.audit.record({
+        action: AuditAction.ADMIN_RECENT_AUTH_FAILED,
+        entityType: 'admin_user',
+        entityId: admin.id,
+        adminId: admin.id,
+        ipHash: meta.ipHash,
+      });
+      throw new AppException(
+        ErrorCode.INVALID_CREDENTIALS,
+        'Your password is incorrect.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    await this.lockout.reset(key);
+    const issued = await this.recentAuth.issue('admin', admin.id, null);
+    await this.audit.record({
+      action: AuditAction.ADMIN_RECENT_AUTH_CREATED,
+      entityType: 'admin_user',
+      entityId: admin.id,
+      adminId: admin.id,
+      ipHash: meta.ipHash,
+    });
+    return issued;
   }
 
   async profile(adminId: string): Promise<AdminProfile> {

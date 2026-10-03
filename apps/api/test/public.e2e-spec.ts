@@ -98,7 +98,7 @@ describe('Public emergency endpoint (e2e)', () => {
       .send({ status: 'DEACTIVATED' })
       .expect(200);
     const res = await ctx.http().get(`/api/v1/public/emergency/${token}`).expect(200);
-    expect(res.body.data.state).toBe('UNAVAILABLE');
+    expect(res.body.data.state).toBe('DEACTIVATED');
   });
 
   it('rate limits abusive clients without affecting normal use', async () => {

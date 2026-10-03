@@ -92,6 +92,12 @@ export const envSchema = z
     RECOVERY_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(10),
     RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+    /** Sensitive actions (transfer, stolen, retire, …) require a password re-check this recent. */
+    RECENT_AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(300),
+    TRANSFER_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
+    TRANSFER_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(5),
+    TRANSFER_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
+    TRANSFER_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
     DEFAULT_PHONE_REGION: z
       .string()
       .regex(/^[A-Z]{2}$/)

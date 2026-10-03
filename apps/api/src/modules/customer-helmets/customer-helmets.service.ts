@@ -1,18 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import {
   type CustomerDashboardDto,
+  type CustomerHelmetDetailDto,
   type CustomerHelmetDto,
   ErrorCode,
+  helmetListGroup,
   type HelmetStatus,
+  type OwnershipAcquisition,
+  ownerActions,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EmergencyReadinessService } from '../emergency-readiness/emergency-readiness.service';
 import { helmetProfileStatus, profileStatus } from '../emergency-readiness/readiness';
+import { buildTimeline } from './timeline';
 
 interface OwnedHelmetRow {
   activatedAt: Date;
+  acquiredVia: OwnershipAcquisition;
   helmet: {
     id: string;
     helmetCode: string;
@@ -24,8 +30,18 @@ interface OwnedHelmetRow {
   };
 }
 
+/** Per-listing lookups loaded once (no N+1). */
+interface ListContext {
+  ownerStatus: ReturnType<typeof profileStatus>;
+  switches: Map<string, boolean>;
+  pending: Map<string, Date>;
+  replacedBy: Map<string, string>;
+  replaces: Map<string, string>;
+}
+
 const ownedSelect = {
   activatedAt: true,
+  acquiredVia: true,
   helmet: {
     select: {
       id: true,
@@ -52,21 +68,39 @@ export class CustomerHelmetsService {
   ) {}
 
   async list(userId: string): Promise<CustomerHelmetDto[]> {
-    const [rows, facts] = await Promise.all([
-      this.prisma.helmetOwnership.findMany({
-        where: { userId, status: 'ACTIVE' },
-        orderBy: { activatedAt: 'desc' },
-        select: ownedSelect,
-      }),
-      this.readiness.facts(userId),
-    ]);
-    const ownerStatus = profileStatus(facts);
-    return rows.map((row) => this.toDto(row, ownerStatus));
+    const rows = await this.prisma.helmetOwnership.findMany({
+      where: { userId, status: 'ACTIVE' },
+      orderBy: { activatedAt: 'desc' },
+      select: ownedSelect,
+    });
+    const ctx = await this.context(
+      userId,
+      rows.map((r) => r.helmet.id),
+    );
+    return rows.map((row) => this.toDto(row, ctx));
   }
 
   async get(userId: string, helmetId: string): Promise<CustomerHelmetDto> {
     const row = await this.findOwned(userId, helmetId);
-    return this.toDto(row, profileStatus(await this.readiness.facts(userId)));
+    return this.toDto(row, await this.context(userId, [helmetId]));
+  }
+
+  /** Helmet detail with the owner-facing lifecycle timeline (this ownership period only). */
+  async detail(userId: string, helmetId: string): Promise<CustomerHelmetDetailDto> {
+    const row = await this.findOwned(userId, helmetId);
+    const [ctx, history] = await Promise.all([
+      this.context(userId, [helmetId]),
+      this.prisma.helmetStatusHistory.findMany({
+        where: { helmetId, createdAt: { gte: row.activatedAt } },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+        select: { fromStatus: true, toStatus: true, reasonCode: true, createdAt: true },
+      }),
+    ]);
+    return {
+      ...this.toDto(row, ctx),
+      timeline: buildTimeline(row, history, 'ACTIVATED'),
+    };
   }
 
   /** Public QR URL for one of the customer's own helmets (used for the QR preview). */
@@ -92,11 +126,53 @@ export class CustomerHelmetsService {
     return row;
   }
 
-  private toDto(
-    row: OwnedHelmetRow,
-    ownerStatus: ReturnType<typeof profileStatus>,
-  ): CustomerHelmetDto {
+  private async context(userId: string, helmetIds: string[]): Promise<ListContext> {
+    const [facts, switches, pending, links] = await Promise.all([
+      this.readiness.facts(userId),
+      this.readiness.helmetSwitches(userId),
+      helmetIds.length
+        ? this.prisma.helmetTransfer.findMany({
+            where: {
+              helmetId: { in: helmetIds },
+              fromUserId: userId,
+              status: 'PENDING',
+              expiresAt: { gt: new Date() },
+            },
+            select: { helmetId: true, expiresAt: true },
+          })
+        : [],
+      helmetIds.length
+        ? this.prisma.helmetReplacement.findMany({
+            where: {
+              OR: [
+                { originalHelmetId: { in: helmetIds } },
+                { replacementHelmetId: { in: helmetIds } },
+              ],
+            },
+            select: {
+              originalHelmetId: true,
+              replacementHelmetId: true,
+              original: { select: { helmetCode: true } },
+              replacement: { select: { helmetCode: true } },
+            },
+          })
+        : [],
+    ]);
+    return {
+      ownerStatus: profileStatus(facts),
+      switches,
+      pending: new Map(pending.map((p) => [p.helmetId, p.expiresAt])),
+      replacedBy: new Map(links.map((l) => [l.originalHelmetId, l.replacement.helmetCode])),
+      replaces: new Map(links.map((l) => [l.replacementHelmetId, l.original.helmetCode])),
+    };
+  }
+
+  private toDto(row: OwnedHelmetRow, ctx: ListContext): CustomerHelmetDto {
     const h = row.helmet;
+    const enabled = ctx.switches.get(h.id) ?? false;
+    const pending = ctx.pending.get(h.id);
+    const replacedBy = ctx.replacedBy.get(h.id);
+    const replaces = ctx.replaces.get(h.id);
     return {
       id: h.id,
       helmetCode: h.helmetCode,
@@ -106,7 +182,14 @@ export class CustomerHelmetsService {
       activatedAt: h.activatedAt?.toISOString() ?? null,
       ownedSince: row.activatedAt.toISOString(),
       publicUrl: this.config.publicHelmetUrl(h.publicToken),
-      emergencyProfileStatus: helmetProfileStatus(ownerStatus, h.status),
+      emergencyProfileStatus: helmetProfileStatus(ctx.ownerStatus, enabled),
+      emergencyEnabled: enabled,
+      acquiredVia: row.acquiredVia,
+      group: helmetListGroup(h.status),
+      availableActions: ownerActions(h.status),
+      pendingTransfer: pending ? { expiresAt: pending.toISOString() } : null,
+      replacedBy: replacedBy ? { helmetCode: replacedBy } : null,
+      replaces: replaces ? { helmetCode: replaces } : null,
     };
   }
 }

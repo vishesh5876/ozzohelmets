@@ -26,7 +26,7 @@ import { ReqMeta, type RequestMeta } from '../../../common/utils/request-context
 import type { AuthenticatedCustomer } from '../../customer-auth/customer-auth.types';
 import { CurrentCustomer } from '../../customer-auth/decorators/current-customer.decorator';
 import { CustomerAuth } from '../../customer-auth/decorators/customer-auth.decorator';
-import { UpdateEmergencyProfileDto } from './emergency-profile.dto';
+import { EnableEmergencyProfileDto, UpdateEmergencyProfileDto } from './emergency-profile.dto';
 import { EmergencyProfileService } from './emergency-profile.service';
 
 /** Hard upload cap enforced while streaming; the configured photo limit is checked afterwards. */
@@ -76,12 +76,16 @@ export class EmergencyProfileController {
 
   @Post('enable')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Enable the emergency profile; owned ACTIVATED helmets become ACTIVE.' })
+  @ApiOperation({
+    summary:
+      'Enable the emergency profile and switch it on for the given helmets (or the only helmet in use).',
+  })
   enable(
     @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: EnableEmergencyProfileDto,
     @ReqMeta() meta: RequestMeta,
   ): Promise<EmergencyReadinessDto> {
-    return this.profiles.enable(customer, meta);
+    return this.profiles.enable(customer, meta, dto.helmetIds);
   }
 
   @Post('disable')

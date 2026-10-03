@@ -21,6 +21,7 @@ import {
   type CustomerResetPasswordResponse,
   type CustomerSessionDto,
   ErrorCode,
+  type RecentAuthResponse,
   type RecoveryCodeIssued,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
@@ -133,6 +134,22 @@ export class CustomerAuthController {
     @ReqMeta() meta: RequestMeta,
   ): Promise<RecoveryCodeIssued> {
     return this.auth.rotateRecoveryCode(customer, dto.password, meta);
+  }
+
+  @Post('reauthenticate')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Confirm the password for sensitive actions → short-lived recent-auth token (send as X-Recent-Auth).',
+  })
+  reauthenticate(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: ConfirmPasswordDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<RecentAuthResponse> {
+    return this.auth.reauthenticate(customer, dto.password, meta);
   }
 
   @Post('refresh')

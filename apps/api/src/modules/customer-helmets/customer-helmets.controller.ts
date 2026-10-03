@@ -1,7 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Res } from '@nestjs/common';
 import { ApiProduces, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import type { CustomerDashboardDto, CustomerHelmetDto } from '@helmet/types';
+import type {
+  CustomerDashboardDto,
+  CustomerHelmetDetailDto,
+  CustomerHelmetDto,
+} from '@helmet/types';
 import { RawResponse } from '../../common/http/raw-response.decorator';
 import type { AuthenticatedCustomer } from '../customer-auth/customer-auth.types';
 import { CurrentCustomer } from '../customer-auth/decorators/current-customer.decorator';
@@ -32,8 +36,8 @@ export class CustomerHelmetsController {
   get(
     @CurrentCustomer() customer: AuthenticatedCustomer,
     @Param('id', new ParseUUIDPipe()) id: string,
-  ): Promise<CustomerHelmetDto> {
-    return this.helmets.get(customer.id, id);
+  ): Promise<CustomerHelmetDetailDto> {
+    return this.helmets.detail(customer.id, id);
   }
 
   @Get('helmets/:id/qr')

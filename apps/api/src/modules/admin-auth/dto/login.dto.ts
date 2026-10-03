@@ -17,3 +17,11 @@ export class AdminLoginDto {
   @MaxLength(256)
   password: string;
 }
+
+export class ReauthenticateDto {
+  @ApiProperty({ format: 'password' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(256)
+  password: string;
+}

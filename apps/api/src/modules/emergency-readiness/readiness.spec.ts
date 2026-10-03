@@ -63,8 +63,8 @@ describe('emergency readiness', () => {
   });
 
   it('reports an enabled owner profile as DISABLED for a helmet not yet switched on', () => {
-    expect(helmetProfileStatus('ACTIVE', 'ACTIVATED')).toBe('DISABLED');
-    expect(helmetProfileStatus('ACTIVE', 'ACTIVE')).toBe('ACTIVE');
-    expect(helmetProfileStatus('INCOMPLETE', 'ACTIVATED')).toBe('INCOMPLETE');
+    expect(helmetProfileStatus('ACTIVE', false)).toBe('DISABLED');
+    expect(helmetProfileStatus('ACTIVE', true)).toBe('ACTIVE');
+    expect(helmetProfileStatus('INCOMPLETE', false)).toBe('INCOMPLETE');
   });
 });

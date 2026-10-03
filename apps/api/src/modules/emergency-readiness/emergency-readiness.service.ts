@@ -35,6 +35,36 @@ export class EmergencyReadinessService {
     };
   }
 
+  /** Per-helmet switches of a customer (helmetId → enabled), loaded once for listings. */
+  async helmetSwitches(userId: string): Promise<Map<string, boolean>> {
+    const rows = await this.prisma.helmetEmergencySetting.findMany({
+      where: { userId },
+      select: { helmetId: true, enabled: true },
+    });
+    return new Map(rows.map((r) => [r.helmetId, r.enabled]));
+  }
+
+  async helmetEnabled(helmetId: string, userId: string, tx?: PrismaTx): Promise<boolean> {
+    const row = await (tx ?? this.prisma).helmetEmergencySetting.findUnique({
+      where: { helmetId_userId: { helmetId, userId } },
+      select: { enabled: true },
+    });
+    return row?.enabled ?? false;
+  }
+
+  /**
+   * Whether this owner's emergency information may be exposed on this helmet: the per-helmet
+   * switch is on AND the account profile is enabled AND still meets the minimum requirements.
+   * Used to decide ACTIVE vs ACTIVATED (e.g. on restore) and by the public page.
+   */
+  async canExpose(userId: string, helmetId: string, tx?: PrismaTx): Promise<boolean> {
+    const [facts, enabled] = await Promise.all([
+      this.facts(userId, tx),
+      this.helmetEnabled(helmetId, userId, tx),
+    ]);
+    return enabled && facts.enabled && missingRequirements(facts).length === 0;
+  }
+
   async readiness(userId: string): Promise<EmergencyReadinessDto> {
     return evaluateReadiness(await this.facts(userId));
   }

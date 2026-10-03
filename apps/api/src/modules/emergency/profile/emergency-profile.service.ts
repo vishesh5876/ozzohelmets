@@ -5,6 +5,7 @@ import {
   type EmergencyProfileDto,
   type EmergencyReadinessDto,
   ErrorCode,
+  OPERATIONAL_STATUSES,
   type PublicEmergencyDto,
 } from '@helmet/types';
 import { AppConfigService } from '../../../config/app-config.service';
@@ -24,6 +25,7 @@ import {
 } from '../../file-storage/file-storage.types';
 import { processProfilePhoto } from '../../file-storage/image-processor';
 import { HelmetStatusService } from '../../helmets/domain/helmet-status.service';
+import { OwnedHelmetLocker } from '../../helmets/domain/owned-helmet.locker';
 import { PublicEmergencyCacheService } from '../../public-emergency-cache/public-emergency-cache.service';
 import { type DecryptedProfile, decryptProfile } from '../domain/decrypted-profile';
 import { ProfileCipher } from '../domain/profile-cipher';
@@ -45,6 +47,7 @@ export class EmergencyProfileService {
     @Inject(PROFILE_CIPHER) private readonly cipher: ProfileCipher,
     private readonly readiness: EmergencyReadinessService,
     private readonly statuses: HelmetStatusService,
+    private readonly locker: OwnedHelmetLocker,
     private readonly audit: AuditService,
     private readonly publicCache: PublicEmergencyCacheService,
     private readonly contacts: EmergencyContactsService,
@@ -119,11 +122,17 @@ export class EmergencyProfileService {
   }
 
   /**
-   * Enables the emergency profile and moves every owned ACTIVATED helmet to ACTIVE. Fails with
-   * PROFILE_INCOMPLETE (listing what is missing) unless the domain minimum is met.
+   * Enables the account emergency profile (fails with PROFILE_INCOMPLETE listing what is missing)
+   * and switches it on for the chosen helmets. Without `helmetIds` it switches on the helmet only
+   * when the customer has exactly one helmet in use — with several, each must be chosen
+   * explicitly so medical data is never exposed on a helmet by accident.
    */
-  async enable(customer: AuthenticatedCustomer, meta: RequestMeta): Promise<EmergencyReadinessDto> {
-    await this.prisma.$transaction(async (tx) => {
+  async enable(
+    customer: AuthenticatedCustomer,
+    meta: RequestMeta,
+    helmetIds?: string[],
+  ): Promise<EmergencyReadinessDto> {
+    const tokens = await this.prisma.$transaction(async (tx) => {
       await this.lockUser(tx, customer.id);
       await this.readiness.assertCanEnable(customer.id, tx);
       const profile = await tx.emergencyProfile.findFirstOrThrow({
@@ -136,15 +145,21 @@ export class EmergencyProfileService {
           data: { emergencyProfileEnabled: true, enabledAt: new Date() },
         });
       }
-      const helmets = await this.ownedHelmetsInStatus(tx, customer.id, 'ACTIVATED');
-      for (const helmetId of helmets) {
-        await this.statuses.apply(tx, {
-          helmetId,
-          from: 'ACTIVATED',
-          to: 'ACTIVE',
-          actor: { type: ActorType.OWNER, id: customer.id },
-          reason: 'Emergency profile enabled',
+      let targets = helmetIds ? [...new Set(helmetIds)] : undefined;
+      if (!targets) {
+        const inUse = await tx.helmetOwnership.findMany({
+          where: {
+            userId: customer.id,
+            status: 'ACTIVE',
+            helmet: { status: { in: [...OPERATIONAL_STATUSES] } },
+          },
+          select: { helmetId: true },
         });
+        targets = inUse.length === 1 ? [inUse[0]!.helmetId] : [];
+      }
+      const changed: string[] = [];
+      for (const helmetId of targets) {
+        changed.push(await this.switchHelmetOn(tx, customer, helmetId));
       }
       await this.audit.record(
         {
@@ -153,16 +168,21 @@ export class EmergencyProfileService {
           entityId: profile.id,
           userId: customer.id,
           ipHash: meta.ipHash,
-          metadata: { helmetsActivated: helmets.length },
+          metadata: { helmetsEnabled: targets.length },
         },
         tx,
       );
+      return changed;
     });
+    await this.publicCache.invalidate(...tokens);
     await this.publicCache.invalidateForOwner(customer.id);
     return this.readiness.readiness(customer.id);
   }
 
-  /** Disables the profile: public pages stop showing it immediately and ACTIVE helmets return to ACTIVATED. */
+  /**
+   * Disables the account profile: public pages stop showing it immediately, every per-helmet
+   * switch turns off and ACTIVE helmets return to ACTIVATED.
+   */
   async disable(
     customer: AuthenticatedCustomer,
     meta: RequestMeta,
@@ -179,6 +199,10 @@ export class EmergencyProfileService {
         where: { id: profile.id },
         data: { emergencyProfileEnabled: false, enabledAt: null },
       });
+      await tx.helmetEmergencySetting.updateMany({
+        where: { userId: customer.id, enabled: true },
+        data: { enabled: false },
+      });
       const helmets = await this.ownedHelmetsInStatus(tx, customer.id, 'ACTIVE');
       for (const helmetId of helmets) {
         await this.statuses.apply(tx, {
@@ -187,6 +211,7 @@ export class EmergencyProfileService {
           to: 'ACTIVATED',
           actor: { type: ActorType.OWNER, id: customer.id },
           reason: 'Emergency profile disabled',
+          reasonCode: 'EMERGENCY_DISABLED',
         });
       }
       await this.audit.record(
@@ -205,6 +230,113 @@ export class EmergencyProfileService {
     return this.readiness.readiness(customer.id);
   }
 
+  /** Switches emergency information on for ONE owned helmet (explicit, per-helmet consent). */
+  async enableForHelmet(
+    customer: AuthenticatedCustomer,
+    helmetId: string,
+    meta: RequestMeta,
+  ): Promise<void> {
+    const token = await this.prisma.$transaction(async (tx) => {
+      await this.lockUser(tx, customer.id);
+      await this.readiness.assertCanEnable(customer.id, tx);
+      const profile = await tx.emergencyProfile.findFirstOrThrow({
+        where: { userId: customer.id, helmetId: null },
+        select: { id: true, emergencyProfileEnabled: true },
+      });
+      if (!profile.emergencyProfileEnabled) {
+        await tx.emergencyProfile.update({
+          where: { id: profile.id },
+          data: { emergencyProfileEnabled: true, enabledAt: new Date() },
+        });
+      }
+      const publicToken = await this.switchHelmetOn(tx, customer, helmetId);
+      await this.audit.record(
+        {
+          action: AuditAction.HELMET_EMERGENCY_ENABLED,
+          entityType: 'helmet',
+          entityId: helmetId,
+          userId: customer.id,
+          ipHash: meta.ipHash,
+        },
+        tx,
+      );
+      return publicToken;
+    });
+    await this.publicCache.invalidate(token);
+  }
+
+  /** Stops exposing emergency information on ONE helmet; the account profile stays as it is. */
+  async disableForHelmet(
+    customer: AuthenticatedCustomer,
+    helmetId: string,
+    meta: RequestMeta,
+  ): Promise<void> {
+    const token = await this.prisma.$transaction(async (tx) => {
+      await this.lockUser(tx, customer.id);
+      const { helmet } = await this.locker.lockOwned(tx, helmetId, customer.id);
+      await tx.helmetEmergencySetting.upsert({
+        where: { helmetId_userId: { helmetId, userId: customer.id } },
+        create: { helmetId, userId: customer.id, enabled: false },
+        update: { enabled: false },
+      });
+      if (helmet.status === 'ACTIVE') {
+        await this.statuses.apply(tx, {
+          helmetId,
+          from: 'ACTIVE',
+          to: 'ACTIVATED',
+          actor: { type: ActorType.OWNER, id: customer.id },
+          reason: 'Emergency information turned off for this helmet',
+          reasonCode: 'EMERGENCY_DISABLED',
+        });
+      }
+      await this.audit.record(
+        {
+          action: AuditAction.HELMET_EMERGENCY_DISABLED,
+          entityType: 'helmet',
+          entityId: helmetId,
+          userId: customer.id,
+          ipHash: meta.ipHash,
+        },
+        tx,
+      );
+      return helmet.publicToken;
+    });
+    await this.publicCache.invalidate(token);
+  }
+
+  /** Inside a user-locked tx with the profile enabled: per-helmet switch on + ACTIVATED → ACTIVE. */
+  private async switchHelmetOn(
+    tx: PrismaTx,
+    customer: AuthenticatedCustomer,
+    helmetId: string,
+  ): Promise<string> {
+    const { helmet } = await this.locker.lockOwned(tx, helmetId, customer.id);
+    if (!OPERATIONAL_STATUSES.includes(helmet.status)) {
+      throw new AppException(
+        ErrorCode.HELMET_ACTION_NOT_ALLOWED,
+        'Emergency information can only be turned on for a helmet in normal use.',
+        HttpStatus.CONFLICT,
+        { status: helmet.status },
+      );
+    }
+    await tx.helmetEmergencySetting.upsert({
+      where: { helmetId_userId: { helmetId, userId: customer.id } },
+      create: { helmetId, userId: customer.id, enabled: true, confirmedAt: new Date() },
+      update: { enabled: true, confirmedAt: new Date() },
+    });
+    if (helmet.status === 'ACTIVATED') {
+      await this.statuses.apply(tx, {
+        helmetId,
+        from: 'ACTIVATED',
+        to: 'ACTIVE',
+        actor: { type: ActorType.OWNER, id: customer.id },
+        reason: 'Emergency information turned on for this helmet',
+        reasonCode: 'EMERGENCY_ENABLED',
+      });
+    }
+    return helmet.publicToken;
+  }
+
   /** What an anonymous scan would show if the profile were enabled — for the review step. */
   async preview(customerId: string): Promise<Pick<PublicEmergencyDto, 'profile' | 'contacts'>> {
     const profile = await this.loadDecrypted(customerId);
@@ -219,16 +351,19 @@ export class EmergencyProfileService {
   }
 
   /**
-   * Public view for an owner, used by the QR endpoint. Returns null unless the profile exists,
-   * is enabled and still meets the minimum requirements.
+   * Public view for an owner on one helmet, used by the QR endpoint. Returns null unless the
+   * helmet's switch is on and the profile exists, is enabled and meets the minimum requirements.
    */
   async publicView(
     userId: string,
+    helmetId: string,
     photoUrl: string,
   ): Promise<{
     data: Pick<PublicEmergencyDto, 'profile' | 'contacts'>;
     photo: { key: string; contentType: string } | null;
   } | null> {
+    // Per-helmet consent first: a helmet whose switch is off never decrypts anything.
+    if (!(await this.readiness.helmetEnabled(helmetId, userId))) return null;
     const profile = await this.loadDecrypted(userId);
     if (!profile?.enabled) return null;
     const facts = await this.readiness.facts(userId);

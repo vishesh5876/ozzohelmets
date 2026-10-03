@@ -6,6 +6,7 @@ import { EmergencyContactsService } from './contacts/emergency-contacts.service'
 import { ProfileCipher } from './domain/profile-cipher';
 import { PROFILE_CIPHER } from './emergency.tokens';
 import { EmergencyProfileController } from './profile/emergency-profile.controller';
+import { HelmetEmergencyController } from './profile/helmet-emergency.controller';
 import { EmergencyProfileService } from './profile/emergency-profile.service';
 import { EmergencyVisibilityController } from './visibility/emergency-visibility.controller';
 import { EmergencyVisibilityService } from './visibility/emergency-visibility.service';
@@ -17,6 +18,7 @@ import { EmergencyVisibilityService } from './visibility/emergency-visibility.se
     EmergencyProfileController,
     EmergencyContactsController,
     EmergencyVisibilityController,
+    HelmetEmergencyController,
   ],
   providers: [
     EmergencyProfileService,

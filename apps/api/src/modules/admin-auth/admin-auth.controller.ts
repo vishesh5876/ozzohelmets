@@ -2,7 +2,12 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@ne
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import type { CookieOptions, Request, Response } from 'express';
-import { type AdminLoginResponse, type AdminProfile, ErrorCode } from '@helmet/types';
+import {
+  type AdminLoginResponse,
+  type AdminProfile,
+  type AdminRecentAuthResponse,
+  ErrorCode,
+} from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import { ReqMeta, type RequestMeta } from '../../common/utils/request-context';
@@ -14,7 +19,7 @@ import {
 } from './admin-auth.types';
 import { AdminAuth } from './decorators/admin-auth.decorator';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
-import { AdminLoginDto } from './dto/login.dto';
+import { AdminLoginDto, ReauthenticateDto } from './dto/login.dto';
 import type { IssuedRefreshToken } from './admin-token.service';
 
 const CSRF_HEADER = 'x-requested-with';
@@ -41,6 +46,21 @@ export class AdminAuthController {
     const result = await this.auth.login(dto.email, dto.password, meta);
     this.setRefreshCookie(res, result.refresh);
     return result.response;
+  }
+
+  @Post('reauthenticate')
+  @HttpCode(HttpStatus.OK)
+  @AdminAuth()
+  @RateLimit('auth')
+  @ApiOperation({
+    summary: 'Confirm the password before sensitive support actions → X-Recent-Auth token.',
+  })
+  reauthenticate(
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+    @Body() dto: ReauthenticateDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<AdminRecentAuthResponse> {
+    return this.auth.reauthenticate(admin, dto.password, meta);
   }
 
   @Post('refresh')

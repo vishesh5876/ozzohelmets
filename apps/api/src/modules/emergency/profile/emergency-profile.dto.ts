@@ -8,6 +8,7 @@ import {
   IsIn,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -87,4 +88,17 @@ export class UpdateEmergencyProfileDto {
   @IsOptional()
   @IsBoolean()
   organDonor?: boolean | null;
+}
+
+export class EnableEmergencyProfileDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Helmets to switch emergency information on for. Omit to use the only helmet in use; required in practice when you own several.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  helmetIds?: string[];
 }

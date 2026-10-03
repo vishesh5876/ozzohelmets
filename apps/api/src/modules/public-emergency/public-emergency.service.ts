@@ -22,7 +22,7 @@ import {
   type CachedPublicHelmet,
   PublicEmergencyCacheService,
 } from '../public-emergency-cache/public-emergency-cache.service';
-import { PUBLIC_STATE_MESSAGES, toPublicState } from './public-state';
+import { PROFILE_VISIBLE_STATUS, PUBLIC_STATE_MESSAGES, toPublicState } from './public-state';
 
 export interface ScanContext {
   ipHash: string | null;
@@ -88,9 +88,15 @@ export class PublicEmergencyService {
     if (!helmet) return null;
 
     const ownerId = helmet.ownerships[0]?.userId ?? null;
+    // Decrypt only when the status may show a profile at all (ACTIVE) — and the view itself
+    // checks the per-helmet switch of the CURRENT owner, so a previous owner's data can't leak.
     const view =
-      ownerId && ['ACTIVE', 'DAMAGED', 'RECALLED'].includes(helmet.status)
-        ? await this.profiles.publicView(ownerId, `/api/v1/public/emergency/${token}/photo`)
+      ownerId && helmet.status === PROFILE_VISIBLE_STATUS
+        ? await this.profiles.publicView(
+            ownerId,
+            helmet.id,
+            `/api/v1/public/emergency/${token}/photo`,
+          )
         : null;
     const state = toPublicState(helmet.status, {
       hasOwner: ownerId !== null,
