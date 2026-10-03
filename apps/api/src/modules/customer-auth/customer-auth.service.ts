@@ -10,6 +10,7 @@ import {
   ErrorCode,
   normalizeRecoveryCode,
   type RecentAuthResponse,
+  parseAccountIdentifier,
   type RecoveryCodeIssued,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
@@ -110,29 +111,33 @@ export class CustomerAuthService {
     return issued;
   }
 
+  /**
+   * Sign in with a Helmet ID the account currently owns OR its permanent Customer ID, plus the
+   * password. Unknown IDs, unowned helmets, wrong passwords and suspended accounts are
+   * indistinguishable; lockouts apply per identifier and per account.
+   */
   async login(
-    rawHelmetCode: string,
+    rawIdentifier: string,
     password: string,
     meta: RequestMeta,
   ): Promise<CustomerSession> {
-    const helmetCode = this.credentials.canonicalHelmetCode(rawHelmetCode);
-    const helmetKey = `customer-login:helmet:${sha(helmetCode)}`;
+    const { key, user } = await this.resolveIdentifier(rawIdentifier, 'customer-login');
+    const keys = this.lockKeys('customer-login', key, user);
     await this.assertNotLocked(
-      helmetKey,
+      keys,
       `customer-login:ip:${meta.ipHash}`,
       this.config.get('CUSTOMER_LOGIN_MAX_FAILURES_PER_IP_PER_HOUR'),
       meta,
     );
 
-    const user = await this.ownerOf(helmetCode);
     const ok =
       (await this.credentials.verifyPassword(user?.passwordHash ?? null, password)) &&
       user?.status === 'ACTIVE';
     if (!ok || !user) {
-      await this.recordFailure(helmetKey, meta, 'login', user?.id ?? null);
+      await this.recordFailure(keys, meta, 'login', user?.id ?? null);
       throw this.invalidCredentials();
     }
-    await this.lockout.reset(helmetKey);
+    await Promise.all(keys.map((k) => this.lockout.reset(k)));
     await this.audit.record({
       action: AuditAction.CUSTOMER_LOGIN,
       entityType: 'user',
@@ -166,30 +171,29 @@ export class CustomerAuthService {
    * short-lived single-use reset token (stored hashed in Redis).
    */
   async recover(
-    rawHelmetCode: string,
+    rawIdentifier: string,
     rawRecoveryCode: string,
     meta: RequestMeta,
   ): Promise<CustomerRecoverResponse> {
-    const helmetCode = this.credentials.canonicalHelmetCode(rawHelmetCode);
-    const helmetKey = `customer-recovery:helmet:${sha(helmetCode)}`;
+    const { key, user } = await this.resolveIdentifier(rawIdentifier, 'customer-recovery');
+    const keys = this.lockKeys('customer-recovery', key, user);
     await this.assertNotLocked(
-      helmetKey,
+      keys,
       `customer-recovery:ip:${meta.ipHash}`,
       this.config.get('RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR'),
       meta,
     );
 
     const code = normalizeRecoveryCode(rawRecoveryCode);
-    const user = await this.ownerOf(helmetCode);
     const ok =
       code !== null &&
       (await this.credentials.verifyRecoveryCode(user?.recoveryCodeHash ?? null, code)) &&
       user?.status === 'ACTIVE';
     if (!ok || !user?.recoveryCodeHash) {
-      await this.recordFailure(helmetKey, meta, 'recovery', user?.id ?? null);
-      throw this.invalidCredentials('The Helmet ID or recovery code is incorrect.');
+      await this.recordFailure(keys, meta, 'recovery', user?.id ?? null);
+      throw this.invalidCredentials('The ID or recovery code is incorrect.');
     }
-    await this.lockout.reset(helmetKey);
+    await Promise.all(keys.map((k) => this.lockout.reset(k)));
 
     const resetToken = opaqueToken(32);
     const ttl = this.config.get('RECOVERY_RESET_TOKEN_TTL_SECONDS');
@@ -415,31 +419,55 @@ export class CustomerAuthService {
     return toCustomerProfile(user);
   }
 
-  /** Current owner of a helmet via its ACTIVE ownership row, or null. */
-  private async ownerOf(helmetCode: string): Promise<User | null> {
+  /**
+   * Resolves a Customer ID (the account itself) or a Helmet ID (its current owner's account).
+   * Malformed input / bad check symbols are rejected before any lookup.
+   */
+  private async resolveIdentifier(
+    raw: string,
+    _scope: string,
+  ): Promise<{ key: string; user: User | null }> {
+    const id = parseAccountIdentifier(raw);
+    if (!id) {
+      throw new AppException(
+        ErrorCode.VALIDATION_ERROR,
+        'That ID is not valid. Check the Helmet ID on your label or your Customer ID (CU-…).',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (id.kind === 'customer') {
+      const user = await this.prisma.user.findUnique({ where: { customerCode: id.code } });
+      return { key: `customer:${sha(id.code)}`, user };
+    }
     const ownership = await this.prisma.helmetOwnership.findFirst({
-      where: { status: 'ACTIVE', helmet: { helmetCode } },
+      where: { status: 'ACTIVE', helmet: { helmetCode: id.code } },
       select: { user: true },
     });
-    return ownership?.user ?? null;
+    return { key: `helmet:${sha(id.code)}`, user: ownership?.user ?? null };
+  }
+
+  /** Per-identifier key always; per-account key too once the account is known. */
+  private lockKeys(scope: string, idKey: string, user: User | null): string[] {
+    return user ? [`${scope}:${idKey}`, `${scope}:user:${user.id}`] : [`${scope}:${idKey}`];
   }
 
   private async assertNotLocked(
-    helmetKey: string,
+    keys: string[],
     ipKey: string,
     ipLimit: number,
     meta: RequestMeta,
   ): Promise<void> {
-    const [helmet, ip] = await Promise.all([
-      this.lockout.status(helmetKey),
+    const [ip, ...states] = await Promise.all([
       meta.ipHash ? this.limiter.peek(ipKey, ipLimit) : Promise.resolve(null),
+      ...keys.map((k) => this.lockout.status(k)),
     ]);
-    if (helmet.locked) throw this.locked(helmet.retryAfter);
+    const locked = states.find((s) => s.locked);
+    if (locked) throw this.locked(locked.retryAfter);
     if (ip && !ip.allowed) throw this.locked(ip.retryAfter);
   }
 
   private async recordFailure(
-    helmetKey: string,
+    keys: string[],
     meta: RequestMeta,
     kind: 'login' | 'recovery',
     userId: string | null,
@@ -456,7 +484,8 @@ export class CustomerAuthService {
             baseSeconds: this.config.get('RECOVERY_LOCKOUT_BASE_SECONDS'),
             maxSeconds: 86_400,
           };
-    const state = await this.lockout.fail(helmetKey, policy);
+    const states = await Promise.all(keys.map((k) => this.lockout.fail(k, policy)));
+    const state = states.find((s) => s.locked) ?? states[0]!;
     if (meta.ipHash) {
       const limit =
         kind === 'login'
@@ -489,7 +518,7 @@ export class CustomerAuthService {
     }
   }
 
-  private invalidCredentials(message = 'The Helmet ID or password is incorrect.'): AppException {
+  private invalidCredentials(message = 'The ID or password is incorrect.'): AppException {
     return new AppException(ErrorCode.INVALID_CREDENTIALS, message, HttpStatus.UNAUTHORIZED);
   }
 
@@ -506,6 +535,7 @@ export class CustomerAuthService {
 export function toCustomerProfile(u: User): CustomerProfile {
   return {
     id: u.id,
+    customerId: u.customerCode,
     name: u.name,
     email: u.email,
     mobile: u.mobile,

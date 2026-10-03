@@ -17,6 +17,7 @@ import { AuditAction } from '../audit/audit-actions';
 import { CustomerCredentialsService } from '../customer-auth/customer-credentials.service';
 import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
+import { WarrantyService } from '../warranty/warranty.service';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
 
 /** Statuses from which an original helmet may be marked REPLACED. */
@@ -36,6 +37,8 @@ export interface LinkReplacementInput {
   replacementHelmetCode: string;
   reason: ReplacementReason;
   notes?: string;
+  /** Admin override for the replacement's warranty end date (YYYY-MM-DD). */
+  replacementWarrantyEndDate?: string;
 }
 
 /**
@@ -54,6 +57,7 @@ export class ReplacementService {
     private readonly audit: AuditService,
     private readonly cache: PublicEmergencyCacheService,
     private readonly credentials: CustomerCredentialsService,
+    private readonly warranties: WarrantyService,
   ) {}
 
   async link(
@@ -71,7 +75,7 @@ export class ReplacementService {
       throw this.invalid('A helmet cannot replace itself.');
     }
 
-    const publicToken = await this.prisma.$transaction(async (tx) => {
+    const [publicToken, replacementToken] = await this.prisma.$transaction(async (tx) => {
       // Lock both helmets in a stable order (by id) so concurrent links can't deadlock.
       const [firstId, secondId] = [input.originalHelmetId, replacementRow.id].sort();
       const first = await this.locker.lock(tx, { id: firstId! });
@@ -128,6 +132,19 @@ export class ReplacementService {
         where: { helmetId: original.helmet.id },
         data: { enabled: false },
       });
+      // Replacement warranty policy (original → REPLACED; replacement gets its own coverage).
+      await this.warranties.applyReplacement(
+        tx,
+        {
+          originalHelmetId: original.helmet.id,
+          replacementHelmetId: replacement.helmet.id,
+          replacementHelmetCode: replacement.helmet.helmetCode,
+          ownerUserId: original.ownership.userId,
+          adminId: admin.id,
+          overrideEndDate: input.replacementWarrantyEndDate,
+        },
+        meta,
+      );
       await this.audit.record(
         {
           action: AuditAction.HELMET_REPLACEMENT_LINKED,
@@ -144,9 +161,9 @@ export class ReplacementService {
         },
         tx,
       );
-      return original.helmet.publicToken;
+      return [original.helmet.publicToken, replacement.helmet.publicToken] as const;
     });
-    await this.cache.invalidate(publicToken);
+    await this.cache.invalidate(publicToken, replacementToken);
     return this.links(input.originalHelmetId);
   }
 

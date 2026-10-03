@@ -61,14 +61,18 @@ export class CustomerAuthController {
   @RateLimit('auth')
   @ApiOperation({
     summary:
-      'Sign in with any currently owned Helmet ID + password. Generic errors; escalating lockouts.',
+      'Sign in with a Customer ID or any currently owned Helmet ID + password. Generic errors; escalating lockouts.',
   })
   async login(
     @Body() dto: CustomerLoginDto,
     @ReqMeta() meta: RequestMeta,
     @Res({ passthrough: true }) res: Response,
   ): Promise<CustomerLoginResponse> {
-    const session = await this.auth.login(dto.helmetCode, dto.password, meta);
+    const session = await this.auth.login(
+      dto.identifier ?? dto.helmetCode ?? '',
+      dto.password,
+      meta,
+    );
     this.setRefreshCookie(res, session.refresh);
     return session.response;
   }
@@ -80,7 +84,7 @@ export class CustomerAuthController {
     summary: 'Account recovery step 1: Helmet ID + offline recovery code → single-use reset token.',
   })
   recover(@Body() dto: RecoverDto, @ReqMeta() meta: RequestMeta): Promise<CustomerRecoverResponse> {
-    return this.auth.recover(dto.helmetCode, dto.recoveryCode, meta);
+    return this.auth.recover(dto.identifier ?? dto.helmetCode ?? '', dto.recoveryCode, meta);
   }
 
   @Post('reset-password')

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { RequestMeta } from '../../common/utils/request-context';
 import type { PrismaTx } from '../../infrastructure/prisma/prisma.service';
+import { generateCustomerCode } from '../../security/helmet-identity.generator';
 import { uuidv7 } from '../../security/uuid';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
@@ -52,9 +53,11 @@ export class CustomerAccountsService {
   ): Promise<string> {
     const id = uuidv7();
     const now = new Date();
+    const customerCode = await this.freeCustomerCode(tx);
     await tx.user.create({
       data: {
         id,
+        customerCode,
         name: account.name,
         passwordHash: account.passwordHash,
         passwordChangedAt: now,
@@ -69,10 +72,24 @@ export class CustomerAccountsService {
         entityId: id,
         userId: id,
         ipHash: meta.ipHash,
-        metadata: { via },
+        metadata: { via, customerId: customerCode },
       },
       tx,
     );
     return id;
+  }
+
+  /**
+   * A Customer ID not yet in use. ~34.7 random bits make a collision astronomically unlikely;
+   * the check avoids aborting the surrounding activation/transfer transaction on the unique
+   * index (which remains the final guarantee).
+   */
+  private async freeCustomerCode(tx: PrismaTx): Promise<string> {
+    for (let i = 0; i < 5; i++) {
+      const code = generateCustomerCode();
+      if (!(await tx.user.findUnique({ where: { customerCode: code }, select: { id: true } })))
+        return code;
+    }
+    throw new Error('Could not allocate a unique Customer ID');
   }
 }

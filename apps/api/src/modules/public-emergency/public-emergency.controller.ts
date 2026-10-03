@@ -1,7 +1,7 @@
 import { Controller, Get, Header, Param, Req, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
-import type { PublicEmergencyDto } from '@helmet/types';
+import type { PublicEmergencyDto, PublicProductVerificationDto } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { RawResponse } from '../../common/http/raw-response.decorator';
 import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
@@ -46,5 +46,34 @@ export class PublicEmergencyController {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.type(file.contentType).send(file.buffer);
+  }
+}
+
+@ApiTags('public')
+@Controller('public/verify')
+@RateLimit('public')
+export class PublicVerifyController {
+  constructor(
+    private readonly service: PublicEmergencyService,
+    private readonly config: AppConfigService,
+  ) {}
+
+  @Get(':token')
+  @Header('Cache-Control', 'no-store')
+  @Header('X-Robots-Tag', 'noindex, nofollow')
+  @ApiOperation({
+    summary:
+      'Product identity verification for a QR token: registry facts only. Unknown tokens → NOT_VERIFIED (never "counterfeit").',
+  })
+  verify(
+    @Param('token') token: string,
+    @ReqMeta() meta: RequestMeta,
+    @Req() req: Request,
+  ): Promise<PublicProductVerificationDto> {
+    return this.service.verify(token, {
+      ipHash: meta.ipHash,
+      userAgent: meta.userAgent,
+      countryCode: getCountryCode(req, this.config.get('TRUST_CLOUDFLARE')),
+    });
   }
 }

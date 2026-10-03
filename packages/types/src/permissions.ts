@@ -21,6 +21,12 @@ export const Permission = {
   TRANSFER_CANCEL: 'transfer:cancel',
   REPLACEMENT_MANAGE: 'replacement:manage',
   HELMET_LIFECYCLE_MANAGE: 'helmet-lifecycle:manage',
+  WARRANTY_VIEW: 'warranty:view',
+  WARRANTY_MANAGE: 'warranty:manage',
+  WARRANTY_VOID: 'warranty:void',
+  WARRANTY_DOCUMENT_VIEW: 'warranty:document-view',
+  PRODUCT_REPORT_VIEW: 'product-report:view',
+  PRODUCT_REPORT_MANAGE: 'product-report:manage',
   ADMIN_USERS_MANAGE: 'admin-users:manage',
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
@@ -29,9 +35,12 @@ const ALL = Object.values(Permission);
 
 export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
   SUPER_ADMIN: ALL,
-  // Revoking a customer's ownership is reserved for SUPER_ADMIN.
+  // Revoking ownership is SUPER_ADMIN only; proof-of-purchase documents are SUPER_ADMIN + SUPPORT.
   ADMIN: ALL.filter(
-    (p) => p !== Permission.ADMIN_USERS_MANAGE && p !== Permission.OWNERSHIP_REVOKE,
+    (p) =>
+      p !== Permission.ADMIN_USERS_MANAGE &&
+      p !== Permission.OWNERSHIP_REVOKE &&
+      p !== Permission.WARRANTY_DOCUMENT_VIEW,
   ),
   MANUFACTURING: [
     Permission.DASHBOARD_READ,
@@ -54,6 +63,12 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.TRANSFER_CANCEL,
     Permission.REPLACEMENT_MANAGE,
     Permission.HELMET_LIFECYCLE_MANAGE,
+    // Warranty view + corrections + documents, but not void/restore.
+    Permission.WARRANTY_VIEW,
+    Permission.WARRANTY_MANAGE,
+    Permission.WARRANTY_DOCUMENT_VIEW,
+    Permission.PRODUCT_REPORT_VIEW,
+    Permission.PRODUCT_REPORT_MANAGE,
   ],
   ANALYTICS_VIEWER: [
     Permission.DASHBOARD_READ,

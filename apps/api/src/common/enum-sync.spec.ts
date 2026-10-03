@@ -17,6 +17,20 @@ describe('Prisma ↔ @helmet/types enum sync', () => {
     ['BloodGroup', $Enums.BloodGroup, Shared.BloodGroup],
     ['Gender', $Enums.Gender, Shared.Gender],
     ['CustomerStatus (users.status)', $Enums.UserStatus, Shared.CustomerStatus],
+    ['OwnershipAcquisition', $Enums.OwnershipAcquisition, Shared.OwnershipAcquisition],
+    ['TransferStatus', $Enums.TransferStatus, Shared.TransferStatus],
+    ['ReplacementReason', $Enums.ReplacementReason, Shared.ReplacementReason],
+    ['WarrantyStatus (stored)', $Enums.WarrantyStatus, Shared.StoredWarrantyStatus],
+    [
+      'WarrantyRegistrationSource',
+      $Enums.WarrantyRegistrationSource,
+      Shared.WarrantyRegistrationSource,
+    ],
+    ['PurchaseChannel', $Enums.PurchaseChannel, Shared.PurchaseChannel],
+    ['WarrantyVoidReason', $Enums.WarrantyVoidReason, Shared.WarrantyVoidReason],
+    ['WarrantyEvent', $Enums.WarrantyEvent, Shared.WarrantyEvent],
+    ['ProductReportReason', $Enums.ProductReportReason, Shared.ProductReportReason],
+    ['ProductReportStatus', $Enums.ProductReportStatus, Shared.ProductReportStatus],
   ];
 
   it.each(pairs)('%s matches', (_name, prisma, shared) => {

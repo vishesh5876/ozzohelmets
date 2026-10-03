@@ -81,7 +81,7 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
       expect(r.res.body.error).toEqual(
         expect.objectContaining({
           code: 'INVALID_CREDENTIALS',
-          message: 'The Helmet ID or password is incorrect.',
+          message: 'The ID or password is incorrect.',
         }),
       );
     }

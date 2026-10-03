@@ -61,5 +61,14 @@ export const AuditAction = {
   HELMET_STATUS_RESTORED: 'helmet.lifecycle.restored',
   OWNERSHIP_REVOKED: 'helmet.ownership.revoked',
   HELMET_REPLACEMENT_LINKED: 'helmet.replacement.linked',
+  WARRANTY_REGISTERED: 'warranty.registered',
+  WARRANTY_UPDATED: 'warranty.updated',
+  WARRANTY_VOIDED: 'warranty.voided',
+  WARRANTY_RESTORED: 'warranty.restored',
+  WARRANTY_PROOF_UPLOADED: 'warranty.proof.uploaded',
+  WARRANTY_PROOF_VIEWED: 'warranty.proof.viewed',
+  WARRANTY_PROOF_REMOVED: 'warranty.proof.removed',
+  PRODUCT_REPORT_CREATED: 'product_report.created',
+  PRODUCT_REPORT_STATUS_CHANGED: 'product_report.status_changed',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];

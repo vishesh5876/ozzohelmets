@@ -63,7 +63,7 @@ export class OwnershipAdminService {
           endedAt: true,
           endReason: true,
           endedByAdminId: true,
-          user: { select: { id: true, mobile: true } },
+          user: { select: { id: true, customerCode: true, mobile: true } },
         },
       }),
       this.prisma.helmetOwnership.count({ where }),
@@ -79,7 +79,7 @@ export class OwnershipAdminService {
     return new PaginatedResult(
       rows.map((r) => ({
         id: r.id,
-        customerId: r.user.id,
+        customerId: r.user.customerCode,
         maskedMobile: r.user.mobile ? maskPhone(r.user.mobile) : null,
         status: r.status,
         acquiredVia: r.acquiredVia,

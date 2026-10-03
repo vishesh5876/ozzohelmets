@@ -1,6 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import type { HelmetModelStatus } from '@helmet/types';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
@@ -36,6 +47,26 @@ export class CreateHelmetModelDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Whether helmets of this model get a warranty',
+  })
+  @IsOptional()
+  @IsBoolean()
+  warrantyEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    default: 24,
+    minimum: 0,
+    maximum: 240,
+    description: 'Warranty length in months',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(240)
+  warrantyMonths?: number;
 }
 
 export class UpdateHelmetModelDto {
@@ -66,6 +97,26 @@ export class UpdateHelmetModelDto {
   @IsOptional()
   @IsIn(['ACTIVE', 'ARCHIVED'])
   status?: HelmetModelStatus;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Whether helmets of this model get a warranty',
+  })
+  @IsOptional()
+  @IsBoolean()
+  warrantyEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    default: 24,
+    minimum: 0,
+    maximum: 240,
+    description: 'Warranty length in months',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(240)
+  warrantyMonths?: number;
 }
 
 export class HelmetModelQueryDto extends PaginationQueryDto {

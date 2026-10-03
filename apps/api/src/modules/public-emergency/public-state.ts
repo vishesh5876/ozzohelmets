@@ -10,11 +10,20 @@ export interface OwnerContext {
 }
 
 /**
- * The ONLY status in which emergency information may be returned. Every other state is an
- * explicit, data-free message (Phase 3: lost/stolen/damaged/replaced/deactivated/recalled never
- * expose medical data or contacts).
+ * Statuses in which approved emergency information may be returned (Phase 4 rule):
+ * - ACTIVE: the current owner's switch is on;
+ * - DAMAGED / RECALLED: only if this helmet was already sharing (switch on) and the owner's
+ *   profile is still enabled — a damaged helmet may be scanned right after the accident that
+ *   damaged it. A lifecycle warning is always shown alongside.
+ * LOST, STOLEN, REPLACED, DEACTIVATED never return emergency information.
  */
-export const PROFILE_VISIBLE_STATUS: HelmetStatus = 'ACTIVE';
+export const PROFILE_VISIBLE_STATUSES: readonly HelmetStatus[] = ['ACTIVE', 'DAMAGED', 'RECALLED'];
+
+/** Warning shown together with a profile on a damaged or recalled helmet. */
+export const LIFECYCLE_WARNINGS: Partial<Record<HelmetStatus, string>> = {
+  DAMAGED: 'This helmet is marked as damaged.',
+  RECALLED: 'This helmet is subject to a manufacturer recall. Do not continue to ride with it.',
+};
 
 /** Maps the internal lifecycle onto what the unauthenticated QR page may reveal. */
 export function toPublicState(status: HelmetStatus, owner: OwnerContext): PublicHelmetState {
@@ -28,6 +37,7 @@ export function toPublicState(status: HelmetStatus, owner: OwnerContext): Public
       return PublicHelmetState.LOST;
     case 'STOLEN':
       return PublicHelmetState.STOLEN;
+    // DAMAGED / RECALLED keep their state; the service attaches the profile when allowed.
     case 'DAMAGED':
       return PublicHelmetState.DAMAGED;
     case 'REPLACED':
@@ -40,7 +50,7 @@ export function toPublicState(status: HelmetStatus, owner: OwnerContext): Public
     case 'ACTIVE':
       // e.g. ownership revoked by support: no owner, nothing to show.
       if (!owner.hasOwner) return PublicHelmetState.UNAVAILABLE;
-      return status === PROFILE_VISIBLE_STATUS && owner.profilePublishable
+      return status === 'ACTIVE' && owner.profilePublishable
         ? PublicHelmetState.ACTIVE
         : PublicHelmetState.ACTIVATED_PROFILE_INCOMPLETE;
   }

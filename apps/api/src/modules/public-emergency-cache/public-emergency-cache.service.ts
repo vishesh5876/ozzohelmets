@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { PublicEmergencyDto } from '@helmet/types';
+import type { PublicEmergencyDto, PublicProductVerificationDto } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { RedisCacheService } from '../../infrastructure/redis/redis-cache.service';
@@ -16,6 +16,7 @@ export interface CachedPublicHelmet {
 }
 
 const key = (token: string) => `public-emergency:v2:${token}`;
+const verifyKey = (token: string) => `public-verify:v1:${token}`;
 
 @Injectable()
 export class PublicEmergencyCacheService {
@@ -33,9 +34,20 @@ export class PublicEmergencyCacheService {
     return this.cache.setJson(key(token), value, this.config.get('PUBLIC_CACHE_TTL_SECONDS'));
   }
 
-  /** Must be called after any change that affects the public page (status, profile, visibility, owner). */
+  getVerification(token: string): Promise<PublicProductVerificationDto | null> {
+    return this.cache.getJson<PublicProductVerificationDto>(verifyKey(token));
+  }
+
+  setVerification(token: string, value: PublicProductVerificationDto): Promise<void> {
+    return this.cache.setJson(verifyKey(token), value, this.config.get('PUBLIC_CACHE_TTL_SECONDS'));
+  }
+
+  /**
+   * Must be called after any change that affects the public pages (status, profile, visibility,
+   * owner, warranty). Clears both the emergency view and the product verification view.
+   */
   invalidate(...tokens: string[]): Promise<void> {
-    return this.cache.del(...tokens.map(key));
+    return this.cache.del(...tokens.flatMap((t) => [key(t), verifyKey(t)]));
   }
 
   /** Invalidates every helmet currently owned by the customer (profile/contacts/visibility changes). */

@@ -5,14 +5,22 @@ import { PASSWORD_MAX_LENGTH } from '@helmet/types';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
+/** `identifier` = Helmet ID or Customer ID. `helmetCode` is the Phase 2/3 field name (still accepted). */
 export class CustomerLoginDto {
-  @ApiProperty({
-    example: 'HM-A8F3-KL92',
-    description: 'Any Helmet ID currently owned by the account',
+  @ApiPropertyOptional({
+    example: 'CU-K7PX-92LM',
+    description: 'Customer ID, or any Helmet ID currently owned by the account',
   })
+  @ValidateIf((o: CustomerLoginDto) => o.helmetCode === undefined)
   @IsString()
   @MaxLength(32)
-  helmetCode: string;
+  identifier?: string;
+
+  @ApiPropertyOptional({ deprecated: true, description: 'Alias of `identifier`' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  helmetCode?: string;
 
   @ApiProperty({ format: 'password' })
   @IsString()
@@ -22,10 +30,17 @@ export class CustomerLoginDto {
 }
 
 export class RecoverDto {
-  @ApiProperty({ example: 'HM-A8F3-KL92' })
+  @ApiPropertyOptional({ example: 'CU-K7PX-92LM', description: 'Customer ID or owned Helmet ID' })
+  @ValidateIf((o: RecoverDto) => o.helmetCode === undefined)
   @IsString()
   @MaxLength(32)
-  helmetCode: string;
+  identifier?: string;
+
+  @ApiPropertyOptional({ deprecated: true, description: 'Alias of `identifier`' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  helmetCode?: string;
 
   @ApiProperty({ example: 'RK-9KPX-V7MT-42QF' })
   @IsString()

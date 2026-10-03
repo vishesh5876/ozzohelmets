@@ -91,6 +91,65 @@ enum ReplacementReason {
   OTHER
 }
 
+/// Stored warranty state. "NOT_REGISTERED" (no row) and "EXPIRED" (end date passed) are
+/// derived by WarrantyPolicyService; EXPIRED is reserved here for a future sync job.
+enum WarrantyStatus {
+  ACTIVE
+  EXPIRED
+  VOID
+  REPLACED
+  CANCELLED
+}
+
+enum WarrantyRegistrationSource {
+  CUSTOMER
+  ADMIN
+  REPLACEMENT
+}
+
+enum PurchaseChannel {
+  BRAND_WEBSITE
+  DEALER
+  MARKETPLACE
+  RETAIL_STORE
+  OTHER
+}
+
+enum WarrantyVoidReason {
+  INVALID_PURCHASE
+  TAMPERED_PRODUCT
+  DUPLICATE_REGISTRATION
+  ADMIN_CORRECTION
+  OTHER
+}
+
+enum WarrantyEvent {
+  REGISTERED
+  DATE_CORRECTED
+  ADMIN_UPDATED
+  VOIDED
+  RESTORED
+  REPLACED
+  ISSUED_FOR_REPLACEMENT
+  PROOF_UPLOADED
+  PROOF_REMOVED
+}
+
+enum ProductReportReason {
+  QR_COPIED
+  DETAILS_MISMATCH
+  LOOKS_COUNTERFEIT
+  ID_DAMAGED
+  OTHER
+}
+
+enum ProductReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
 enum ActorType {
   SYSTEM
   ADMIN
@@ -140,6 +199,7 @@ model AdminUser {
   auditLogs      AuditLog[]
   createdBatches HelmetBatch[]
   replacements   HelmetReplacement[]
+  productReports ProductReport[]
 
   @@map("admin_users")
 }
@@ -173,6 +233,8 @@ model AdminRefreshToken {
 /// not unique).
 model User {
   id                    String     @id @default(uuid(7)) @db.Uuid
+  /// Permanent public Customer ID (`CU-XXXX-XXXY`, check symbol). Not a secret; never changes.
+  customerCode          String     @unique @map("customer_code") @db.VarChar(16)
   name                  String?    @db.VarChar(120)
   email                 String?    @db.VarChar(254)
   mobile                String?    @db.VarChar(20)
@@ -188,15 +250,16 @@ model User {
   createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  ownerships          HelmetOwnership[]
-  auditLogs           AuditLog[]
-  refreshTokens       CustomerRefreshToken[]
-  emergencyProfiles   EmergencyProfile[]
-  emergencyContacts   EmergencyContact[]
-  emergencyVisibility EmergencyVisibility?
-  helmetEmergency     HelmetEmergencySetting[]
-  transfersFrom       HelmetTransfer[]         @relation("TransferFrom")
-  transfersTo         HelmetTransfer[]         @relation("TransferTo")
+  ownerships           HelmetOwnership[]
+  auditLogs            AuditLog[]
+  refreshTokens        CustomerRefreshToken[]
+  emergencyProfiles    EmergencyProfile[]
+  emergencyContacts    EmergencyContact[]
+  emergencyVisibility  EmergencyVisibility?
+  helmetEmergency      HelmetEmergencySetting[]
+  warrantiesRegistered HelmetWarranty[]         @relation("WarrantyRegisteredBy")
+  transfersFrom        HelmetTransfer[]         @relation("TransferFrom")
+  transfersTo          HelmetTransfer[]         @relation("TransferTo")
 
   @@map("users")
 }
@@ -300,14 +363,17 @@ model EmergencyVisibility {
 // ─────────────────────────────── Catalogue & manufacturing ───────────────────────────────
 
 model HelmetModel {
-  id          String            @id @default(uuid(7)) @db.Uuid
-  name        String            @db.VarChar(120)
-  sku         String            @unique @db.VarChar(64)
-  brand       String            @db.VarChar(80)
-  description String?           @db.Text
-  status      HelmetModelStatus @default(ACTIVE)
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String            @id @default(uuid(7)) @db.Uuid
+  name            String            @db.VarChar(120)
+  sku             String            @unique @db.VarChar(64)
+  brand           String            @db.VarChar(80)
+  description     String?           @db.Text
+  status          HelmetModelStatus @default(ACTIVE)
+  /// Warranty policy per model (WarrantyPolicyService). Months, consistently.
+  warrantyEnabled Boolean           @default(true) @map("warranty_enabled")
+  warrantyMonths  Int               @default(24) @map("warranty_months")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   batches HelmetBatch[]
   helmets Helmet[]
@@ -376,6 +442,8 @@ model Helmet {
   transfers         HelmetTransfer[]
   replacedBy        HelmetReplacement?       @relation("ReplacementOriginal")
   replaces          HelmetReplacement?       @relation("ReplacementNew")
+  warranty          HelmetWarranty?
+  productReports    ProductReport[]
 
   @@index([status])
   @@index([batchId])
@@ -505,6 +573,91 @@ model HelmetReplacement {
   createdBy   AdminUser? @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
 
   @@map("helmet_replacements")
+}
+
+/// Product coverage for ONE physical helmet (unique per helmet → idempotent registration). It
+/// stays with the helmet across ownership transfers; the registrant's private details (invoice,
+/// seller, notes, proof document) are visible only to the registrant while they own the helmet
+/// and to permitted admins.
+model HelmetWarranty {
+  id                      String                     @id @default(uuid(7)) @db.Uuid
+  helmetId                String                     @unique @map("helmet_id") @db.Uuid
+  registeredByUserId      String?                    @map("registered_by_user_id") @db.Uuid
+  status                  WarrantyStatus             @default(ACTIVE)
+  registrationSource      WarrantyRegistrationSource @map("registration_source")
+  purchaseDate            DateTime                   @map("purchase_date") @db.Date
+  registeredAt            DateTime                   @default(now()) @map("registered_at") @db.Timestamptz(3)
+  warrantyStartDate       DateTime                   @map("warranty_start_date") @db.Date
+  /// Last covered day (inclusive).
+  warrantyEndDate         DateTime                   @map("warranty_end_date") @db.Date
+  purchaseChannel         PurchaseChannel?           @map("purchase_channel")
+  sellerName              String?                    @map("seller_name") @db.VarChar(120)
+  sellerCity              String?                    @map("seller_city") @db.VarChar(80)
+  invoiceNumber           String?                    @map("invoice_number") @db.VarChar(64)
+  notes                   String?                    @db.VarChar(500)
+  proofKey                String?                    @map("proof_key") @db.VarChar(255)
+  proofContentType        String?                    @map("proof_content_type") @db.VarChar(40)
+  proofUploadedAt         DateTime?                  @map("proof_uploaded_at") @db.Timestamptz(3)
+  voidReason              WarrantyVoidReason?        @map("void_reason")
+  voidedAt                DateTime?                  @map("voided_at") @db.Timestamptz(3)
+  /// Set when this warranty was issued for a replacement helmet.
+  replacementOfWarrantyId String?                    @unique @map("replacement_of_warranty_id") @db.Uuid
+  createdAt               DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet        Helmet            @relation(fields: [helmetId], references: [id], onDelete: Restrict)
+  registeredBy  User?             @relation("WarrantyRegisteredBy", fields: [registeredByUserId], references: [id], onDelete: SetNull)
+  replacementOf HelmetWarranty?   @relation("WarrantyReplacement", fields: [replacementOfWarrantyId], references: [id], onDelete: Restrict)
+  replacedBy    HelmetWarranty?   @relation("WarrantyReplacement")
+  history       WarrantyHistory[]
+
+  @@index([status, warrantyEndDate])
+  @@index([invoiceNumber])
+  @@map("helmet_warranties")
+}
+
+/// Append-only warranty history. `changes` holds changed field names and (for dates/status)
+/// old/new values only — never invoice contents or documents.
+model WarrantyHistory {
+  id         String          @id @default(uuid(7)) @db.Uuid
+  warrantyId String          @map("warranty_id") @db.Uuid
+  event      WarrantyEvent
+  fromStatus WarrantyStatus? @map("from_status")
+  toStatus   WarrantyStatus  @map("to_status")
+  actorType  ActorType       @map("actor_type")
+  actorId    String?         @map("actor_id") @db.Uuid
+  reasonCode String?         @map("reason_code") @db.VarChar(60)
+  note       String?         @db.VarChar(300)
+  changes    Json?
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  warranty HelmetWarranty @relation(fields: [warrantyId], references: [id], onDelete: Restrict)
+
+  @@index([warrantyId, createdAt])
+  @@map("warranty_history")
+}
+
+/// Public "report a problem with this product" submissions (no account required).
+model ProductReport {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  helmetId          String?             @map("helmet_id") @db.Uuid
+  publicToken       String?             @map("public_token") @db.VarChar(32)
+  reason            ProductReportReason
+  description       String?             @db.VarChar(1000)
+  contactEmail      String?             @map("contact_email") @db.VarChar(254)
+  status            ProductReportStatus @default(OPEN)
+  ipHash            String?             @map("ip_hash") @db.Char(64)
+  reviewedByAdminId String?             @map("reviewed_by_admin_id") @db.Uuid
+  resolutionNote    String?             @map("resolution_note") @db.VarChar(500)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet     Helmet?    @relation(fields: [helmetId], references: [id], onDelete: SetNull)
+  reviewedBy AdminUser? @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([helmetId])
+  @@map("product_reports")
 }
 
 // ─────────────────────────────── Telemetry & audit ───────────────────────────────

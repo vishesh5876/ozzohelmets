@@ -8,13 +8,20 @@ import {
   type HelmetStatus,
   type OwnershipAcquisition,
   ownerActions,
+  type StoredWarrantyStatus,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { EmergencyReadinessService } from '../emergency-readiness/emergency-readiness.service';
 import { helmetProfileStatus, profileStatus } from '../emergency-readiness/readiness';
+import { effectiveStatus, isoDate } from '../warranty/domain/warranty-policy';
 import { buildTimeline } from './timeline';
+
+function warrantySummary(w: { status: StoredWarrantyStatus; warrantyEndDate: Date } | null) {
+  const status = effectiveStatus(w);
+  return { status, endDate: w ? isoDate(w.warrantyEndDate) : null };
+}
 
 interface OwnedHelmetRow {
   activatedAt: Date;
@@ -37,6 +44,7 @@ interface ListContext {
   pending: Map<string, Date>;
   replacedBy: Map<string, string>;
   replaces: Map<string, string>;
+  warranties: Map<string, { status: StoredWarrantyStatus; warrantyEndDate: Date }>;
 }
 
 const ownedSelect = {
@@ -127,7 +135,7 @@ export class CustomerHelmetsService {
   }
 
   private async context(userId: string, helmetIds: string[]): Promise<ListContext> {
-    const [facts, switches, pending, links] = await Promise.all([
+    const [facts, switches, pending, links, warranties] = await Promise.all([
       this.readiness.facts(userId),
       this.readiness.helmetSwitches(userId),
       helmetIds.length
@@ -157,6 +165,12 @@ export class CustomerHelmetsService {
             },
           })
         : [],
+      helmetIds.length
+        ? this.prisma.helmetWarranty.findMany({
+            where: { helmetId: { in: helmetIds } },
+            select: { helmetId: true, status: true, warrantyEndDate: true },
+          })
+        : [],
     ]);
     return {
       ownerStatus: profileStatus(facts),
@@ -164,6 +178,7 @@ export class CustomerHelmetsService {
       pending: new Map(pending.map((p) => [p.helmetId, p.expiresAt])),
       replacedBy: new Map(links.map((l) => [l.originalHelmetId, l.replacement.helmetCode])),
       replaces: new Map(links.map((l) => [l.replacementHelmetId, l.original.helmetCode])),
+      warranties: new Map(warranties.map((w) => [w.helmetId, w])),
     };
   }
 
@@ -190,6 +205,7 @@ export class CustomerHelmetsService {
       pendingTransfer: pending ? { expiresAt: pending.toISOString() } : null,
       replacedBy: replacedBy ? { helmetCode: replacedBy } : null,
       replaces: replaces ? { helmetCode: replaces } : null,
+      warranty: warrantySummary(ctx.warranties.get(h.id) ?? null),
     };
   }
 }

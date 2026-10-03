@@ -12,9 +12,18 @@ import type {
   HelmetStatus,
   OwnershipAcquisition,
   OwnershipStatus,
+  ProductReportReason,
+  ProductReportStatus,
   PublicHelmetState,
+  PublicProductVerificationState,
+  PurchaseChannel,
   ReplacementReason,
   TransferStatus,
+  WarrantyCorrectionReason,
+  WarrantyEvent,
+  WarrantyRegistrationSource,
+  WarrantyStatus,
+  WarrantyVoidReason,
 } from './enums';
 import type { HelmetListGroup, OwnerHelmetAction } from './lifecycle';
 import type { Permission } from './permissions';
@@ -54,6 +63,9 @@ export interface HelmetModelDto {
   brand: string;
   description: string | null;
   status: HelmetModelStatus;
+  /** Warranty policy for helmets of this model (months; admin-controlled). */
+  warrantyEnabled: boolean;
+  warrantyMonths: number;
   helmetCount: number;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
@@ -102,7 +114,7 @@ export interface HelmetStatusHistoryDto {
 
 /** Operational ownership summary for admins — no personal or medical data beyond a masked number. */
 export interface HelmetOwnerSummaryDto {
-  /** Internal customer id, for support cross-reference only. */
+  /** Public Customer ID (`CU-…`) for support cross-reference — never the internal UUID. */
   customerId: string;
   /** Owner-provided, unverified contact number (masked). */
   maskedMobile: string | null;
@@ -203,9 +215,14 @@ export interface PublicEmergencyDto {
   /** `helmetCode` is included only while an emergency profile is shown (for identification). */
   helmet: { modelName: string; brand: string; helmetCode?: string };
   message: string;
-  /** Present only in the ACTIVE state; contains only fields the owner made visible. */
+  /**
+   * Present in ACTIVE — and, since Phase 4, in DAMAGED/RECALLED when this helmet was already
+   * sharing — with only the fields the owner made visible.
+   */
   profile?: PublicEmergencyProfileDto | null;
   contacts?: PublicEmergencyContactDto[];
+  /** Lifecycle warning shown alongside the profile (e.g. damaged, recall). */
+  warning?: string;
 }
 
 /** Every key is optional and omitted (not null) when hidden by the owner. */
@@ -236,6 +253,8 @@ export interface PublicEmergencyContactDto {
 
 export interface CustomerProfile {
   id: string;
+  /** Permanent public Customer ID (`CU-XXXX-XXXX`) — usable with the password to sign in. */
+  customerId: string;
   name: string | null;
   /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
   email: string | null;
@@ -295,6 +314,8 @@ export interface CustomerHelmetDto {
   pendingTransfer: { expiresAt: IsoDateString } | null;
   replacedBy: { helmetCode: string } | null;
   replaces: { helmetCode: string } | null;
+  /** Effective warranty status and last covered day (Phase 4). */
+  warranty: { status: WarrantyStatus; endDate: string | null };
 }
 
 export type HelmetTimelineEventType =
@@ -430,4 +451,137 @@ export interface CustomerDashboardDto {
   helmets: CustomerHelmetDto[];
   readiness: EmergencyReadinessDto;
   contactCount: number;
+}
+
+// ─────────────── Phase 4: warranty ───────────────
+
+/** Coverage facts — safe for any current owner (and, reduced, for the public page). */
+export interface WarrantySummaryDto {
+  status: WarrantyStatus;
+  source: WarrantyRegistrationSource | null;
+  registeredAt: IsoDateString | null;
+  /** Calendar dates (YYYY-MM-DD). `endDate` is the last covered day. */
+  purchaseDate: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/** Private purchase details: only for the registrant while they own the helmet. */
+export interface WarrantyPrivateDetailsDto {
+  purchaseChannel: PurchaseChannel | null;
+  sellerName: string | null;
+  sellerCity: string | null;
+  invoiceNumber: string | null;
+  notes: string | null;
+  hasProof: boolean;
+  proofUploadedAt: IsoDateString | null;
+}
+
+export interface CustomerWarrantyDto extends WarrantySummaryDto {
+  /** Model policy (what registering would give). */
+  policy: { enabled: boolean; months: number };
+  canRegister: boolean;
+  /** Null for later owners after a transfer (previous owner's details stay private). */
+  details: WarrantyPrivateDetailsDto | null;
+  replacedByHelmetCode: string | null;
+  replacesHelmetCode: string | null;
+}
+
+export interface RegisterWarrantyRequest {
+  purchaseDate: string;
+  purchaseChannel?: PurchaseChannel;
+  sellerName?: string;
+  sellerCity?: string;
+  invoiceNumber?: string;
+  notes?: string;
+}
+
+export interface WarrantyHistoryDto {
+  id: string;
+  event: WarrantyEvent;
+  fromStatus: WarrantyStatus | null;
+  toStatus: WarrantyStatus;
+  actorType: string;
+  actorName: string | null;
+  reasonCode: string | null;
+  note: string | null;
+  changes: Record<string, unknown> | null;
+  createdAt: IsoDateString;
+}
+
+export interface AdminWarrantyListItemDto extends WarrantySummaryDto {
+  id: string;
+  helmet: { id: string; helmetCode: string; serialNumber: string; modelName: string };
+  /** Current owner's public Customer ID (null when ownerless). */
+  ownerCustomerId: string | null;
+  invoiceNumber: string | null;
+}
+
+export interface AdminWarrantyDetailDto extends AdminWarrantyListItemDto {
+  registeredByCustomerId: string | null;
+  purchaseChannel: PurchaseChannel | null;
+  sellerName: string | null;
+  sellerCity: string | null;
+  notes: string | null;
+  hasProof: boolean;
+  proofContentType: string | null;
+  proofUploadedAt: IsoDateString | null;
+  voidReason: WarrantyVoidReason | null;
+  voidedAt: IsoDateString | null;
+  replacementOf: { helmetCode: string } | null;
+  replacedBy: { helmetCode: string } | null;
+  history: WarrantyHistoryDto[];
+}
+
+export interface CorrectWarrantyRequest {
+  purchaseDate?: string;
+  startDate?: string;
+  endDate?: string;
+  purchaseChannel?: PurchaseChannel | null;
+  sellerName?: string | null;
+  invoiceNumber?: string | null;
+  reasonCode: WarrantyCorrectionReason;
+  note?: string;
+}
+
+// ─────────────── Phase 4: product authenticity & reports ───────────────
+
+export interface PublicProductVerificationDto {
+  state: PublicProductVerificationState;
+  /** One concise explanation of what this verification means (or why it failed). */
+  message: string;
+  product?: {
+    helmetCode: string;
+    modelName: string;
+    brand: string;
+    sku: string;
+    /** YYYY-MM */
+    manufactured: string;
+    batchRef: string;
+  };
+  lifecycle?: { label: string; warning: string | null };
+  activated?: boolean;
+  warranty?: { status: WarrantyStatus; endsOn: string | null };
+  recallWarning?: string;
+}
+
+export interface CreateProductReportRequest {
+  publicToken?: string;
+  helmetCode?: string;
+  reason: ProductReportReason;
+  description?: string;
+  contactEmail?: string;
+}
+
+export interface ProductReportDto {
+  id: string;
+  reason: ProductReportReason;
+  description: string | null;
+  contactEmail: string | null;
+  status: ProductReportStatus;
+  helmet: { id: string; helmetCode: string } | null;
+  resolutionNote: string | null;
+  reviewedByName: string | null;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
 }

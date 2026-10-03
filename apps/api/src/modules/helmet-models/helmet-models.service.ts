@@ -119,6 +119,8 @@ function toDto(m: ModelWithCount): HelmetModelDto {
     brand: m.brand,
     description: m.description,
     status: m.status,
+    warrantyEnabled: m.warrantyEnabled,
+    warrantyMonths: m.warrantyMonths,
     helmetCount: m._count.helmets,
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),

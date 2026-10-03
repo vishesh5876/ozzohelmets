@@ -73,6 +73,53 @@ export function isValidHelmetCode(code: string): boolean {
   return helmetCodeCheckSymbol(payload) === symbols.charAt(HELMET_CODE_RANDOM_LENGTH);
 }
 
+/**
+ * Permanent public Customer ID: `CU-XXXX-XXXY` — 7 CSPRNG symbols + the same mod-31 check symbol
+ * as Helmet IDs. Not a secret (safe to tell support) and never sufficient to sign in alone.
+ */
+export const CUSTOMER_CODE_PREFIX = 'CU';
+export const CUSTOMER_CODE_REGEX =
+  /^CU-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
+
+export function formatCustomerCode(symbols: string): string {
+  return `${CUSTOMER_CODE_PREFIX}-${symbols.slice(0, 4)}-${symbols.slice(4, 8)}`;
+}
+
+/** Canonical `CU-XXXX-XXXX` from input (case/spaces/dashes ignored); the prefix is required. */
+export function normalizeCustomerCode(input: string): string | null {
+  const compact = input.trim().toUpperCase().replace(/[\s-]/g, '');
+  if (!compact.startsWith(CUSTOMER_CODE_PREFIX)) return null;
+  const body = compact.slice(CUSTOMER_CODE_PREFIX.length);
+  if (body.length !== HELMET_CODE_RANDOM_LENGTH + 1) return null;
+  const formatted = formatCustomerCode(body);
+  return CUSTOMER_CODE_REGEX.test(formatted) ? formatted : null;
+}
+
+export function isValidCustomerCode(code: string): boolean {
+  if (!CUSTOMER_CODE_REGEX.test(code)) return false;
+  const symbols = code.slice(3).replace('-', '');
+  return (
+    helmetCodeCheckSymbol(symbols.slice(0, HELMET_CODE_RANDOM_LENGTH)) ===
+    symbols.charAt(HELMET_CODE_RANDOM_LENGTH)
+  );
+}
+
+export type AccountIdentifier =
+  { kind: 'helmet'; code: string } | { kind: 'customer'; code: string };
+
+/**
+ * Sign-in identifier: a Customer ID (`CU-…`, prefix required) or a Helmet ID (`HM-…`, or its 8
+ * bare symbols). Returns null unless the shape AND check symbol are valid — typos are rejected
+ * before any lookup.
+ */
+export function parseAccountIdentifier(input: string): AccountIdentifier | null {
+  const customer = normalizeCustomerCode(input);
+  if (customer) return isValidCustomerCode(customer) ? { kind: 'customer', code: customer } : null;
+  const helmet = normalizeHelmetCode(input);
+  if (helmet) return isValidHelmetCode(helmet) ? { kind: 'helmet', code: helmet } : null;
+  return null;
+}
+
 export function isValidPublicToken(token: string): boolean {
   return PUBLIC_TOKEN_REGEX.test(token);
 }

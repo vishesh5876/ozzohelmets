@@ -233,19 +233,21 @@ describe('Helmet lifecycle, support actions & replacement (e2e)', () => {
   });
 
   describe('damaged & retirement', () => {
-    it('DAMAGED hides data, blocks transfer, stores only a reason code; retire is permanent', async () => {
+    it('DAMAGED keeps sharing (with a warning), blocks transfer, stores only a reason code; retire is permanent', async () => {
       const c = await activeOwner('Maya Das');
       const damaged = await act(c.token, c.helmet.id, 'damaged', undefined, {
         reason: 'ACCIDENT',
         note: 'Dropped at a petrol station',
       }).expect(200);
       expect(damaged.body.data).toMatchObject({ status: 'DAMAGED', availableActions: ['RETIRE'] });
+      // Phase 4 rule: a helmet that was already sharing keeps its approved profile when damaged
+      // (it may be scanned right after the accident), plus an explicit warning.
       const view = await publicView(ctx, c.helmet.publicToken);
       expect(view).toMatchObject({
         state: 'DAMAGED',
-        message: 'This helmet is currently marked as damaged.',
+        warning: 'This helmet is marked as damaged.',
+        profile: { name: 'Maya Das' },
       });
-      expect(JSON.stringify(view)).not.toContain('Maya');
       const history = await ctx.prisma.helmetStatusHistory.findFirstOrThrow({
         where: { helmetId: c.helmet.id, toStatus: 'DAMAGED' },
       });

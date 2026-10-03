@@ -16,6 +16,8 @@ import { BatchesModule } from './modules/batches/batches.module';
 import { CustomerHelmetsModule } from './modules/customer-helmets/customer-helmets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HelmetLifecycleModule } from './modules/helmet-lifecycle/helmet-lifecycle.module';
+import { ProductReportsModule } from './modules/product-reports/product-reports.module';
+import { WarrantyModule } from './modules/warranty/warranty.module';
 import { OwnershipModule } from './modules/ownership/ownership.module';
 import { EmergencyModule } from './modules/emergency/emergency.module';
 import { EmergencyReadinessModule } from './modules/emergency-readiness/emergency-readiness.module';
@@ -56,6 +58,8 @@ import { SecurityModule } from './security/security.module';
     EmergencyModule,
     OwnershipModule,
     HelmetLifecycleModule,
+    WarrantyModule,
+    ProductReportsModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: ApiResponseInterceptor }],
 })

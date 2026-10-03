@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { EmergencyModule } from '../emergency/emergency.module';
-import { PublicEmergencyController } from './public-emergency.controller';
+import { WarrantyModule } from '../warranty/warranty.module';
+import { PublicEmergencyController, PublicVerifyController } from './public-emergency.controller';
 import { PublicEmergencyService } from './public-emergency.service';
 
 @Module({
-  imports: [EmergencyModule],
-  controllers: [PublicEmergencyController],
+  imports: [EmergencyModule, WarrantyModule],
+  controllers: [PublicEmergencyController, PublicVerifyController],
   providers: [PublicEmergencyService],
 })
 export class PublicEmergencyModule {}

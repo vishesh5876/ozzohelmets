@@ -108,7 +108,10 @@ export class HelmetsService {
 
     const ownership = await this.prisma.helmetOwnership.findFirst({
       where: { helmetId: id, status: 'ACTIVE' },
-      select: { activatedAt: true, user: { select: { id: true, mobile: true } } },
+      select: {
+        activatedAt: true,
+        user: { select: { id: true, customerCode: true, mobile: true } },
+      },
     });
     const [owner, pending, replacement, restoreTo] = await Promise.all([
       this.ownerSummary(id, ownership),
@@ -219,7 +222,10 @@ export class HelmetsService {
    */
   private async ownerSummary(
     helmetId: string,
-    ownership: { activatedAt: Date; user: { id: string; mobile: string | null } } | null,
+    ownership: {
+      activatedAt: Date;
+      user: { id: string; customerCode: string; mobile: string | null };
+    } | null,
   ): Promise<HelmetOwnerSummaryDto | null> {
     if (!ownership) return null;
     const [facts, enabled] = await Promise.all([
@@ -227,7 +233,7 @@ export class HelmetsService {
       this.readiness.helmetEnabled(helmetId, ownership.user.id),
     ]);
     return {
-      customerId: ownership.user.id,
+      customerId: ownership.user.customerCode,
       maskedMobile: ownership.user.mobile ? maskPhone(ownership.user.mobile) : null,
       since: ownership.activatedAt.toISOString(),
       emergencyProfileStatus: helmetProfileStatus(profileStatus(facts), enabled),

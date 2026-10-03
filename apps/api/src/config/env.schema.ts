@@ -98,6 +98,19 @@ export const envSchema = z
     TRANSFER_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(5),
     TRANSFER_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     TRANSFER_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
+    /** Phase 4 warranty: purchase dates may be at most this many days in the future (time zones). */
+    WARRANTY_PURCHASE_DATE_TOLERANCE_DAYS: z.coerce.number().int().min(0).max(7).default(1),
+    /** Replacement helmets: keep the original end date (default) or start a fresh model term. */
+    WARRANTY_REPLACEMENT_POLICY: z
+      .enum(['INHERIT_END_DATE', 'NEW_TERM'])
+      .default('INHERIT_END_DATE'),
+    WARRANTY_PROOF_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(100_000)
+      .max(25_000_000)
+      .default(10_485_760),
+    PRODUCT_REPORTS_PER_IP_PER_HOUR: z.coerce.number().int().min(1).max(100).default(5),
     DEFAULT_PHONE_REGION: z
       .string()
       .regex(/^[A-Z]{2}$/)

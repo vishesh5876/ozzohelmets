@@ -190,3 +190,104 @@ export const ReadinessRequirement = {
   PRIVACY_REVIEW: 'PRIVACY_REVIEW',
 } as const;
 export type ReadinessRequirement = (typeof ReadinessRequirement)[keyof typeof ReadinessRequirement];
+
+// ─────────────── Phase 4: warranty & product authenticity ───────────────
+
+/** Warranty states persisted in `helmet_warranties.status`. */
+export const StoredWarrantyStatus = {
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  VOID: 'VOID',
+  REPLACED: 'REPLACED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type StoredWarrantyStatus = (typeof StoredWarrantyStatus)[keyof typeof StoredWarrantyStatus];
+
+/**
+ * Effective warranty status shown everywhere: NOT_REGISTERED (no record) and EXPIRED (end date
+ * passed) are derived — no cron job flips statuses.
+ */
+export const WarrantyStatus = {
+  NOT_REGISTERED: 'NOT_REGISTERED',
+  ...StoredWarrantyStatus,
+} as const;
+export type WarrantyStatus = (typeof WarrantyStatus)[keyof typeof WarrantyStatus];
+
+export const WarrantyRegistrationSource = {
+  CUSTOMER: 'CUSTOMER',
+  ADMIN: 'ADMIN',
+  REPLACEMENT: 'REPLACEMENT',
+} as const;
+export type WarrantyRegistrationSource =
+  (typeof WarrantyRegistrationSource)[keyof typeof WarrantyRegistrationSource];
+
+export const PurchaseChannel = {
+  BRAND_WEBSITE: 'BRAND_WEBSITE',
+  DEALER: 'DEALER',
+  MARKETPLACE: 'MARKETPLACE',
+  RETAIL_STORE: 'RETAIL_STORE',
+  OTHER: 'OTHER',
+} as const;
+export type PurchaseChannel = (typeof PurchaseChannel)[keyof typeof PurchaseChannel];
+
+export const WarrantyVoidReason = {
+  INVALID_PURCHASE: 'INVALID_PURCHASE',
+  TAMPERED_PRODUCT: 'TAMPERED_PRODUCT',
+  DUPLICATE_REGISTRATION: 'DUPLICATE_REGISTRATION',
+  ADMIN_CORRECTION: 'ADMIN_CORRECTION',
+  OTHER: 'OTHER',
+} as const;
+export type WarrantyVoidReason = (typeof WarrantyVoidReason)[keyof typeof WarrantyVoidReason];
+
+/** Required reason for admin corrections (recorded in warranty history + audit). */
+export const WarrantyCorrectionReason = {
+  CUSTOMER_REQUEST: 'CUSTOMER_REQUEST',
+  DATA_ENTRY_ERROR: 'DATA_ENTRY_ERROR',
+  DOCUMENT_VERIFIED: 'DOCUMENT_VERIFIED',
+  REPLACEMENT_ADJUSTMENT: 'REPLACEMENT_ADJUSTMENT',
+  OTHER: 'OTHER',
+} as const;
+export type WarrantyCorrectionReason =
+  (typeof WarrantyCorrectionReason)[keyof typeof WarrantyCorrectionReason];
+
+export const WarrantyEvent = {
+  REGISTERED: 'REGISTERED',
+  DATE_CORRECTED: 'DATE_CORRECTED',
+  ADMIN_UPDATED: 'ADMIN_UPDATED',
+  VOIDED: 'VOIDED',
+  RESTORED: 'RESTORED',
+  REPLACED: 'REPLACED',
+  ISSUED_FOR_REPLACEMENT: 'ISSUED_FOR_REPLACEMENT',
+  PROOF_UPLOADED: 'PROOF_UPLOADED',
+  PROOF_REMOVED: 'PROOF_REMOVED',
+} as const;
+export type WarrantyEvent = (typeof WarrantyEvent)[keyof typeof WarrantyEvent];
+
+export const ProductReportReason = {
+  QR_COPIED: 'QR_COPIED',
+  DETAILS_MISMATCH: 'DETAILS_MISMATCH',
+  LOOKS_COUNTERFEIT: 'LOOKS_COUNTERFEIT',
+  ID_DAMAGED: 'ID_DAMAGED',
+  OTHER: 'OTHER',
+} as const;
+export type ProductReportReason = (typeof ProductReportReason)[keyof typeof ProductReportReason];
+
+export const ProductReportStatus = {
+  OPEN: 'OPEN',
+  REVIEWING: 'REVIEWING',
+  RESOLVED: 'RESOLVED',
+  DISMISSED: 'DISMISSED',
+} as const;
+export type ProductReportStatus = (typeof ProductReportStatus)[keyof typeof ProductReportStatus];
+
+/**
+ * Public product verification result. VERIFIED means "this Helmet ID / QR identity exists in the
+ * manufacturer's registry" — NOT a guarantee about the physical shell. NOT_VERIFIED is never
+ * presented as "counterfeit".
+ */
+export const PublicProductVerificationState = {
+  VERIFIED: 'VERIFIED',
+  NOT_VERIFIED: 'NOT_VERIFIED',
+} as const;
+export type PublicProductVerificationState =
+  (typeof PublicProductVerificationState)[keyof typeof PublicProductVerificationState];

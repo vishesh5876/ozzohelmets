@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsIn,
   IsOptional,
   IsString,
@@ -76,4 +77,13 @@ export class LinkReplacementDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  @ApiPropertyOptional({
+    example: '2029-09-30',
+    description:
+      'Override the replacement warranty end date (default policy: keep the original end date).',
+  })
+  @IsOptional()
+  @IsDateString({ strict: true })
+  replacementWarrantyEndDate?: string;
 }
