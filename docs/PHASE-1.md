@@ -95,4 +95,16 @@ Status legend: `[x]` done · `[ ]` pending
 2. Meaning of ACTIVATED vs ACTIVE (current: ACTIVE once the owner completes the emergency profile).
 3. Whether MANUFACTURING role may export PINs (current: no — SUPER_ADMIN/ADMIN only).
 4. Serial number format (current: `<batchCode>-<6-digit unit index>`; not a secret).
-5. PIN escrow purge trigger (current: batch marked PRINTED, PIN used, or manual purge).
+5. PIN escrow purge trigger (current: batch marked PRINTED; Phase 2 also purges on PIN use).
+6. Final public QR domain (`PUBLIC_EMERGENCY_BASE_URL`) — it is printed into every label, so it
+   must be fixed before the first production print run.
+7. Emergency services number shown on the public page (portal `VITE_EMERGENCY_NUMBER`, default 112).
+
+## Verification performed
+- `pnpm lint`, `pnpm typecheck`, `pnpm test` (86 unit tests), `pnpm test:e2e` (26 integration
+  tests on PostgreSQL + Redis), `pnpm build` — all passing.
+- Browser walkthrough (Playwright): login → create model → create batch (100) → live generation →
+  CSV export → helmet search → helmet detail with QR/barcode → audit log → public `/e/:token`
+  "not activated" page (mobile viewport).
+- Docker: API, admin and portal images built and run; migrations, healthcheck, nginx `/api`
+  proxy, SPA routing and security headers verified.
