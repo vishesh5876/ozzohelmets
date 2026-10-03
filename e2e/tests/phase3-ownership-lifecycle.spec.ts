@@ -313,16 +313,18 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await expect(b.getByTestId('timeline')).toContainText('Recovered');
   });
 
-  test('25–27: B marks it damaged, retires it, and the public page shows it is no longer active', async ({
+  test('25–27: B marks it damaged (profile kept with a warning), retires it, and the public page shows it is no longer active', async ({
     browser,
   }) => {
     await b.getByTestId('helmet-actions').getByRole('link', { name: 'Mark damaged' }).click();
     await b.selectOption('#damage-reason', 'ACCIDENT');
     await b.getByRole('button', { name: 'Mark damaged' }).click();
     await expect(b.getByTestId('timeline')).toContainText('Marked damaged · Accident');
+    // Phase 4 rule: a damaged helmet that was already sharing keeps the approved information
+    // (it may be scanned right after the accident), with the damage warning shown first.
     let view = await scan(browser, helmet.qrUrl);
-    expect(view.text).toContain('This helmet is currently marked as damaged.');
-    expect(view.text).not.toContain(B_NAME);
+    expect(view.text).toContain('This helmet is marked as damaged.');
+    expect(view.text).toContain(B_NAME);
     await view.page.context().close();
 
     await b.getByTestId('helmet-actions').getByRole('link', { name: 'Retire helmet' }).click();
