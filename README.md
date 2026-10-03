@@ -85,6 +85,24 @@ recovery code. Signed-in owners add more helmets from **Add helmet** (PIN only, 
 4. **Admin helmet page**: ownership periods, transfers, replacement links and support actions
    (restore, forced deactivation, ownership revocation) behind dedicated permissions.
 
+## Phase 4 walkthrough (warranty & product authenticity)
+
+1. **Customer ID**: every account has a permanent `CU-XXXX-XXXX` shown on the Account page. Sign
+   in (and recover) with a Helmet ID **or** the Customer ID — so a customer who no longer owns a
+   helmet can still sign in.
+2. **Warranty**: helmet → Register warranty → purchase date (+ optional channel, seller, invoice)
+   → review → coverage computed on the server from the model's term. Optionally upload a private
+   proof of purchase (JPEG/PNG/WebP/PDF ≤ 10 MB). The warranty stays with the helmet after a
+   transfer; the new owner sees the status but not the previous owner's details or document.
+3. **Verify**: `/verify/<token>` (linked from the QR page) says "Product identity verified" with
+   model, batch, lifecycle and warranty status — and explains that a QR match confirms the
+   registered identity, not the physical helmet. Unknown codes: "We could not verify this Helmet
+   ID." Anyone can **report a problem** from there.
+4. **Admin**: Warranties (search, filters, detail with history, corrections with a reason,
+   void with password / restore, audited proof download) and Product reports (review statuses).
+5. **Emergency rule**: damaged and recalled helmets keep already-shared emergency information with
+   a warning; lost, stolen, replaced and retired helmets show none.
+
 ## Quality gates
 
 ```bash
@@ -109,23 +127,31 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **Encrypted emergency profile** and allow-list public sanitizer (hidden fields omitted) — [EMERGENCY-PROFILE](docs/EMERGENCY-PROFILE.md)
 - **Ownership periods** with one ACTIVE owner enforced in the database; **atomic transfers** with
   single-use HMAC'd codes and recent-auth — [OWNERSHIP](docs/OWNERSHIP.md), [TRANSFER](docs/TRANSFER.md)
-- **Explicit owner lifecycle actions** through one policy; only ACTIVE helmets expose data —
-  [HELMET-LIFECYCLE](docs/HELMET-LIFECYCLE.md), [REPLACEMENT](docs/REPLACEMENT.md)
+- **Explicit owner lifecycle actions** through one policy; ACTIVE (and already-sharing DAMAGED /
+  RECALLED, with a warning) helmets expose data — [HELMET-LIFECYCLE](docs/HELMET-LIFECYCLE.md),
+  [REPLACEMENT](docs/REPLACEMENT.md)
+- **Permanent Customer ID** `CU-XXXX-XXXX` (checksummed, not a secret) as a second sign-in
+  identifier — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
+- **Per-helmet warranty**, server-computed dates, derived expiry, private content-validated proof
+  of purchase, transfer inheritance without the previous owner's details — [WARRANTY](docs/WARRANTY.md)
+- **Product verification** that never claims more than "registered identity verified"; anonymous
+  rate-limited product reports — [PRODUCT-AUTHENTICITY](docs/PRODUCT-AUTHENTICITY.md)
 
 ## Flagged for product decisions
 
-Open items are listed in [`docs/PHASE-3.md`](docs/PHASE-3.md#business-decisions-still-open)
-(transferring away your only helmet, damaged/recalled visibility, "if found" contact, revoked
-helmet re-assignment), [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
+Open items are listed in [`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-still-open)
+(replacement warranty policy, warranty start date, proof retention, report triage),
+[`docs/PHASE-3.md`](docs/PHASE-3.md#business-decisions-still-open)
+("if found" contact, revoked helmet re-assignment — the other two were decided in Phase 4), [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
 (retail SOLD flow, emergency number per market) and
 [`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation)
 (MANUFACTURING PIN export, serial format, final QR domain printed on labels).
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) · [Phase 4](docs/PHASE-4.md) ·
 [Ownership](docs/OWNERSHIP.md) · [Transfer](docs/TRANSFER.md) · [Replacement](docs/REPLACEMENT.md) ·
-[Customer auth](docs/CUSTOMER-AUTH.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
+[Customer auth](docs/CUSTOMER-AUTH.md) · [Warranty](docs/WARRANTY.md) · [Product authenticity](docs/PRODUCT-AUTHENTICITY.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
 [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [API](docs/API.md) ·
 [Helmet lifecycle](docs/HELMET-LIFECYCLE.md) · [Development](docs/DEVELOPMENT.md) ·
 [Deployment](docs/DEPLOYMENT.md)

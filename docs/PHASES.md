@@ -41,23 +41,32 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 - Permission-gated support actions: history, cancel transfer, restore, forced deactivation,
   ownership revocation (SUPER_ADMIN), replacement linking.
 
-## Phase 4 — Warranty & printing
+## Phase 4 — Warranty & product authenticity _(complete — see [`PHASE-4.md`](./PHASE-4.md))_
 
-- Warranty registration (purchaseDate, invoiceNumber, dealerId, warranty window/status).
-- Label PDFs: QR labels, barcode labels, combined print sheets (configurable label stock).
-- Batch print workflow (mark printed → escrow purge), reprint controls.
+- Permanent Customer ID (`CU-XXXX-XXXX`) as a second sign-in/recovery identifier; customers with
+  zero helmets can sign in.
+- Per-helmet warranty: model policy, server-computed coverage, derived expiry, idempotent
+  registration, private proof of purchase, transfer inheritance, replacement policy, admin
+  corrections / void / restore with history and audit.
+- Public product verification (`/verify/:token`), VERIFY scan telemetry, anonymous product reports
+  with admin review, recall-ready contract.
+- Revised public emergency rule for DAMAGED / RECALLED helmets.
 
-## Phase 5 — Dealers & distributors
+## Phase 5 — Dealers, printing & warranty claims
 
 - Dealer/distributor organisations and users, inventory movement (IN_INVENTORY → SOLD via barcode
-  scan), dealer-assisted registration, regional reporting.
+  scan), dealer-assisted registration (warranty `source`/`purchase_channel` ready), regional
+  reporting.
+- Warranty claims / service centres on top of the Phase 4 warranty record.
+- Label PDFs: QR labels, barcode labels, combined print sheets; batch print workflow and reprint
+  controls.
 
 ## Phase 6 — Analytics & anti-counterfeit
 
 - Scan analytics dashboards, activation funnel, regional views.
 - Clone detection signals over `helmet_scans`: scan velocity, impossible travel, device fan-out,
   cross-region scans; alerting and admin review queue.
-- Product authenticity verification page.
+- Builds on the Phase 4 verification page, VERIFY scans and product reports; recall campaigns.
 
 ## Phase 7 — Production hardening & AWS
 

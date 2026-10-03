@@ -224,3 +224,27 @@ Pure rules live in `@helmet/types` (`HELMET_STATUS_TRANSITIONS`, `ownerActions`,
 | 28  | **Side effects central in `HelmetStatusService.apply`**                    | Previous-status bookkeeping, reason codes and pending-transfer cancellation can't be forgotten by a caller.  |
 | 29  | **Recent-auth tokens** instead of re-sending passwords                     | One password prompt per 5 minutes for sensitive actions; revocable; never in URLs.                           |
 | 30  | **No event bus yet**                                                       | Explicit post-commit cache invalidation + audit is shorter and easier to verify; revisit with notifications. |
+
+## 13. Phase 4 additions
+
+### Dependency direction
+
+```
+warranty          ─► helmets (OwnedHelmetLocker), file-storage, audit, recent-auth, public-emergency cache
+helmet-lifecycle  ─► warranty (replacement applies the warranty policy in the same transaction)
+customer-helmets  ─► warranty (summary per helmet, one batched query)
+public-emergency  ─► warranty (public summary for /public/verify)
+product-reports   ─► helmets (token lookup only), audit
+customer-auth     ─► identifiers (`parseAccountIdentifier`: Helmet ID or Customer ID)
+```
+
+### Key decisions
+
+| #   | Decision                                                                                               | Rationale                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| 31  | **Customer ID** reuses the Helmet ID alphabet + checksum, generated in Node and backfilled in PL/pgSQL | One identifier scheme, typo-proof input, no external dependency in the migration.                                     |
+| 32  | **One warranty row per helmet**, effective status derived on read                                      | No cron or drift between stored and real expiry; the unique index makes registration idempotent.                      |
+| 33  | **`WarrantyPolicyService`** owns every date rule                                                       | Coverage, purchase-date validation and replacement terms can't diverge between customer, admin and replacement paths. |
+| 34  | **Registrant-only private details** instead of copying or deleting on transfer                         | Coverage follows the helmet; personal/commercial data stays with the person who supplied it.                          |
+| 35  | **Verification served by the emergency bundle** (`/verify/*`)                                          | Same tiny, framework-free, cache-friendly page and nginx routing; no SPA boot on a public scan.                       |
+| 36  | **Product reports without accounts or scoring**                                                        | Collect signals now; judgement (and clone detection) is a later, reviewed process.                                    |

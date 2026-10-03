@@ -93,10 +93,10 @@ apply with `prisma migrate deploy`.
 
 ## Business decisions still open
 
-1. **Transferring away your only helmet** leaves the account without a sign-in identifier (identity
+1. _(Decided in Phase 4: permanent Customer ID sign-in.)_ **Transferring away your only helmet** leaves the account without a sign-in identifier (identity
    = ownership). The account, profile and history remain. Options: keep as is; let customers add
    another sign-in method later; or delete/anonymise orphaned accounts after N days.
-2. **Damaged / recalled helmets now hide emergency data.** A rider may still wear a damaged or
+2. _(Decided in Phase 4: already-shared information stays visible with a warning.)_ **Damaged / recalled helmets now hide emergency data.** A rider may still wear a damaged or
    recalled helmet; Phase 2 showed the profile in these states. Confirm the conservative default.
 3. **Lost helmets**: offer an optional owner-chosen "if found, contact" line? Currently nothing.
 4. **Revoked ownership follow-up**: who may re-assign an ownerless helmet and how (PIN re-issue +

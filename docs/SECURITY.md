@@ -237,7 +237,7 @@ Details: [`OWNERSHIP.md`](./OWNERSHIP.md), [`TRANSFER.md`](./TRANSFER.md),
   owner's switch, so nothing stale can be served from cache or rebuilt for the wrong user.
 - **Non-active states never expose data.** Only `ACTIVE` with the current owner's switch on
   returns profile/contacts; lost/stolen/damaged/replaced/deactivated/recalled return a fixed
-  message only (unit + integration tested).
+  message only (unit + integration tested). _Revised in Phase 4 for damaged/recalled — see §14._
 - **Authorization.** Lifecycle and transfer endpoints lock the helmet with the caller's ACTIVE
   ownership; other customers' helmets behave as missing (404). Support actions are each behind
   their own permission; destructive ones require the admin password again.
@@ -246,3 +246,36 @@ Details: [`OWNERSHIP.md`](./OWNERSHIP.md), [`TRANSFER.md`](./TRANSFER.md),
   `helmet.ownership.revoked`, `helmet.replacement.linked`, `helmet.emergency.enabled|disabled`,
   `customer.recent_auth.created|failed`, `admin.recent_auth.created|failed`. Never transfer codes,
   passwords, recovery codes or medical values; owner damage notes live only in status history.
+
+## 14. Phase 4 — Customer ID, warranty, product authenticity
+
+Details: [`CUSTOMER-AUTH.md`](./CUSTOMER-AUTH.md#customer-id-phase-4), [`WARRANTY.md`](./WARRANTY.md),
+[`PRODUCT-AUTHENTICITY.md`](./PRODUCT-AUTHENTICITY.md).
+
+- **Customer ID is an identifier, not a credential.** CSPRNG, checksummed, unique, immutable,
+  not derived from the UUID. Sign-in still needs the password (or recovery code). Unknown IDs and
+  wrong passwords return the same message; lockouts count per typed identifier **and** per
+  resolved account, so alternating Helmet ID / Customer ID gains no extra attempts.
+- **Phase 3 rule revised:** DAMAGED / RECALLED helmets return the owner-approved fields only if
+  that helmet was already sharing (per-helmet switch on, profile enabled and complete) — no new
+  exposure is ever created by a status change — and always with a warning. LOST, STOLEN,
+  REPLACED, DEACTIVATED return nothing personal.
+- **Proof of purchase** is untrusted input: size-limited before parsing, type decided by magic
+  bytes, images decoded and re-encoded (metadata/GPS stripped, pixel bomb limit), PDFs rejected if
+  they contain JavaScript, launch actions, embedded files or rich media. Stored under random keys,
+  never public or cached, downloaded only as `attachment` with `nosniff` and `default-src 'none'`
+  CSP. Visible to the registrant while they own the helmet and to `warranty:document-view`
+  holders (SUPER_ADMIN, SUPPORT — not ADMIN), every admin view audited.
+- **Transfer privacy:** later owners see coverage dates and status only; the previous owner's
+  purchase details and document are filtered server-side (not just hidden in the UI).
+- **Public verification** returns an allow-listed DTO (no owner, Customer ID, UUIDs, serial, PIN
+  material, purchase data); unknown and malformed tokens get one indistinguishable response and are
+  not cached. Wording never asserts physical authenticity or counterfeiting.
+- **Product reports** are anonymous, rate-limited (5/h per hashed IP + throttler), sanitized
+  (control characters stripped, length-limited, rendered as text), never public, and their
+  description/email never reach audit metadata or logs.
+- **Warranty integrity:** one warranty per helmet (unique index + row locks), dates computed only on
+  the server, append-only history, no delete, reason codes required for corrections, void needs a
+  recent admin password confirmation.
+- **Audit (no secrets or documents):** `warranty.registered|updated|voided|restored|proof_uploaded|proof_viewed|proof_removed`,
+  `product_report.created|status_changed`; `customer.created` carries the Customer ID.

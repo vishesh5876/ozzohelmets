@@ -87,20 +87,23 @@ restore all use this one function.
 
 ## Public page mapping
 
-Only `ACTIVE` can return emergency information, and only when the **current** owner's per-helmet
-switch is on and their profile is enabled and complete.
+`ACTIVE` returns emergency information when the **current** owner's per-helmet switch is on and
+their profile is enabled and complete. Since Phase 4, `DAMAGED` and `RECALLED` keep that approved
+information **only if the helmet was already sharing** (same conditions), with a warning shown
+first; everything else returns a status message only. See
+[PRODUCT-AUTHENTICITY](PRODUCT-AUTHENTICITY.md#public-emergency-rule-revised-in-phase-4).
 
-| Status                                 | Public state / message                                                      |
-| -------------------------------------- | --------------------------------------------------------------------------- |
-| GENERATED, PRINTED, IN_INVENTORY, SOLD | `NOT_ACTIVATED` — "This helmet has not yet been activated."                 |
-| ACTIVE (+ switch on, profile complete) | `ACTIVE` — owner-approved fields only                                       |
-| ACTIVATED / ACTIVE otherwise           | `ACTIVATED_PROFILE_INCOMPLETE` (no owner → `UNAVAILABLE`)                   |
-| LOST                                   | `LOST` — "This helmet has been reported lost."                              |
-| STOLEN                                 | `STOLEN` — "This helmet has been reported stolen."                          |
-| DAMAGED                                | `DAMAGED` — "This helmet is currently marked as damaged."                   |
-| REPLACED                               | `REPLACED` — "This helmet has been replaced and is no longer active."       |
-| DEACTIVATED                            | `DEACTIVATED` — "This helmet is no longer active."                          |
-| RECALLED                               | `RECALLED` — safe placeholder, no personal data (recall design is Phase 6+) |
+| Status                                 | Public state / message                                                                                                                    |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| GENERATED, PRINTED, IN_INVENTORY, SOLD | `NOT_ACTIVATED` — "This helmet has not yet been activated."                                                                               |
+| ACTIVE (+ switch on, profile complete) | `ACTIVE` — owner-approved fields only                                                                                                     |
+| ACTIVATED / ACTIVE otherwise           | `ACTIVATED_PROFILE_INCOMPLETE` (no owner → `UNAVAILABLE`)                                                                                 |
+| LOST                                   | `LOST` — "This helmet has been reported lost."                                                                                            |
+| STOLEN                                 | `STOLEN` — "This helmet has been reported stolen."                                                                                        |
+| DAMAGED                                | `DAMAGED` — already sharing: approved info + "This helmet is marked as damaged."; otherwise "This helmet is currently marked as damaged." |
+| REPLACED                               | `REPLACED` — "This helmet has been replaced and is no longer active."                                                                     |
+| DEACTIVATED                            | `DEACTIVATED` — "This helmet is no longer active."                                                                                        |
+| RECALLED                               | `RECALLED` — already sharing: approved info + recall warning; otherwise status message only                                               |
 
 ## Flagged business decisions
 
@@ -108,6 +111,10 @@ switch is on and their profile is enabled and complete.
    `ACTIVATION_ALLOW_IN_INVENTORY` allowance.
 2. **Decided (Phase 2/3):** `ACTIVATED` = owned; `ACTIVE` = owner explicitly switched emergency
    information on **for this helmet**.
-3. **Decided (Phase 3):** lost, stolen, damaged, replaced, deactivated and recalled helmets show a
-   status message only — no medical data or contacts. Open: should LOST helmets optionally show an
-   owner-chosen "if found, call" contact? Should RECALLED keep emergency access?
+3. **Decided (Phase 3, revised Phase 4):** lost, stolen, replaced and deactivated helmets show a
+   status message only — no medical data or contacts. Damaged and recalled helmets keep the
+   owner-approved information if they were already sharing, with a warning (a damaged helmet is
+   typically scanned right after the crash). Open: should LOST helmets optionally show an
+   owner-chosen "if found, call" contact?
+4. **Phase 4:** a warranty is per helmet and survives these states; registration is allowed in
+   ACTIVATED, ACTIVE, LOST, STOLEN, DAMAGED and RECALLED. See [WARRANTY](WARRANTY.md).

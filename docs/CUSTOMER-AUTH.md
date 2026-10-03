@@ -4,8 +4,27 @@ There is no OTP, SMS or mobile verification. A customer's identity is **ownershi
 
 - **First activation** creates the account: QR/Helmet ID + Activation PIN (proof of possession) +
   a new password, in one transaction (see [ACTIVATION](ACTIVATION.md)).
-- **Sign in** with any Helmet ID the customer currently owns + password.
-- **Forgot password**: Helmet ID + the offline recovery code shown once at activation.
+- **Sign in** with any Helmet ID the customer currently owns **or their Customer ID** + password.
+- **Forgot password**: Helmet ID or Customer ID + the offline recovery code shown once at activation.
+
+## Customer ID (Phase 4)
+
+Every account has a permanent **Customer ID** `CU-XXXX-XXXX` (`users.customer_code`): 7 CSPRNG
+symbols from the unambiguous 31-symbol alphabet + 1 mod-31 check symbol — the same scheme as the
+Helmet ID, so typos are rejected before any lookup. Unique index + format CHECK in the database;
+generated for new accounts (activation and transfer claim-register) with a collision retry, and
+backfilled for existing accounts by migration `20261003173121_phase4_customer_id`.
+
+- It is an **identifier, not a secret** (like a username): shown on the Account page with a copy
+  button ("Use your Customer ID to sign in even if you no longer own a helmet."), shown to support
+  as the owner reference instead of the internal UUID, and recorded in `customer.created` audit
+  metadata.
+- It solves Phase 3's open decision #1: a customer who transferred away their last helmet keeps
+  their account, profile and history and can still sign in.
+- Parsing (`parseAccountIdentifier` in `@helmet/types`): input is upper-cased and spaces/dashes are
+  ignored; a `CU` prefix means Customer ID; `HM` or 8 bare symbols mean Helmet ID.
+- Never changes. Not derived from the UUID. Not usable for anything except identifying the
+  account at sign-in/recovery (the password or recovery code is still required).
 
 Customer auth is completely separate from admin auth: different table (`users`), different JWT
 secret (`JWT_CUSTOMER_ACCESS_SECRET`) and audience (`helmet-customer`), different refresh-token
@@ -18,8 +37,8 @@ POST /customer/activation/validate   { publicToken|helmetCode, pin }            
 POST /customer/activation/register   { publicToken|helmetCode, pin, password, name? }
                                      → account + ownership; access token + refresh cookie + recoveryCode (once)
 POST /customer/activation/add-helmet { publicToken|helmetCode, pin } (Bearer)   → helmet added to the signed-in account
-POST /customer/auth/login            { helmetCode, password }                    → access token + refresh cookie
-POST /customer/auth/recover          { helmetCode, recoveryCode }                → { resetToken, expiresIn } (single use, 10 min)
+POST /customer/auth/login            { identifier, password }                    → access token + refresh cookie (identifier = Helmet ID or Customer ID; legacy `helmetCode` still accepted)
+POST /customer/auth/recover          { identifier, recoveryCode }                → { resetToken, expiresIn } (single use, 10 min)
 POST /customer/auth/reset-password   { resetToken, newPassword }                 → all sessions revoked, new recoveryCode (once), signed in
 POST /customer/auth/change-password  { currentPassword, newPassword } (Bearer)   → other sessions revoked
 POST /customer/auth/recovery-code    { password } (Bearer)                       → new recoveryCode (once); old one stops working
@@ -34,19 +53,20 @@ POST /customer/auth/reauthenticate { password } (Bearer) → { recentAuthToken, 
 
 ## Sign-in
 
-`login` order: checksum-validate the Helmet ID (typos rejected before the database) → find the
-helmet → its ACTIVE ownership → the user → Argon2id verify the password → user ACTIVE → session.
-Unknown helmet, unowned helmet, wrong password and suspended account all return the same
-`INVALID_CREDENTIALS` message, and a dummy hash is verified when no user exists so timing is
+`login` order: checksum-validate the identifier (typos rejected before the database) → for a
+Customer ID find the user directly; for a Helmet ID find the helmet → its ACTIVE ownership → the
+user → Argon2id verify the password → user ACTIVE → session.
+Unknown helmet, unknown Customer ID, unowned helmet, wrong password and suspended account all
+return the same `INVALID_CREDENTIALS` message ("The ID or password is incorrect."), and a dummy hash is verified when no user exists so timing is
 similar. Because every owned helmet points at the same `users` row, any of them signs in to the
 same account; a helmet that has been transferred away (Phase 3) stops working for sign-in.
 
-| Protection    | Limit                                                                                                                                                                                                                  |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Route         | `auth` throttler policy (10 req/min/IP, 5-min block)                                                                                                                                                                   |
-| Per Helmet ID | every `CUSTOMER_LOGIN_FAILURES_BEFORE_LOCK` (5) failures → temporary lock of `CUSTOMER_LOGIN_LOCKOUT_BASE_SECONDS` × 2^(n−1), capped at `CUSTOMER_LOGIN_LOCKOUT_MAX_SECONDS` (1 h). Never permanent; reset on success. |
-| Per IP hash   | `CUSTOMER_LOGIN_MAX_FAILURES_PER_IP_PER_HOUR` (50)                                                                                                                                                                     |
-| Audit         | `customer.login.failed` / `customer.login.locked` with IP hash — never the password                                                                                                                                    |
+| Protection                     | Limit                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Route                          | `auth` throttler policy (10 req/min/IP, 5-min block)                                                                                                                                                                                                                                                                                                         |
+| Per identifier and per account | every `CUSTOMER_LOGIN_FAILURES_BEFORE_LOCK` (5) failures → temporary lock of `CUSTOMER_LOGIN_LOCKOUT_BASE_SECONDS` × 2^(n−1), capped at `CUSTOMER_LOGIN_LOCKOUT_MAX_SECONDS` (1 h). Never permanent; reset on success. Counted both per typed identifier and per resolved account, so switching between Helmet ID and Customer ID doesn't reset the counter. |
+| Per IP hash                    | `CUSTOMER_LOGIN_MAX_FAILURES_PER_IP_PER_HOUR` (50)                                                                                                                                                                                                                                                                                                           |
+| Audit                          | `customer.login.failed` / `customer.login.locked` with IP hash — never the password                                                                                                                                                                                                                                                                          |
 
 ## Passwords
 
@@ -63,13 +83,13 @@ same account; a helmet that has been transferred away (Phase 3) stops working fo
   you forget your password."_ The customer must tick "I've saved my recovery code" to continue.
 - Stored only as Argon2id + pepper (`users.recovery_code_hash`). Never logged, never in audit
   metadata, never returned again.
-- Recovery: `recover` (Helmet ID + code) → single-use reset token (256-bit, SHA-256 key in Redis,
+- Recovery: `recover` (Helmet ID or Customer ID + code) → single-use reset token (256-bit, SHA-256 key in Redis,
   `RECOVERY_RESET_TOKEN_TTL_SECONDS`, consumed with `GETDEL`) → `reset-password`. The reset
   updates the password **only if the recovery code hash is unchanged** (conditional update), so two
   parallel reset tokens can't both succeed. It then revokes all sessions, rotates the recovery code
   (the old one can never be reused) and returns the new code once.
 - A signed-in customer can generate a new code (password required) from Account.
-- Heavily rate-limited: every `RECOVERY_FAILURES_BEFORE_LOCK` (3) failures per Helmet ID → escalating
+- Heavily rate-limited: every `RECOVERY_FAILURES_BEFORE_LOCK` (3) failures per identifier and per account → escalating
   lock from `RECOVERY_LOCKOUT_BASE_SECONDS` (15 min); `RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR` (10).
   Generic errors. Losing both password and recovery code requires support (flagged).
 

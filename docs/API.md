@@ -175,6 +175,37 @@ Domain errors: `HELMET_NOT_TRANSFERABLE`, `TRANSFER_CODE_INVALID`, `TRANSFER_COD
 `OWNERSHIP_ALREADY_REVOKED`, `REPLACEMENT_INVALID`, `RECENT_AUTH_REQUIRED`,
 `CONFIRMATION_MISMATCH`.
 
-## Planned (Phase 4+)
+## Phase 4 — Customer ID, warranty, product authenticity
 
-Warranty, dealers.
+Customer sign-in/recovery take `identifier` (Helmet ID **or** Customer ID `CU-XXXX-XXXX`); the
+legacy `helmetCode` field is still accepted. `GET /customer/auth/me` and login responses include
+`customer.customerId`; admin helmet detail `owner.customerId` is the Customer ID (never the UUID).
+`GET /customer/helmets` items include `warranty: { status, endDate }`.
+
+| Method              | Path                                                                                                                    | Auth                                | Notes                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
+| GET                 | `/customer/helmets/:id/warranty`                                                                                        | Bearer (current owner)              | effective status, dates, policy, `canRegister`; `details` only for the registrant       |
+| POST                | `/customer/helmets/:id/warranty` `{ purchaseDate, purchaseChannel?, sellerName?, sellerCity?, invoiceNumber?, notes? }` | Bearer                              | idempotent for the same purchase date                                                   |
+| POST / GET / DELETE | `/customer/helmets/:id/warranty/proof`                                                                                  | Bearer (registrant + current owner) | multipart `proof`; JPEG/PNG/WebP/PDF ≤ 10 MB                                            |
+| GET                 | `/admin/warranties?search&status&page&pageSize`                                                                         | `warranty:view`                     | search: Helmet ID, Customer ID, serial, invoice; status = effective                     |
+| GET                 | `/admin/warranties/:id`                                                                                                 | `warranty:view`                     | + history                                                                               |
+| PATCH               | `/admin/warranties/:id`                                                                                                 | `warranty:manage`                   | `reasonCode` required                                                                   |
+| POST                | `/admin/warranties/:id/void` `{ reason, note? }`                                                                        | `warranty:void` + recent auth       |                                                                                         |
+| POST                | `/admin/warranties/:id/restore` `{ note? }`                                                                             | `warranty:void`                     |                                                                                         |
+| GET                 | `/admin/warranties/:id/proof`                                                                                           | `warranty:document-view`            | audited download                                                                        |
+| GET                 | `/public/verify/:token`                                                                                                 | —                                   | `VERIFIED` (safe product facts, lifecycle, warranty, `recallWarning`) or `NOT_VERIFIED` |
+| POST                | `/public/product-reports` `{ publicToken?, helmetCode?, reason, description?, contactEmail? }`                          | —                                   | 202; 5/h per IP                                                                         |
+| GET                 | `/admin/product-reports?status&page`                                                                                    | `product-report:view`               |                                                                                         |
+| PATCH               | `/admin/product-reports/:id` `{ status, note? }`                                                                        | `product-report:manage`             |                                                                                         |
+
+`POST /admin/replacements` accepts `replacementWarrantyEndDate?` (override). Helmet models accept
+`warrantyEnabled` and `warrantyMonths` (0–240).
+
+Domain errors: `WARRANTY_NOT_FOUND`, `WARRANTY_ALREADY_REGISTERED`, `WARRANTY_NOT_AVAILABLE`,
+`WARRANTY_NOT_REGISTRABLE`, `INVALID_PURCHASE_DATE`, `WARRANTY_INVALID_STATE`,
+`WARRANTY_PROOF_NOT_FOUND`, `INVALID_FILE`. Details: [WARRANTY](WARRANTY.md),
+[PRODUCT-AUTHENTICITY](PRODUCT-AUTHENTICITY.md).
+
+## Planned (Phase 5+)
+
+Dealers, warranty claims, label printing.
