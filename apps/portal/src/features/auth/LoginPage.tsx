@@ -94,6 +94,9 @@ export function LoginPage() {
                 <Link to="/activate" className="font-medium underline underline-offset-4">
                   New helmet? Activate it
                 </Link>
+                <Link to="/claim" className="font-medium underline underline-offset-4">
+                  Received a helmet? Claim it
+                </Link>
               </div>
             </form>
           </CardContent>

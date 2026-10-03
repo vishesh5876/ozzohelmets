@@ -5,6 +5,7 @@ import { api } from './api';
 import { CustomerAuthContext, type CustomerAuthState } from './auth-context';
 import { API_BASE } from './config';
 import { queryClient } from './query';
+import { clearRecentAuth } from './recent-auth';
 
 /**
  * Customer session: the access token lives only in memory; the refresh token is an httpOnly
@@ -14,10 +15,14 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
   const [status, setStatus] = useState<CustomerAuthState['status']>('loading');
   const tokenRef = useRef<string | null>(null);
+  const customerIdRef = useRef<string | null>(null);
   const restoreRef = useRef<Promise<void>>(Promise.resolve());
 
   const apply = useCallback((session: CustomerLoginResponse | null) => {
     tokenRef.current = session?.accessToken ?? null;
+    // A different (or no) customer never inherits a password confirmation.
+    if (session?.customer.id !== customerIdRef.current) clearRecentAuth();
+    customerIdRef.current = session?.customer.id ?? null;
     setCustomer(session?.customer ?? null);
     setStatus(session ? 'authenticated' : 'anonymous');
   }, []);

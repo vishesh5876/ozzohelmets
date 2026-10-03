@@ -1,24 +1,27 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { CustomerHelmetDto } from '@helmet/types';
-import { Badge, buttonVariants, Card, CardContent, HelmetStatusBadge } from '@helmet/ui';
-import { ErrorState, LoadingState } from '../../components/States';
+import type { CustomerHelmetDetailDto } from '@helmet/types';
+import { Badge, Button, buttonVariants, Card, CardContent, HelmetStatusBadge } from '@helmet/ui';
+import { ErrorState, InlineError, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { keys } from '../../lib/query';
+import { ACTION_PAGES, TIMELINE_LABELS } from './lifecycle-labels';
 import { PROFILE_LABEL } from './profile-label';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+const dateTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 export function HelmetDetailPage() {
   const { id = '' } = useParams();
+  const qc = useQueryClient();
   const {
     data: helmet,
     isLoading,
     error,
   } = useQuery({
     queryKey: keys.helmet(id),
-    queryFn: () => api.get<CustomerHelmetDto>(`/customer/helmets/${id}`),
+    queryFn: () => api.get<CustomerHelmetDetailDto>(`/customer/helmets/${id}`),
   });
   const qr = useQuery({
     queryKey: ['helmets', id, 'qr'],
@@ -28,10 +31,29 @@ export function HelmetDetailPage() {
   const qrUrl = useMemo(() => (qr.data ? URL.createObjectURL(qr.data) : null), [qr.data]);
   useEffect(() => () => (qrUrl ? URL.revokeObjectURL(qrUrl) : undefined), [qrUrl]);
 
+  const emergency = useMutation({
+    mutationFn: (on: boolean) =>
+      api.post(`/customer/helmets/${id}/emergency/${on ? 'enable' : 'disable'}`),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: keys.helmets }),
+        qc.invalidateQueries({ queryKey: keys.dashboard }),
+        qc.invalidateQueries({ queryKey: ['emergency'] }),
+      ]);
+    },
+  });
+
   if (isLoading) return <LoadingState />;
   if (error || !helmet)
     return <ErrorState error={error} action={<Link to="/app/helmets">Back to my helmets</Link>} />;
   const profile = PROFILE_LABEL[helmet.emergencyProfileStatus];
+  const actions = helmet.availableActions
+    .map((a) => ACTION_PAGES[a])
+    .filter((a): a is NonNullable<typeof a> => Boolean(a));
+  const canEnable = helmet.availableActions.includes('ENABLE_EMERGENCY');
+  const canDisable = helmet.availableActions.includes('DISABLE_EMERGENCY');
+  const profileReady =
+    helmet.emergencyProfileStatus === 'ACTIVE' || helmet.emergencyProfileStatus === 'DISABLED';
 
   return (
     <>
@@ -43,42 +65,121 @@ export function HelmetDetailPage() {
         <HelmetStatusBadge status={helmet.status} />
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="md:col-span-2">
-          <CardContent>
-            <dl className="grid gap-5 sm:grid-cols-2">
-              <Item label="Model" value={`${helmet.model.brand} ${helmet.model.name}`} />
-              <Item
-                label="Serial number"
-                value={<span className="font-mono text-sm">{helmet.serialNumber}</span>}
-              />
-              <Item
-                label="Activated"
-                value={helmet.activatedAt ? dateFmt.format(new Date(helmet.activatedAt)) : '—'}
-              />
-              <Item
-                label="Emergency profile"
-                value={<Badge tone={profile.tone}>{profile.label}</Badge>}
-              />
-            </dl>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {helmet.emergencyProfileStatus !== 'ACTIVE' && (
-                <Link to="/app/onboarding" className={buttonVariants()}>
-                  {helmet.emergencyProfileStatus === 'DISABLED'
-                    ? 'Turn on for this helmet'
-                    : 'Set up emergency profile'}
-                </Link>
+        <div className="flex flex-col gap-4 md:col-span-2">
+          <Card>
+            <CardContent>
+              <dl className="grid gap-5 sm:grid-cols-2">
+                <Item label="Model" value={`${helmet.model.brand} ${helmet.model.name}`} />
+                <Item
+                  label="Serial number"
+                  value={<span className="font-mono text-sm">{helmet.serialNumber}</span>}
+                />
+                <Item
+                  label={helmet.acquiredVia === 'TRANSFER' ? 'Owned since' : 'Activated'}
+                  value={dateFmt.format(new Date(helmet.ownedSince))}
+                />
+                <Item
+                  label="Emergency information"
+                  value={<Badge tone={profile.tone}>{profile.label}</Badge>}
+                />
+                {helmet.replacedBy && (
+                  <Item
+                    label="Replaced by"
+                    value={<span className="font-mono">{helmet.replacedBy.helmetCode}</span>}
+                  />
+                )}
+                {helmet.replaces && (
+                  <Item
+                    label="Replaces"
+                    value={<span className="font-mono">{helmet.replaces.helmetCode}</span>}
+                  />
+                )}
+              </dl>
+              {helmet.pendingTransfer && (
+                <p className="mt-5 rounded-md bg-canvas-soft px-4 py-3 text-sm">
+                  A transfer code is active until{' '}
+                  {dateTimeFmt.format(new Date(helmet.pendingTransfer.expiresAt))}.{' '}
+                  <Link to={`/app/helmets/${helmet.id}/transfer`} className="font-medium underline">
+                    Manage transfer
+                  </Link>
+                </p>
               )}
-              <a
-                href={helmet.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: 'subtle' })}
+              <div className="mt-6 flex flex-wrap gap-2">
+                {canEnable &&
+                  (profileReady ? (
+                    <Button loading={emergency.isPending} onClick={() => emergency.mutate(true)}>
+                      Show emergency info on this helmet
+                    </Button>
+                  ) : (
+                    <Link to="/app/onboarding" className={buttonVariants()}>
+                      Set up emergency profile
+                    </Link>
+                  ))}
+                {canDisable && (
+                  <Button
+                    variant="secondary"
+                    loading={emergency.isPending}
+                    onClick={() => emergency.mutate(false)}
+                  >
+                    Hide emergency info on this helmet
+                  </Button>
+                )}
+                <a
+                  href={helmet.publicUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants({ variant: 'subtle' })}
+                >
+                  Open public page
+                </a>
+              </div>
+              <InlineError error={emergency.error} />
+            </CardContent>
+          </Card>
+
+          {actions.length > 0 && (
+            <Card>
+              <CardContent className="flex flex-col gap-3">
+                <p className="font-bold">Manage helmet</p>
+                <div className="flex flex-wrap gap-2" data-testid="helmet-actions">
+                  {actions.map((a) => (
+                    <Link
+                      key={a.slug}
+                      to={`/app/helmets/${helmet.id}/${a.slug}`}
+                      className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+                    >
+                      {a.label}
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardContent>
+              <p className="mb-4 font-bold">Timeline</p>
+              <ol
+                className="relative flex flex-col gap-4 border-l border-hairline pl-5"
+                data-testid="timeline"
               >
-                Open public page
-              </a>
-            </div>
-          </CardContent>
-        </Card>
+                {[...helmet.timeline].reverse().map((e, i) => (
+                  <li key={`${e.at}-${i}`} className="relative">
+                    <span
+                      className="absolute top-1.5 -left-[25px] h-2 w-2 rounded-full bg-ink"
+                      aria-hidden
+                    />
+                    <p className="text-sm font-medium">
+                      {TIMELINE_LABELS[e.type]}
+                      {e.detail ? ` · ${e.detail}` : ''}
+                    </p>
+                    <p className="text-xs text-body">{dateTimeFmt.format(new Date(e.at))}</p>
+                  </li>
+                ))}
+              </ol>
+            </CardContent>
+          </Card>
+        </div>
         <Card>
           <CardContent className="flex flex-col items-center gap-3">
             <p className="self-start font-bold">Helmet QR code</p>

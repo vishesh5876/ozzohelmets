@@ -17,6 +17,11 @@ const LABELS: Record<Permission, string> = {
   'export:manufacturing': 'Export manufacturing CSV (activation PINs)',
   'audit:read': 'View audit logs',
   'admin-users:manage': 'Manage admin users',
+  'ownership:view': 'View ownership & transfer history',
+  'ownership:revoke': 'Revoke customer ownership (exceptional)',
+  'transfer:cancel': 'Cancel pending transfers',
+  'replacement:manage': 'Link replacement helmets',
+  'helmet-lifecycle:manage': 'Restore / deactivate customer-owned helmets',
 };
 
 export function RolesPage() {

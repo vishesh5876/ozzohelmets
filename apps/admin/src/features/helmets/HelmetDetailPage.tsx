@@ -23,6 +23,7 @@ import {
   Select,
 } from '@helmet/ui';
 import { AuthImage } from '../../components/AuthImage';
+import { OwnershipCard, ReplacementCard, SupportActionsCard } from './HelmetLifecyclePanels';
 import { PageHeader } from '../../components/PageHeader';
 import { RequirePermission } from '../../components/RequirePermission';
 import { ErrorState, InlineError, LoadingState } from '../../components/States';
@@ -119,7 +120,7 @@ export function HelmetDetailPage() {
                   label="Owner"
                   value={
                     helmet.owner
-                      ? `Customer${helmet.owner.maskedMobile ? ` · ${helmet.owner.maskedMobile} (unverified)` : ''} · since ${formatDateTime(helmet.owner.since)}`
+                      ? `Customer ${helmet.owner.customerId.slice(0, 8)}${helmet.owner.maskedMobile ? ` · ${helmet.owner.maskedMobile} (unverified)` : ''} · since ${formatDateTime(helmet.owner.since)}`
                       : 'No owner'
                   }
                 />
@@ -164,9 +165,12 @@ export function HelmetDetailPage() {
               </dl>
             </CardContent>
           </Card>
+          <RequirePermission permission={Permission.OWNERSHIP_VIEW}>
+            <OwnershipCard helmet={helmet} />
+          </RequirePermission>
           <Card>
             <CardHeader>
-              <CardTitle>Status history</CardTitle>
+              <CardTitle>Lifecycle history</CardTitle>
             </CardHeader>
             <CardContent>
               <ol className="relative flex flex-col gap-5 border-l border-hairline pl-5">
@@ -244,6 +248,8 @@ export function HelmetDetailPage() {
           <RequirePermission permission={Permission.HELMETS_UPDATE_STATUS}>
             <StatusChangeCard helmet={helmet} />
           </RequirePermission>
+          <ReplacementCard helmet={helmet} />
+          <SupportActionsCard helmet={helmet} />
         </div>
       </div>
     </>

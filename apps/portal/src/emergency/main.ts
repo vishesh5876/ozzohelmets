@@ -187,6 +187,13 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
   );
 }
 
+const INACTIVE_TITLES: Record<'DAMAGED' | 'REPLACED' | 'DEACTIVATED' | 'RECALLED', string> = {
+  DAMAGED: 'Marked as damaged',
+  REPLACED: 'Helmet replaced',
+  DEACTIVATED: 'No longer active',
+  RECALLED: 'Recalled helmet',
+};
+
 function render(token: string, result: Lookup | null): void {
   const app = document.getElementById('app');
   if (!app) return;
@@ -241,6 +248,16 @@ function render(token: string, result: Lookup | null): void {
           ),
         );
         break;
+      case 'DAMAGED':
+      case 'REPLACED':
+      case 'DEACTIVATED':
+      case 'RECALLED': {
+        // Lifecycle notices never carry personal or medical information.
+        const title = INACTIVE_TITLES[d.state];
+        top = header(title, 'Helmet ID', true);
+        main.append(messageCard(title, d.message));
+        break;
+      }
       default:
         main.append(messageCard(`${d.helmet.brand} ${d.helmet.modelName}`, d.message));
     }

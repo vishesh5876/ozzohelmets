@@ -1,9 +1,14 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { type EmergencyReadinessDto, ReadinessRequirement } from '@helmet/types';
+import {
+  type CustomerHelmetDto,
+  type EmergencyReadinessDto,
+  ReadinessRequirement,
+} from '@helmet/types';
 import { Button, Card, CardContent } from '@helmet/ui';
 import { InlineError, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
+import { keys } from '../../lib/query';
 import { useInvalidateEmergency, useReadiness } from './hooks';
 
 const MISSING: Record<ReadinessRequirement, { label: string; to: string }> = {
@@ -64,6 +69,7 @@ export function EnableProfileCard({
             ))}
           </ul>
         )}
+        {readiness.enabled && <HelmetSwitches />}
         <InlineError error={enable.error ?? disable.error} />
         {readiness.enabled ? (
           <Button variant="secondary" loading={disable.isPending} onClick={() => disable.mutate()}>
@@ -81,5 +87,52 @@ export function EnableProfileCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * With several helmets in use, each one must be switched on explicitly so medical information
+ * is never exposed on a helmet by accident (e.g. a spare or a newly received one).
+ */
+function HelmetSwitches() {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateEmergency();
+  const { data } = useQuery({
+    queryKey: keys.helmets,
+    queryFn: () => api.get<CustomerHelmetDto[]>('/customer/helmets'),
+  });
+  const toggle = useMutation({
+    mutationFn: ({ id, on }: { id: string; on: boolean }) =>
+      api.post(`/customer/helmets/${id}/emergency/${on ? 'enable' : 'disable'}`),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: keys.helmets });
+      await invalidate();
+    },
+  });
+  const inUse = (data ?? []).filter((h) => h.group === 'ACTIVE');
+  if (inUse.length < 2) return null;
+  return (
+    <div className="flex flex-col gap-2" data-testid="helmet-switches">
+      <p className="font-medium">Show on which helmets?</p>
+      <ul className="flex flex-col divide-y divide-hairline rounded-md border border-hairline">
+        {inUse.map((h) => (
+          <li key={h.id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <span>
+              <span className="font-mono font-bold">{h.helmetCode}</span>{' '}
+              <span className="text-sm text-body">{h.model.name}</span>
+            </span>
+            <Button
+              size="sm"
+              variant={h.emergencyEnabled ? 'secondary' : 'primary'}
+              loading={toggle.isPending && toggle.variables?.id === h.id}
+              onClick={() => toggle.mutate({ id: h.id, on: !h.emergencyEnabled })}
+            >
+              {h.emergencyEnabled ? 'Shown · Hide' : 'Hidden · Show'}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <InlineError error={toggle.error} />
+    </div>
   );
 }
