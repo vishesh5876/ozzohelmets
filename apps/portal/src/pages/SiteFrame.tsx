@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useCustomerAuth } from '../lib/auth-context';
 
 export function SiteFrame({ children }: { children: ReactNode }) {
+  const { status } = useCustomerAuth();
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="border-b border-hairline">
@@ -11,10 +13,10 @@ export function SiteFrame({ children }: { children: ReactNode }) {
           </Link>
           <nav className="flex items-center gap-2">
             <Link
-              to="/login"
+              to={status === 'authenticated' ? '/app' : '/login'}
               className="rounded-pill px-4 py-2 text-sm font-medium hover:bg-canvas-soft"
             >
-              Sign in
+              {status === 'authenticated' ? 'My helmets' : 'Sign in'}
             </Link>
             <Link
               to="/activate"

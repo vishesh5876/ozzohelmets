@@ -2,8 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Copy, Download, ExternalLink } from 'lucide-react';
-import { type HelmetDetailDto, type HelmetStatus, Permission } from '@helmet/types';
 import {
+  type EmergencyProfileStatus,
+  type HelmetDetailDto,
+  type HelmetStatus,
+  Permission,
+} from '@helmet/types';
+import {
+  Badge,
+  type BadgeProps,
   Button,
   Card,
   CardContent,
@@ -21,6 +28,14 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { ErrorState, InlineError, LoadingState } from '../../components/States';
 import { api, apiBlob } from '../../lib/api';
 import { downloadBlob, formatDateTime, formatNumber } from '../../lib/format';
+
+/** Admins see only the profile status — never the medical content itself. */
+const PROFILE_TONE: Record<EmergencyProfileStatus, NonNullable<BadgeProps['tone']>> = {
+  NOT_CONFIGURED: 'outline',
+  INCOMPLETE: 'soft',
+  DISABLED: 'muted',
+  ACTIVE: 'solid',
+};
 
 export function HelmetDetailPage() {
   const { id = '' } = useParams();
@@ -100,6 +115,26 @@ export function HelmetDetailPage() {
                 />
                 <Item label="Activated" value={formatDateTime(helmet.activatedAt)} />
                 <Item label="QR scans" value={formatNumber(helmet.scanCount)} />
+                <Item
+                  label="Owner"
+                  value={
+                    helmet.owner
+                      ? `${helmet.owner.maskedMobile ?? 'Customer'} · since ${formatDateTime(helmet.owner.since)}`
+                      : 'No owner'
+                  }
+                />
+                <Item
+                  label="Emergency profile"
+                  value={
+                    helmet.owner ? (
+                      <Badge tone={PROFILE_TONE[helmet.owner.emergencyProfileStatus]}>
+                        {humanizeEnum(helmet.owner.emergencyProfileStatus)}
+                      </Badge>
+                    ) : (
+                      '—'
+                    )
+                  }
+                />
                 <Item label="Created" value={formatDateTime(helmet.createdAt)} />
                 <div className="sm:col-span-2">
                   <dt className="text-body">Public QR URL</dt>

@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createRefresher } from '@helmet/api-client';
 import type { AdminLoginResponse, AdminProfile } from '@helmet/types';
 import { API_BASE, apiRequest, configureAuth } from './api';
 import { AuthContext, type AuthState } from './auth-context';
@@ -11,7 +12,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [admin, setAdmin] = useState<AdminProfile | null>(null);
   const [status, setStatus] = useState<AuthState['status']>('loading');
   const tokenRef = useRef<string | null>(null);
-  const refreshing = useRef<Promise<string | null> | null>(null);
 
   const applySession = useCallback((session: AdminLoginResponse | null) => {
     tokenRef.current = session?.accessToken ?? null;
@@ -19,31 +19,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus(session ? 'authenticated' : 'anonymous');
   }, []);
 
-  const refresh = useCallback((): Promise<string | null> => {
-    // Single-flight: concurrent 401s share one refresh request (tokens rotate on every use).
-    refreshing.current ??= fetch(`${API_BASE}/admin/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'X-Requested-With': 'fetch', Accept: 'application/json' },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          applySession(null);
-          return null;
-        }
-        const body = (await res.json()) as { data: AdminLoginResponse };
-        applySession(body.data);
-        return body.data.accessToken;
-      })
-      .catch(() => {
-        applySession(null);
-        return null;
-      })
-      .finally(() => {
-        refreshing.current = null;
-      });
-    return refreshing.current;
-  }, [applySession]);
+  const refresh = useMemo(
+    () => createRefresher<AdminLoginResponse>(`${API_BASE}/admin/auth/refresh`, applySession),
+    [applySession],
+  );
 
   useEffect(() => {
     configureAuth({ getToken: () => tokenRef.current, refresh });

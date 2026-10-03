@@ -27,6 +27,13 @@ server {
     try_files $uri =404;
   }
 
+  # Public emergency page: standalone lightweight entry (portal). Falls back to the SPA elsewhere.
+  location ^~ /e/ {
+    include /etc/nginx/snippets/security-headers.conf;
+    add_header Cache-Control "no-cache";
+    try_files /emergency.html /index.html;
+  }
+
   location / {
     include /etc/nginx/snippets/security-headers.conf;
     add_header Cache-Control "no-cache";

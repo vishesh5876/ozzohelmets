@@ -22,7 +22,8 @@
     "prisma": "pnpm --filter @helmet/api prisma:migrate:deploy && pnpm --filter @helmet/api prisma:seed",
     "prisma:migrate": "pnpm --filter @helmet/api prisma:migrate:dev",
     "prisma:generate": "pnpm --filter @helmet/api prisma:generate",
-    "prisma:studio": "pnpm --filter @helmet/api prisma:studio"
+    "prisma:studio": "pnpm --filter @helmet/api prisma:studio",
+    "test:e2e:browser": "pnpm --filter @helmet/e2e test:e2e:browser"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

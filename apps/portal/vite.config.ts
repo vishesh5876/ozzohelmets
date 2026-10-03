@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
+import { type Connect, defineConfig, type Plugin } from 'vite';
 
 /**
  * The monorepo keeps one .env at the repo root. It is parsed here instead of via Vite's
@@ -21,6 +21,19 @@ function readRootEnv(): Record<string, string> {
   return env;
 }
 
+/** Serves the standalone emergency entry for /e/* in dev and preview (nginx does this in production). */
+function emergencyRoute(): Plugin {
+  const rewrite: Connect.NextHandleFunction = (req, _res, next) => {
+    if (req.url && /^\/e\/[^/?#]+\/?(\?.*)?$/.test(req.url)) req.url = '/emergency.html';
+    next();
+  };
+  return {
+    name: 'emergency-route',
+    configureServer: (server) => void server.middlewares.use(rewrite),
+    configurePreviewServer: (server) => void server.middlewares.use(rewrite),
+  };
+}
+
 export default defineConfig(() => {
   const env: Record<string, string | undefined> = { ...readRootEnv(), ...process.env };
   const clientEnv = Object.fromEntries(
@@ -30,7 +43,7 @@ export default defineConfig(() => {
   );
   const port = Number(env.PORTAL_PORT ?? 3001);
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [emergencyRoute(), react(), tailwindcss()],
     define: clientEnv,
     server: {
       port,
@@ -47,6 +60,10 @@ export default defineConfig(() => {
       sourcemap: true,
       chunkSizeWarningLimit: 600,
       rollupOptions: {
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          emergency: resolve(__dirname, 'emergency.html'),
+        },
         output: {
           manualChunks(id: string) {
             if (!id.includes('node_modules')) return undefined;

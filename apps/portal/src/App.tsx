@@ -1,39 +1,69 @@
-import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { lazy, type ReactNode, Suspense } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { AppLayout } from './components/AppLayout';
+import { LoadingState } from './components/States';
+import { useCustomerAuth } from './lib/auth-context';
 
-// Route-level code splitting keeps the emergency page's JavaScript minimal.
-const EmergencyPage = lazy(() =>
-  import('./pages/EmergencyPage').then((m) => ({ default: m.EmergencyPage })),
-);
-const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
+const page = <T extends Record<string, unknown>>(loader: () => Promise<T>, name: keyof T) =>
+  lazy(() => loader().then((m) => ({ default: m[name] as React.ComponentType })));
+
+const HomePage = page(() => import('./pages/HomePage'), 'HomePage');
 const ComingSoonPage = lazy(() =>
   import('./pages/ComingSoonPage').then((m) => ({ default: m.ComingSoonPage })),
 );
+const LoginPage = page(() => import('./features/auth/LoginPage'), 'LoginPage');
+const ActivatePage = page(() => import('./features/activation/ActivatePage'), 'ActivatePage');
+const DashboardPage = page(() => import('./features/dashboard/DashboardPage'), 'DashboardPage');
+const HelmetsPage = page(() => import('./features/helmets/HelmetsPage'), 'HelmetsPage');
+const HelmetDetailPage = page(
+  () => import('./features/helmets/HelmetDetailPage'),
+  'HelmetDetailPage',
+);
+const OnboardingPage = page(() => import('./features/onboarding/OnboardingPage'), 'OnboardingPage');
+const ProfilePage = page(() => import('./features/emergency/pages'), 'ProfilePage');
+const ContactsPage = page(() => import('./features/emergency/pages'), 'ContactsPage');
+const PrivacyPage = page(() => import('./features/emergency/pages'), 'PrivacyPage');
+const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
 
+function RequireCustomer({ children }: { children: ReactNode }) {
+  const { status } = useCustomerAuth();
+  const location = useLocation();
+  if (status === 'loading') return <LoadingState label="Restoring your session…" />;
+  if (status === 'anonymous')
+    return (
+      <Navigate
+        to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`}
+        replace
+      />
+    );
+  return <>{children}</>;
+}
+
+// /e/:token is served by the standalone emergency entry (emergency.html), not this app.
 export function App() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<LoadingState />}>
       <Routes>
-        <Route path="/e/:token" element={<EmergencyPage />} />
         <Route path="/" element={<HomePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/activate" element={<ActivatePage />} />
         <Route
-          path="/activate"
+          path="/app"
           element={
-            <ComingSoonPage
-              title="Helmet activation"
-              description="Activation with your Helmet ID, PIN and mobile number opens soon."
-            />
+            <RequireCustomer>
+              <AppLayout />
+            </RequireCustomer>
           }
-        />
-        <Route
-          path="/login"
-          element={
-            <ComingSoonPage
-              title="Sign in"
-              description="Mobile number sign-in with a one-time code is coming soon."
-            />
-          }
-        />
+        >
+          <Route index element={<DashboardPage />} />
+          <Route path="helmets" element={<HelmetsPage />} />
+          <Route path="helmets/:id" element={<HelmetDetailPage />} />
+          <Route path="onboarding" element={<OnboardingPage />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="contacts" element={<ContactsPage />} />
+          <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="account" element={<AccountPage />} />
+        </Route>
         <Route
           path="*"
           element={

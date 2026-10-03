@@ -1,0 +1,14 @@
+{
+  "name": "@helmet/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser end-to-end tests (Playwright) across admin, portal and the public emergency page",
+  "scripts": {
+    "test:e2e:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.18.0",
+    "typescript": "~5.9.3"
+  }
+}

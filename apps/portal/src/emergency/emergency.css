@@ -1,0 +1,267 @@
+/* Emergency page: standalone, no framework CSS. High contrast, large targets, system fonts. */
+:root {
+  --ink: #000;
+  --canvas: #fff;
+  --soft: #f1f1f1;
+  --body: #444;
+  --line: #d9d9d9;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font:
+    18px/1.45 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+#app {
+  flex: 1;
+}
+:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+.top {
+  background: var(--ink);
+  color: #fff;
+  padding: max(20px, env(safe-area-inset-top)) 20px 20px;
+}
+.top.alert {
+  background: var(--danger);
+}
+.eyebrow {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+h1 {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 800;
+}
+h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--body);
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 20px 24px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+}
+.card {
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+}
+.card.strong {
+  border-color: var(--ink);
+}
+.card.danger {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.lead {
+  margin: 0;
+  font-size: 20px;
+}
+.muted {
+  color: var(--body);
+  margin: 6px 0 0;
+}
+.person {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.photo {
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: var(--soft);
+  flex: none;
+}
+.name {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.fact {
+  background: var(--soft);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 600;
+  font-size: 16px;
+}
+.blood {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.blood strong {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 900;
+}
+.list {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.list li + li {
+  margin-top: 4px;
+}
+.allergy {
+  border-color: var(--danger);
+}
+.allergy h3 {
+  color: var(--danger);
+}
+.notes {
+  margin: 0;
+  font-size: 19px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.contact + .contact {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.contact-name {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60px;
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 999px;
+  font-size: 20px;
+  font-weight: 800;
+  text-decoration: none;
+  border: 0;
+  cursor: pointer;
+}
+.btn + .btn {
+  margin-top: 10px;
+}
+.btn-primary {
+  background: var(--ink);
+  color: #fff;
+}
+.btn-secondary {
+  background: var(--soft);
+  color: var(--ink);
+  min-height: 52px;
+  font-size: 18px;
+}
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+  min-height: 64px;
+  font-size: 21px;
+}
+.contact .btn {
+  margin-top: 12px;
+}
+.helmet {
+  font-size: 15px;
+  color: var(--body);
+}
+.helmet code {
+  font:
+    600 15px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  color: var(--ink);
+}
+.disclaimer {
+  font-size: 14px;
+  color: var(--body);
+  text-align: center;
+  margin: 0;
+}
+.call-bar {
+  position: sticky;
+  bottom: 0;
+  background: var(--canvas);
+  border-top: 1px solid var(--line);
+  padding: 14px 20px max(14px, env(safe-area-inset-bottom));
+}
+.call-bar .btn {
+  max-width: 600px;
+  margin: 0 auto;
+}
+.skeleton {
+  height: 18px;
+  border-radius: 999px;
+  background: var(--soft);
+  margin-top: 12px;
+}
+.noscript {
+  padding: 20px;
+  font-size: 18px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}

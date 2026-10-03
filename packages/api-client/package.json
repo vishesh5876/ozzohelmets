@@ -1,0 +1,25 @@
+{
+  "name": "@helmet/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed fetch client for the helmet API envelope, with single-flight token refresh",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "build": "tsc --noEmit",
+    "test": "echo \"(api-client) covered by app builds\""
+  },
+  "dependencies": {
+    "@helmet/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@helmet/eslint-config": "workspace:*",
+    "@helmet/tsconfig": "workspace:*",
+    "eslint": "^9.39.0",
+    "typescript": "~5.9.3"
+  }
+}

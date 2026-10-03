@@ -21,7 +21,8 @@
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.65.0",
     "react-router-dom": "^7.9.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@helmet/api-client": "workspace:*"
   },
   "devDependencies": {
     "@helmet/eslint-config": "workspace:*",

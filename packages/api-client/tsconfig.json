@@ -1,0 +1,4 @@
+{
+  "extends": "@helmet/tsconfig/react.json",
+  "include": ["src"]
+}
