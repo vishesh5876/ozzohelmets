@@ -46,7 +46,7 @@ only `SYSTEM` can activate, owners can report lost/stolen but not deactivate/rec
 
 - **Eligibility** is decided only by `ActivationPolicy` (see ACTIVATION.md).
 - **Activation is system-only.** No admin can move a helmet to `ACTIVATED`; only the Phase 2
-  activation flow (PIN + OTP, row-locked transaction) can, so ownership always exists.
+  activation flow (PIN as proof of possession, row-locked transaction) can, so ownership always exists.
 - **Concurrency.** Single changes lock the row (`SELECT … FOR UPDATE`) and update with
   `WHERE status = <from>`; a concurrent change fails with `CONFLICT` rather than overwriting.
 - **Bulk changes** (mark printed) validate the transition once and apply it in one transaction

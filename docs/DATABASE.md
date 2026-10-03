@@ -27,11 +27,11 @@ never used).
 | `helmet_status_history`     | Every lifecycle change with actor + reason                                                           | idx (`helmet_id`, `created_at`)                                                                                                                 |
 | `helmet_scans`              | QR scan log (hashed IP, UA, country, type)                                                           | idx (`helmet_id`, `scanned_at`), `scanned_at`                                                                                                   |
 | `audit_logs`                | Append-only audit trail                                                                              | idx (admin, created), (user, created), (entity_type, entity_id), action, created_at                                                             |
-| `users`                     | Customers (schema only; Phase 2)                                                                     | unique `email`, `mobile`                                                                                                                        |
+| `users`                     | Customers: Argon2id password + recovery-code hashes; optional unverified email/mobile                | `email`, `mobile` intentionally **not** unique (never used to identify)                                                                         |
 | `helmet_ownerships`         | Ownership history, never overwritten                                                                 | partial unique index: one `ACTIVE` row per helmet                                                                                               |
 
-Migrations: `20261003082113_init` (Phase 1) and `20261003093118_phase2_customer_activation_profile`
-(Phase 2). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
+Migrations: `20261003082113_init` (Phase 1) `20261003093118_phase2_customer_activation_profile` and
+`20261003144957_phase2_password_auth_recovery` (Phase 2). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
 partial unique ownership index and CHECK constraints.
 
 ## Planned (later phases)

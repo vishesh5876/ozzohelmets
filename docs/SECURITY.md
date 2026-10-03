@@ -60,14 +60,15 @@ plaintext. Showing them only once in the HTTP response of an asynchronous, possi
 **Residual risk.** Between generation and printing, someone holding both the database and
 `PIN_ESCROW_KEYS` can recover PINs. Mitigations: separate key (not the DB credentials), key in a
 secret manager/KMS in production (Phase 7: KMS envelope encryption), short escrow window, export
-auditing. A PIN alone is useless without physical access to the helmet's printed Helmet ID and an
-OTP-verified mobile number (Phase 2).
+auditing. The PIN is the proof of possession for first activation, so it is concealed on the
+activation card, never encoded in the QR, consumed atomically on use, and can never become the
+account password.
 
 **Lost escrow.** If PINs are needed after purge (reprint), Phase 3 adds an audited "re-issue PIN"
 action for _unactivated_ helmets: generates a new PIN, replaces the hash, escrows it again.
 
 **Online guessing.** 39.6 bits with Argon2id verification; the PIN is only checked in the
-authenticated (OTP-verified) activation call; per-helmet progressive lockouts
+under a row lock with every failure committed; escalating (never permanent) per-helmet lockouts
 (`activation_attempts`, `activation_locked_until`), per-customer and per-IP failure budgets and
 route throttling make brute force impractical. See `ACTIVATION.md`.
 
@@ -129,19 +130,20 @@ only hides what the server would reject. Integration tests assert 403s per role.
 
 Redis-backed (atomic Lua fixed window + block) so limits are shared across instances:
 
-| Policy    | Default                            | Applied to                                |
-| --------- | ---------------------------------- | ----------------------------------------- |
-| `default` | 300 / 60 s / IP                    | admin & general API                       |
-| `auth`    | 10 / 60 s / IP, then blocked 5 min | login, refresh (Phase 2: OTP, activation) |
-| `public`  | 120 / 60 s / IP                    | `GET /public/emergency/:token`            |
+| Policy    | Default                            | Applied to                                 |
+| --------- | ---------------------------------- | ------------------------------------------ |
+| `default` | 300 / 60 s / IP                    | admin & general API, customer refresh      |
+| `auth`    | 10 / 60 s / IP, then blocked 5 min | login, admin refresh, recovery, activation |
+| `public`  | 120 / 60 s / IP                    | `GET /public/emergency/:token`             |
 
 The public limit is deliberately lenient (a responder may reload repeatedly; many users can share
-a carrier-grade NAT). Phase 2 adds per-helmet-code, per-mobile and per-OTP-attempt limits.
+a carrier-grade NAT). Phase 2 adds per-Helmet-ID escalating lockouts for login, recovery and activation PINs, plus
+per-IP failure budgets.
 
 ## 9. Logging & audit
 
 - Structured JSON logs (pino). Request/response **bodies are never logged**; auth headers,
-  cookies and any field named like a password, PIN, OTP, token or medical attribute are redacted.
+  cookies and any field named like a password, PIN, recovery code, token or medical attribute are redacted.
   Query strings are stripped from logged URLs. Prisma query logging is disabled.
 - `audit_logs` is append-only (no update/delete endpoints). Audited: admin login success/failure/
   lockout, logout, refresh reuse, admin user changes, model changes, batch create/generation
@@ -176,9 +178,16 @@ Details: [`CUSTOMER-AUTH.md`](./CUSTOMER-AUTH.md), [`ACTIVATION.md`](./ACTIVATIO
   the authenticated user id. No endpoint accepts a user id from the client (extra properties are
   rejected by the global whitelist). Another customer's helmet/contact behaves exactly like a
   missing one (404). Integration tests cover helmets, profile, contacts, visibility and sessions.
-- **OTP.** HMAC-hashed in Redis, 5-minute TTL, single use, 5 attempts (atomic), invalidated on
-  re-issue, 60 s cooldown, per-mobile/IP/global limits. The development provider (code in the
-  response) is refused in production by environment validation. Codes are never logged.
+- **No OTP/SMS.** Customers authenticate with an owned Helmet ID + password. Passwords and recovery
+  codes are Argon2id-hashed with `CUSTOMER_CREDENTIAL_PEPPER` (separate from `PIN_HASH_PEPPER`,
+  refused in production if dev-only). Generic login/recovery errors, dummy verification for
+  unknown helmets, escalating temporary lockouts per Helmet ID and per-IP budgets.
+- **Recovery code.** `RK-XXXX-XXXX-XXXX` (~59 bits), shown once, stored only as a hash, never
+  logged or audited, single use: a reset rotates it and revokes all sessions. Reset tokens are
+  256-bit, SHA-256-keyed in Redis, 10-minute TTL, consumed atomically (`GETDEL`).
+- **Unverified contact data.** Account email/mobile and emergency contacts are never verified and
+  never used for authentication or recovery; the public page says the information was provided by
+  the owner and is not verified.
 - **Public boundary.** Only `{ state, helmet{modelName, brand[, helmetCode]}, message[, profile,
 contacts] }`; profile and contacts only when the helmet is ACTIVE/DAMAGED/RECALLED, owned, and
   the owner's profile is enabled and complete; every field must be switched on and non-empty.
@@ -187,12 +196,14 @@ contacts] }`; profile and contacts only when the helmet is ACTIVE/DAMAGED/RECALL
 - **Uploads.** Magic-byte allow-list (JPEG/PNG/WebP), size and dimension limits, full decode and
   re-encode (metadata incl. GPS stripped), random server-side keys with path-traversal-safe
   validation, served only via authorised endpoints with `nosniff`.
-- **Audit (no sensitive values):** customer.created/login/logout/sessions.revoked,
+- **Audit (no sensitive values):** customer.created/login/login.failed/login.locked/logout/
+  sessions.revoked, customer.password.changed/reset, customer.recovery.verified/failed/locked,
+  customer.recovery_code.rotated,
   customer.refresh.reuse_detected, helmet.activated, helmet.activation_pin.consumed,
   helmet.activation.failed/locked, emergency_profile.updated (changed field names only) /
   photo.updated / enabled / disabled, emergency_contacts.changed (counts only),
   emergency_visibility.changed (flag names only).
-- **Admin visibility.** Admin helmet detail shows a masked owner mobile, ownership date and
+- **Admin visibility.** Admin helmet detail shows a masked owner mobile (if given, labelled unverified), ownership date and
   profile status — never names, contacts or medical data.
 - **Emergency page.** Framework-free, renders owner text only via `textContent`; responses are
   `no-store`/`noindex`; `Referrer-Policy: no-referrer` meta on the page.

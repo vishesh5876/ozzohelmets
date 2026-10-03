@@ -1,29 +1,84 @@
 # Customer authentication
 
-Customers sign in with their mobile number and a one-time code. Customer auth is completely
-separate from admin auth: different table (`users`), different JWT secret
-(`JWT_CUSTOMER_ACCESS_SECRET`) and audience (`helmet-customer`), different refresh-token table
-and cookie. A token of one kind can never authenticate the other (integration-tested).
+There is no OTP, SMS or mobile verification. A customer's identity is **ownership of a helmet**:
 
-## Lifecycle
+- **First activation** creates the account: QR/Helmet ID + Activation PIN (proof of possession) +
+  a new password, in one transaction (see [ACTIVATION](ACTIVATION.md)).
+- **Sign in** with any Helmet ID the customer currently owns + password.
+- **Forgot password**: Helmet ID + the offline recovery code shown once at activation.
+
+Customer auth is completely separate from admin auth: different table (`users`), different JWT
+secret (`JWT_CUSTOMER_ACCESS_SECRET`) and audience (`helmet-customer`), different refresh-token
+table and cookie. A token of one kind can never authenticate the other (integration-tested).
+
+## Endpoints
 
 ```
-POST /customer/auth/otp/request  { mobile }        → code sent (same response whether or not an account exists)
-POST /customer/auth/otp/verify   { mobile, otp }   → account found or created, access token + refresh cookie
-POST /customer/auth/refresh      (cookie + X-Requested-With) → rotated cookie + new access token
-POST /customer/auth/logout       (cookie + X-Requested-With) → this session's token family revoked
-POST /customer/auth/logout-all   (Bearer)          → every session revoked
-GET  /customer/auth/sessions     (Bearer)          → active logins (one per token family), current marked
-DELETE /customer/auth/sessions/:id (Bearer)        → revoke one of your own sessions
-GET|PATCH /customer/auth/me      (Bearer)          → profile / account name
+POST /customer/activation/validate   { publicToken|helmetCode, pin }            → preliminary PIN check (nothing consumed)
+POST /customer/activation/register   { publicToken|helmetCode, pin, password, name? }
+                                     → account + ownership; access token + refresh cookie + recoveryCode (once)
+POST /customer/activation/add-helmet { publicToken|helmetCode, pin } (Bearer)   → helmet added to the signed-in account
+POST /customer/auth/login            { helmetCode, password }                    → access token + refresh cookie
+POST /customer/auth/recover          { helmetCode, recoveryCode }                → { resetToken, expiresIn } (single use, 10 min)
+POST /customer/auth/reset-password   { resetToken, newPassword }                 → all sessions revoked, new recoveryCode (once), signed in
+POST /customer/auth/change-password  { currentPassword, newPassword } (Bearer)   → other sessions revoked
+POST /customer/auth/recovery-code    { password } (Bearer)                       → new recoveryCode (once); old one stops working
+POST /customer/auth/refresh          (cookie + X-Requested-With)                 → rotated cookie + new access token
+POST /customer/auth/logout           (cookie + X-Requested-With)                 → this session's token family revoked
+POST /customer/auth/logout-all       (Bearer)                                    → every session revoked
+GET  /customer/auth/sessions         (Bearer)                                    → active logins (one per token family)
+DELETE /customer/auth/sessions/:id   (Bearer)                                    → revoke one of your own sessions
+GET|PATCH /customer/auth/me          (Bearer)                                    → profile; name, email, mobile (optional, unverified)
 ```
 
-- **Accounts are created only after OTP verification** — requesting a code never creates or
-  reveals an account (no enumeration). `isNewCustomer` is returned only after the code proves
-  possession of the number. Concurrent first logins for the same number resolve to one account
-  (unique `users.mobile` + retry).
-- **Phone numbers** are normalised to E.164 with `libphonenumber-js`; numbers without a country
-  code use `DEFAULT_PHONE_REGION` (default `IN`). Invalid numbers → `INVALID_PHONE_NUMBER`.
+## Sign-in
+
+`login` order: checksum-validate the Helmet ID (typos rejected before the database) → find the
+helmet → its ACTIVE ownership → the user → Argon2id verify the password → user ACTIVE → session.
+Unknown helmet, unowned helmet, wrong password and suspended account all return the same
+`INVALID_CREDENTIALS` message, and a dummy hash is verified when no user exists so timing is
+similar. Because every owned helmet points at the same `users` row, any of them signs in to the
+same account; a helmet that has been transferred away (Phase 3) stops working for sign-in.
+
+| Protection    | Limit                                                                                                                                                                                                                  |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Route         | `auth` throttler policy (10 req/min/IP, 5-min block)                                                                                                                                                                   |
+| Per Helmet ID | every `CUSTOMER_LOGIN_FAILURES_BEFORE_LOCK` (5) failures → temporary lock of `CUSTOMER_LOGIN_LOCKOUT_BASE_SECONDS` × 2^(n−1), capped at `CUSTOMER_LOGIN_LOCKOUT_MAX_SECONDS` (1 h). Never permanent; reset on success. |
+| Per IP hash   | `CUSTOMER_LOGIN_MAX_FAILURES_PER_IP_PER_HOUR` (50)                                                                                                                                                                     |
+| Audit         | `customer.login.failed` / `customer.login.locked` with IP hash — never the password                                                                                                                                    |
+
+## Passwords
+
+- **Argon2id + server-side pepper** (`CUSTOMER_CREDENTIAL_PEPPER`, separate from `PIN_HASH_PEPPER`).
+- **Policy** (NIST SP 800-63B style): at least 8 characters, up to 128, passphrases welcome, **no
+  composition rules**. Rejected: common passwords (embedded deny-list), a single repeated
+  character, trivial sequences, the helmet's own Helmet ID, and the Activation PIN.
+- Changing the password requires the current one and revokes every other session.
+
+## Recovery code
+
+- Format `RK-XXXX-XXXX-XXXX` (12 symbols from the unambiguous alphabet, ~59 bits, CSPRNG).
+- Generated at first activation and shown **once**: _"Save this recovery code. It can be used if
+  you forget your password."_ The customer must tick "I've saved my recovery code" to continue.
+- Stored only as Argon2id + pepper (`users.recovery_code_hash`). Never logged, never in audit
+  metadata, never returned again.
+- Recovery: `recover` (Helmet ID + code) → single-use reset token (256-bit, SHA-256 key in Redis,
+  `RECOVERY_RESET_TOKEN_TTL_SECONDS`, consumed with `GETDEL`) → `reset-password`. The reset
+  updates the password **only if the recovery code hash is unchanged** (conditional update), so two
+  parallel reset tokens can't both succeed. It then revokes all sessions, rotates the recovery code
+  (the old one can never be reused) and returns the new code once.
+- A signed-in customer can generate a new code (password required) from Account.
+- Heavily rate-limited: every `RECOVERY_FAILURES_BEFORE_LOCK` (3) failures per Helmet ID → escalating
+  lock from `RECOVERY_LOCKOUT_BASE_SECONDS` (15 min); `RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR` (10).
+  Generic errors. Losing both password and recovery code requires support (flagged).
+
+## Contact details
+
+`email` and `mobile` are optional, **not unique, not verified**, and never used for sign-in or
+recovery (`emailVerified`/`mobileVerified` stay `false`). The portal labels them "not verified".
+
+## Tokens and sessions
+
 - **Access token**: HS256 JWT, 15 min (`JWT_CUSTOMER_ACCESS_TTL_SECONDS`), claims `sub`, `typ:
 customer`, `sid` (token family = session id). Held in SPA memory only. `CustomerJwtGuard`
   reloads the user on every request, so suspension is immediate.
@@ -35,32 +90,6 @@ customer`, `sid` (token family = session id). Held in SPA memory only. `Customer
   (`customer.refresh.reuse_detected`).
 - **CSRF**: cookie endpoints require `X-Requested-With`, which forces a CORS preflight for
   cross-site callers (rejected by the allow-list), on top of SameSite=Strict.
-
-## OTP subsystem
-
-| Property         | Value / mechanism                                                                                                       |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Code             | 6 digits from `crypto.randomInt` (uniform)                                                                              |
-| Storage          | Redis only: `otp:code:login:<HMAC(mobile)>` → `{ hash: HMAC-SHA256(OTP_HASH_SECRET, purpose:mobile:code), attempts }`   |
-| TTL              | `OTP_TTL_SECONDS` (300) via Redis expiry                                                                                |
-| Single use       | deleted on success                                                                                                      |
-| Attempts         | `OTP_MAX_ATTEMPTS` (5); counted atomically in a Lua script; the code is burned when exhausted (`OTP_TOO_MANY_ATTEMPTS`) |
-| Re-issue         | a new code overwrites (invalidates) the previous one                                                                    |
-| Resend cooldown  | `OTP_RESEND_COOLDOWN_SECONDS` (60) per number                                                                           |
-| Per-number limit | `OTP_MAX_PER_MOBILE_PER_HOUR` (5)                                                                                       |
-| Per-IP limit     | `OTP_MAX_PER_IP_PER_HOUR` (20), keyed by the HMAC'd client IP                                                           |
-| Global limit     | `OTP_GLOBAL_MAX_PER_MINUTE` (300) — protects SMS spend during abuse                                                     |
-| Route limit      | `auth` throttler policy (10/min/IP, 5-min block) on request/verify                                                      |
-
-Neither phone numbers nor codes appear in Redis keys or values in plaintext, and codes are never
-logged. Delivery goes through `OtpProvider`:
-
-- `DevelopmentOtpProvider` (`OTP_PROVIDER=development`) — logs only a masked number and returns
-  the code in the API response field `devOtp` so local development and automated tests work.
-  **Environment validation refuses this provider when `NODE_ENV=production`.**
-- `SmsOtpProvider` (`OTP_PROVIDER=sms`, default) — sends through `NotificationService` →
-  `SmsNotificationProvider`. The bound provider is currently an explicit "unconfigured"
-  placeholder that fails with `OTP_DELIVERY_FAILED` (503) until an SMS vendor is chosen (flagged).
 
 ## Portal behaviour
 

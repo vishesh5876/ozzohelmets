@@ -18,8 +18,8 @@ pnpm dev                      # API :4000, admin :3000, portal :3001
 - Admin: http://localhost:3000 — sign in with `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD`.
 - Portal: http://localhost:3001 — open a `qrUrl` from the CSV export or a helmet detail page.
   To activate in development: export the batch CSV (PIN column), mark the batch printed, move the
-  helmet to SOLD on its admin page, open the QR URL → Activate. With `OTP_PROVIDER=development`
-  the OTP is shown on screen (and returned as `devOtp`).
+  helmet to SOLD on its admin page, open the QR URL → Activate → PIN → create a password → save the recovery code.
+  Sign in later at `/login` with the Helmet ID + password; `/recover` resets it with the recovery code.
 - The emergency page `/e/:token` is a separate lightweight entry (`apps/portal/emergency.html`,
   `src/emergency/main.ts`); the Vite dev server rewrites `/e/*` to it.
 - Swagger: http://localhost:4000/api/docs
@@ -68,8 +68,8 @@ The Vite dev servers proxy `/api` to `VITE_API_PROXY_TARGET`, so the browser tal
   invalid transitions, mark printed/escrow purge), public endpoint privacy, scan logging, cache
   invalidation, rate limiting.
 
-Phase 2 suites: `customer-auth` (OTP, rotation, reuse, sessions, realm separation), `activation`
-(validate, atomic activation, PIN replay, **concurrent activation**, lockouts, budgets,
+Phase 2 suites: `customer-auth` (Helmet ID + password login, multi-helmet login, lockouts, rotation, reuse, sessions, realm separation), `recovery` (recovery code reset, single use, rotation, session revocation, rate limits), `activation`
+(validate, atomic first-account creation, add helmet, PIN reuse, **concurrent activation**, lockouts, budgets,
 ineligible statuses), `emergency-profile` (encryption at rest, contacts, visibility, enable →
 ACTIVE, public boundary, cache invalidation, photo, admin masking, disable, scan dedup) and
 `customer-authorization` (customer A vs B on every resource).
@@ -78,14 +78,19 @@ ACTIVE, public boundary, cache invalidation, photo, admin masking, disable, scan
 
 `e2e/tests/phase2-activation-emergency.spec.ts` drives the whole Phase 2 journey: admin creates a
 model and batch → exports the CSV for the PIN → marks printed → moves the helmet to SOLD →
-anonymous mobile scan shows "not activated" → activation with PIN + development OTP → onboarding
+anonymous mobile scan shows "not activated" → activation with PIN + password → recovery code shown once → onboarding
 (details, contact, visibility, review, enable) → anonymous scan shows only the approved fields →
-owner hides a field → it disappears → owner disables the profile → nothing personal remains.
+logout → sign in with Helmet ID + password → account recovery with the recovery code → old password
+and old recovery code rejected, new password works.
 
 ```bash
-pnpm dev                     # in another terminal (OTP_PROVIDER=development)
+pnpm dev                     # in another terminal
 pnpm test:e2e:browser
 ```
+
+The journey makes many credential calls (activation, logins, recovery) from one IP. Repeated runs
+can trip the `auth` throttle (10/min/IP, 5-minute block); raise `THROTTLE_AUTH_LIMIT` in your local
+`.env` when iterating.
 
 ## Creating a migration
 

@@ -60,14 +60,16 @@ activationPin`) — SUPER_ADMIN/ADMIN only, audited.
 
 1. Admin: export the batch CSV (gives the activation PIN), **Mark printed**, then on the helmet page
    move it **In inventory → Sold** (customers can only activate SOLD helmets by default).
-2. Open the helmet's QR URL on a phone → **Activate helmet** → enter the PIN → mobile number →
-   6-digit code (shown on screen in development) → the helmet is yours (status ACTIVATED).
+2. Open the helmet's QR URL on a phone → **Activate helmet** → enter the PIN → create a password →
+   save the recovery code (shown once) → the helmet is yours (status ACTIVATED).
 3. Onboarding: emergency details → contacts → choose what's public → review → **Turn on** →
    status ACTIVE.
 4. Scan the QR anonymously: only the information you switched on is shown, with call buttons.
    Change privacy or turn the profile off and the next scan reflects it.
 
-No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → OTP.
+No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → password.
+Sign in later with **any Helmet ID you own + your password**; forgot it? `/recover` with a Helmet ID +
+recovery code. Signed-in owners add more helmets from **Add helmet** (PIN only, no new account).
 
 ## Quality gates
 
@@ -88,14 +90,14 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **Admin auth**: Argon2id, 15-min JWT in memory, rotating hashed refresh tokens with reuse
   detection, backend RBAC — [SECURITY §4–5](docs/SECURITY.md)
 - **Resumable, chunked, transactional batch generation** — [DATABASE](docs/DATABASE.md)
-- **Customer OTP auth** with HMAC'd Redis OTPs and layered abuse limits — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
+- **Customer auth = Helmet ID + password** (Argon2id + pepper), offline recovery code, rotating refresh tokens, escalating lockouts — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
 - **Atomic, row-locked activation** with progressive PIN lockouts — [ACTIVATION](docs/ACTIVATION.md)
 - **Encrypted emergency profile** and allow-list public sanitizer (hidden fields omitted) — [EMERGENCY-PROFILE](docs/EMERGENCY-PROFILE.md)
 
 ## Flagged for product decisions
 
 Open items are listed in [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
-(SMS provider, retail SOLD flow, lost/stolen behaviour, emergency number per market) and
+(retail SOLD flow, lost/stolen behaviour, emergency number per market) and
 [`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation)
 (MANUFACTURING PIN export, serial format, final QR domain printed on labels).
 

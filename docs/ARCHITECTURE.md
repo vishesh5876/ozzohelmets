@@ -21,15 +21,15 @@ manufacturing, inventory and support.
 │ NestJS API (modular monolith)  apps/api  :4000                         │
 │  admin-auth · admin-users · helmet-models · batches · helmets ·        │
 │  labels · exports · public-emergency · audit · dashboard · health      │
-│  customer-auth · otp · activation · customer-helmets · emergency ·     │
-│  emergency-readiness · file-storage · notifications                    │
+│  customer-auth · activation · customer-helmets · emergency ·           │
+│  emergency-readiness · file-storage                                    │
 └──────────────┬───────────────────────────────────┬─────────────────────┘
                ▼                                   ▼
         ┌─────────────┐                     ┌─────────────┐
         │ PostgreSQL  │                     │ Redis       │
         │ (Prisma)    │                     │ rate limits,│
-        │ source of   │                     │ cache, OTP, │
-        │ truth       │                     │ locks       │
+        │ source of   │                     │ cache,      │
+        │ truth       │                     │ lockouts    │
         └─────────────┘                     └─────────────┘
 ```
 
@@ -86,7 +86,7 @@ helmet-platform/
 | `exports`                                              | manufacturing CSV export (role-gated, audited)                               | 1         |
 | `public-emergency`                                     | unauthenticated QR resolution, scan logging, Redis cache                     | 1 (basic) |
 | `dashboard`                                            | headline counts                                                              | 1         |
-| `customer-auth`                                        | mobile OTP / email+password, customer JWT + refresh                          | 2         |
+| `customer-auth`                                        | Helmet ID + password, recovery code, customer JWT + refresh                  | 2         |
 | `activation`                                           | atomic, row-locked activation flow                                           | 2         |
 | `emergency-profile`                                    | encrypted medical profile, contacts, visibility                              | 2         |
 | `ownership`                                            | transfer codes, history                                                      | 3         |
@@ -175,7 +175,7 @@ No internal IDs, PIN data, owner data or history is ever returned.
 ### Dependency direction
 
 ```
-customer-auth ─► otp ─► notifications
+activation ─► customer-auth (credentials, sessions)
 activation ─► helmets (status service), customer-helmets ─► emergency-readiness
 emergency ─► helmets (status service), emergency-readiness, file-storage, public-emergency-cache
 public-emergency ─► emergency (publicView), file-storage, public-emergency-cache
@@ -186,13 +186,13 @@ Readiness and the public cache live in their own small global modules so the gra
 
 ### Key decisions
 
-| #   | Decision                                                                           | Rationale                                                                                                                                  |
-| --- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| 16  | **Shared `RefreshTokenRotator`** used by admin and customer token services         | One audited implementation of rotation + family reuse detection; separate tables, secrets, audiences and cookies keep the realms isolated. |
-| 17  | **OTP state only in Redis**, keys and values HMAC'd                                | No OTP persistence; neither phone numbers nor codes stored in plaintext.                                                                   |
-| 18  | **PIN verified only in the authenticated activation call**                         | Unauthenticated callers can't test PINs; `validate` is enumeration-safe.                                                                   |
-| 19  | **`ActivationPolicy` is the single eligibility rule** (SOLD; IN_INVENTORY via env) | Temporary business allowances live in one place.                                                                                           |
-| 20  | **Allow-list public sanitizer; hidden fields omitted**                             | A response never reveals that a hidden field exists.                                                                                       |
-| 21  | **Cache the filtered DTO, invalidate per owner on every change**                   | Privacy changes take effect on the next scan; raw medical data is never cached.                                                            |
-| 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                     |
-| 23  | **Photos re-encoded by `sharp`**                                                   | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                |
+| #   | Decision                                                                           | Rationale                                                                                                                                    |
+| --- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 16  | **Shared `RefreshTokenRotator`** used by admin and customer token services         | One audited implementation of rotation + family reuse detection; separate tables, secrets, audiences and cookies keep the realms isolated.   |
+| 17  | **Identity = helmet ownership; no OTP/SMS**                                        | Login with any owned Helmet ID + password; offline recovery code. No SMS cost, no phone-number dependency, no unverified data used for auth. |
+| 18  | **PIN checked under the row lock, failures always committed**                      | Preliminary `validate` and the final `register`/`add-helmet` share one locked check; lockouts escalate but are never permanent.              |
+| 19  | **`ActivationPolicy` is the single eligibility rule** (SOLD; IN_INVENTORY via env) | Temporary business allowances live in one place.                                                                                             |
+| 20  | **Allow-list public sanitizer; hidden fields omitted**                             | A response never reveals that a hidden field exists.                                                                                         |
+| 21  | **Cache the filtered DTO, invalidate per owner on every change**                   | Privacy changes take effect on the next scan; raw medical data is never cached.                                                              |
+| 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                       |
+| 23  | **Photos re-encoded by `sharp`**                                                   | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                  |

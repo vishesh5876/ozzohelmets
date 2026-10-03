@@ -36,8 +36,9 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 - [ ] Real secrets from a secret manager (`node scripts/generate-secrets.mjs` for initial values);
       `PIN_ESCROW_KEYS` and `DATA_ENCRYPTION_KEYS` stored separately from DB credentials.
 - [ ] `NODE_ENV=production`, `COOKIE_SECURE=true`, `SWAGGER_ENABLED=false` (or edge-protected).
-- [ ] `OTP_PROVIDER=sms` with a real SMS provider bound in `NotificationsModule` (the placeholder
-      fails closed). `JWT_CUSTOMER_ACCESS_SECRET` and `OTP_HASH_SECRET` set and distinct.
+- [ ] `JWT_CUSTOMER_ACCESS_SECRET` (≠ `JWT_ACCESS_SECRET`) and `CUSTOMER_CREDENTIAL_PEPPER` set from
+      the secret manager. **Never rotate the pepper casually** — it invalidates every customer
+      password and recovery code.
 - [ ] Persistent photo storage (volume or S3 provider) and backups for it.
 - [ ] Decide `ACTIVATION_ALLOW_IN_INVENTORY` (default false: only SOLD helmets can be activated).
 - [ ] `CORS_ORIGINS` = exact admin/portal origins; `PUBLIC_EMERGENCY_BASE_URL` = final QR domain

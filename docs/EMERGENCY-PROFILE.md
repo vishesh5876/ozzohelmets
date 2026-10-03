@@ -60,7 +60,9 @@ activated, details, contacts, privacy, enabled) is a UX hint only — never an a
 `buildPublicProfile` is an allow-list: a field is copied into the public response only when its
 `show_*` flag is on **and** it has a value. Hidden or empty fields are **omitted** (never `null`),
 so a response reveals nothing about what exists. Contacts are included only with
-`showEmergencyContacts` (name, relationship, phone, alternate phone). Date of birth also yields
+`showEmergencyContacts` (name, relationship, phone, alternate phone). Contacts are **not verified** (no
+OTP/SMS); the public page labels them "Emergency Contact" and states that the information was
+provided by the helmet owner and is not verified. Date of birth also yields
 `age`. The photo is exposed as a URL to `/public/emergency/:token/photo`, which serves the image
 only while the cached public view says it is visible.
 

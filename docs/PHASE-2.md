@@ -5,27 +5,33 @@ Status: **complete**. Legend: `[x]` done · `[ ]` pending
 ## Target flow
 
 Helmet generated → printed → SOLD (or IN_INVENTORY when temporarily allowed) → customer scans QR →
-"not activated" → Activate → PIN → mobile → OTP → account created/identified → atomic activation
-(ownership, PIN consumed, escrow purged, ACTIVATED) → emergency details → contacts → visibility →
+"not activated" → Activate → PIN (proof of possession) → create password → atomic activation
+(account, ownership, PIN consumed, escrow purged, ACTIVATED) → recovery code shown once →
+emergency details → contacts → visibility →
 review → enable → ACTIVE → anonymous scan shows only approved fields → visibility change reflected
-→ disable hides everything.
+→ disable hides everything. Later: sign in with any owned Helmet ID + password; forgot password
+→ Helmet ID + recovery code.
+
+> **Product change (October 2026):** OTP/SMS authentication was removed entirely. There is no OTP
+> login, SMS provider, mobile verification or OTP storage. The Activation PIN proves possession at
+> first activation; afterwards customers use Helmet ID + password, with an offline recovery code.
 
 ## Design decisions
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Activation eligibility is one policy (`ActivationPolicy`): `SOLD` always; `IN_INVENTORY` only when `ACTIVATION_ALLOW_IN_INVENTORY=true`. `PRINTED → ACTIVATED` edge removed from the lifecycle table.                                                                                                                                                                                                                                |
-| 2   | Customer auth is separate from admin auth: own JWT secret + audience, own refresh-token table and cookie (`helmet_customer_rt`, path `/api/v1/customer/auth`). Rotation/reuse-detection algorithm extracted into a shared core used by both.                                                                                                                                                                                         |
-| 3   | OTP: 6 digits via `crypto.randomInt`, HMAC-SHA256 hashed, Redis-only, TTL 5 min, single use, 5 attempts (atomic Lua), new OTP replaces old, 60 s resend cooldown, per-mobile / per-IP / global limits. Redis keys use HMAC(mobile), never raw numbers. Dev provider returns the code in the API response **only** when `OTP_PROVIDER=development` (rejected in production).                                                          |
-| 4   | Activation: PIN is verified only in the authenticated `complete` call (so unauthenticated callers can't test PINs). Row lock (`FOR UPDATE`), eligibility, no active owner, PIN unused, Argon2 verify, ownership + PIN consumed + escrow purge + status + history + audit in one transaction. Failed attempts are committed and drive progressive per-helmet lockouts. The existing partial unique index guarantees one active owner. |
-| 5   | Unauthenticated `validate` returns the same `HELMET_NOT_ACTIVATABLE` for every ineligible helmet (no ownership enumeration).                                                                                                                                                                                                                                                                                                         |
-| 6   | Emergency profile belongs to the customer (`helmet_id` nullable for future per-helmet overrides). Allergies, conditions, medications, notes and date of birth are AES-256-GCM encrypted with field+row-bound AAD.                                                                                                                                                                                                                    |
-| 7   | Visibility defaults: everything off. Privacy review is an explicit confirmation (`confirmed_at`).                                                                                                                                                                                                                                                                                                                                    |
-| 8   | `ACTIVE` requires: name, ≥1 active contact, privacy confirmed, profile enabled (blood group optional). Enforced by `EmergencyReadinessService`. Enabling moves owned `ACTIVATED` helmets to `ACTIVE`; disabling moves them back (`ACTIVE → ACTIVATED` edge added for OWNER/SYSTEM). While enabled, edits that would break a requirement are rejected.                                                                                |
-| 9   | Public data is shown only when helmet is ACTIVE/DAMAGED/RECALLED **and** has an owner **and** profile is enabled. Hidden fields are omitted (not null). The filtered DTO is cached 30 s and invalidated on every owner change.                                                                                                                                                                                                       |
-| 10  | Emergency page becomes a dedicated vanilla-TS Vite entry (no React) served for `/e/*`.                                                                                                                                                                                                                                                                                                                                               |
-| 11  | Profile photos: magic-byte check, decoded and re-encoded by `sharp` (strips EXIF/GPS), max 5 MB / 4096 px, stored via `FileStorageService` (local provider; S3 placeholder). Served through API endpoints only.                                                                                                                                                                                                                      |
-| 12  | Scan logging dedups the same device (IP hash + UA) per helmet for 60 s.                                                                                                                                                                                                                                                                                                                                                              |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Activation eligibility is one policy (`ActivationPolicy`): `SOLD` always; `IN_INVENTORY` only when `ACTIVATION_ALLOW_IN_INVENTORY=true`. `PRINTED → ACTIVATED` edge removed from the lifecycle table.                                                                                                                                                                                                                                                                                                                                                   |
+| 2   | Customer auth is separate from admin auth: own JWT secret + audience, own refresh-token table and cookie (`helmet_customer_rt`, path `/api/v1/customer/auth`). Rotation/reuse-detection algorithm extracted into a shared core used by both.                                                                                                                                                                                                                                                                                                            |
+| 3   | Customer identity = helmet ownership. Login = any currently owned Helmet ID (checksum-validated) + password; generic errors; escalating temporary per-helmet lockouts + per-IP budget. Passwords: Argon2id + `CUSTOMER_CREDENTIAL_PEPPER`, min 8, passphrases, no composition rules, common/weak rejected. Recovery: `RK-XXXX-XXXX-XXXX` shown once, stored hashed, single use, rotated on every reset; reset revokes all sessions. Email/mobile optional, non-unique, unverified, never used for auth or recovery.                                     |
+| 4   | Activation: PIN pre-checked by `validate` under a row lock (failures count), then re-verified inside the `register` / `add-helmet` transaction: row lock (`FOR UPDATE`), eligibility, no active owner, PIN unused, Argon2 verify, [new user with password + recovery-code hashes] + ownership + PIN consumed + escrow purge + status + history + audit in one transaction. Failed attempts are committed and drive escalating per-helmet lockouts (never permanent) plus per-IP/per-customer budgets. Partial unique index guarantees one active owner. |
+| 5   | Unauthenticated `validate` returns the same `HELMET_NOT_ACTIVATABLE` for every ineligible helmet (no ownership enumeration).                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 6   | Emergency profile belongs to the customer (`helmet_id` nullable for future per-helmet overrides). Allergies, conditions, medications, notes and date of birth are AES-256-GCM encrypted with field+row-bound AAD.                                                                                                                                                                                                                                                                                                                                       |
+| 7   | Visibility defaults: everything off. Privacy review is an explicit confirmation (`confirmed_at`).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 8   | `ACTIVE` requires: name, ≥1 active contact, privacy confirmed, profile enabled (blood group optional). Enforced by `EmergencyReadinessService`. Enabling moves owned `ACTIVATED` helmets to `ACTIVE`; disabling moves them back (`ACTIVE → ACTIVATED` edge added for OWNER/SYSTEM). While enabled, edits that would break a requirement are rejected.                                                                                                                                                                                                   |
+| 9   | Public data is shown only when helmet is ACTIVE/DAMAGED/RECALLED **and** has an owner **and** profile is enabled. Hidden fields are omitted (not null). The filtered DTO is cached 30 s and invalidated on every owner change.                                                                                                                                                                                                                                                                                                                          |
+| 10  | Emergency page becomes a dedicated vanilla-TS Vite entry (no React) served for `/e/*`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 11  | Profile photos: magic-byte check, decoded and re-encoded by `sharp` (strips EXIF/GPS), max 5 MB / 4096 px, stored via `FileStorageService` (local provider; S3 placeholder). Served through API endpoints only.                                                                                                                                                                                                                                                                                                                                         |
+| 12  | Scan logging dedups the same device (IP hash + UA) per helmet for 60 s.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Checklist
 
@@ -33,15 +39,14 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 
 - [x] Migration: customer refresh tokens, emergency profiles/contacts/visibility, photo metadata, activation lockout column, constraints
 - [x] Shared types: BloodGroup, Gender, EmergencyProfileStatus, PublicEmergencyState v2, customer/activation/profile contracts, error codes
-- [x] Config: customer JWT, OTP, activation policy, storage, public cache TTL
-- [x] Redis fixed-window limiter service (reused by OTP + activation)
-- [x] Phone normalisation (E.164, libphonenumber-js)
-- [x] Notifications foundation (SMS/email provider interfaces)
-- [x] OTP subsystem (store, providers, limits)
+- [x] Config: customer JWT, credential pepper, login/recovery lockouts, activation policy, storage, public cache TTL
+- [x] Redis fixed-window limiter + escalating `LockoutService` (login, recovery, activation)
+- [x] Password policy (length, deny-list, no Helmet ID / PIN) and recovery codes (generate, hash, normalise)
+- [x] OTP/SMS architecture removed (modules, providers, env vars, endpoints, screens, tests)
 - [x] Refresh-token rotation core shared by admin + customer
-- [x] Customer auth: OTP login/sign-up, refresh, logout, logout-all, me, sessions
+- [x] Customer auth: Helmet ID + password login, recover, reset-password, change-password, recovery-code rotation, refresh, logout, logout-all, me, sessions
 - [x] CustomerJwtGuard + CurrentCustomer
-- [x] Activation module: validate + atomic complete + lockouts
+- [x] Activation module: validate + atomic register (first account) + add-helmet + lockouts
 - [x] Customer helmets: list, detail, QR
 - [x] File storage (local + S3 placeholder) + profile photo upload
 - [x] Emergency profile (encrypted), contacts (max 5, priorities, reorder), visibility
@@ -52,11 +57,11 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 ### Frontend
 
 - [x] Shared API client package used by admin + portal
-- [x] Portal auth (phone → OTP), in-memory access token, silent refresh
-- [x] Activation (QR context + manual Helmet ID with checksum validation)
+- [x] Portal auth (Helmet ID + password, recovery flow), in-memory access token, silent refresh
+- [x] Activation (QR context + manual Helmet ID with checksum validation) → password → recovery code shown once; Add helmet for signed-in owners
 - [x] Dashboard, My helmets, helmet detail
 - [x] Onboarding wizard (activated → details → contacts → visibility → review → enable → success)
-- [x] Profile, contacts, privacy, account/sessions pages
+- [x] Profile, contacts, privacy, account (unverified contact details, change password, new recovery code, sessions) pages
 - [x] Lightweight emergency page entry; bundle size before/after documented
 - [x] Admin helmet detail owner/profile status
 
@@ -80,23 +85,24 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 
 ### Verification
 
-| Check                                                               | Result                                                                                                                                                                                               |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm lint` / `pnpm typecheck` / `pnpm build` / `pnpm format:check` | pass                                                                                                                                                                                                 |
-| API unit tests                                                      | 150 passed (21 suites; Phase 1: 86)                                                                                                                                                                  |
-| API integration tests (PostgreSQL + Redis)                          | 60 passed (8 suites; Phase 1: 26)                                                                                                                                                                    |
-| Playwright end-to-end                                               | 7/7 steps passed                                                                                                                                                                                     |
-| Docker                                                              | API + portal images built; container applied the Phase 2 migration, passed health, OTP sign-in and photo upload (sharp in the slim image); nginx served `/e/*` → `emergency.html` and proxied `/api` |
+| Check                                                               | Result                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint` / `pnpm typecheck` / `pnpm build` / `pnpm format:check` | pass                                                                                                                                                                                                                                                                               |
+| API unit tests                                                      | 153 passed (21 suites; Phase 1: 86)                                                                                                                                                                                                                                                |
+| API integration tests (PostgreSQL + Redis)                          | 73 passed (9 suites; Phase 1: 26) — incl. password login, multi-helmet login, lockouts, recovery, concurrent activation, PIN reuse                                                                                                                                                 |
+| Playwright end-to-end                                               | 10/10 tests (generate → PIN export → QR → activate with PIN + password → recovery code once → profile → contacts → visibility → enable/ACTIVE → logout → Helmet ID + password login → public page → recovery → old password/code rejected → hide field → disable)                  |
+| Docker                                                              | API, portal and admin images rebuilt after the auth change. API container applied 3 migrations, passed health, password login returns the generic error, OTP routes are gone (404). Portal nginx serves SPA routes (`/recover`) from `index.html` and `/e/*` from `emergency.html` |
 
 ### Migrations
 
-`20261003093118_phase2_customer_activation_profile`. Not yet applied to the external database
+`20261003093118_phase2_customer_activation_profile`, `20261003144957_phase2_password_auth_recovery`
+(drops unique email/mobile, adds `password_changed_at`, `recovery_code_hash`, `recovery_code_created_at`). Not yet applied to the external database
 (the build sandbox cannot reach it) — apply with `prisma migrate deploy` (see DATABASE.md).
 
 ## Business decisions still open
 
-1. **SMS provider** (MSG91, Twilio, AWS SNS …, plus Indian DLT template registration). Until bound,
-   production OTP delivery fails closed with `OTP_DELIVERY_FAILED`.
+1. **Lost password _and_ recovery code**: the customer cannot self-recover; support needs a
+   manual identity process (Phase 3 admin support tools).
 2. **Retail flow for SOLD**: with `ACTIVATION_ALLOW_IN_INVENTORY=false`, someone must mark helmets
    SOLD before customers can activate (admin today; dealer scanning is Phase 5). Turn the allowance
    on temporarily if retail sales are not recorded yet.
@@ -108,10 +114,9 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 
 ## Deferred to Phase 3 (intentional)
 
-- Ownership transfer (codes in Redis, new-owner OTP claim, previous owner's data never carried
+- Ownership transfer (codes in Redis, new owner claims with the transfer code, previous owner's data never carried
   over), owner-initiated lost/stolen, admin support tools (ownership history, PIN re-issue).
 - Per-helmet emergency profile overrides (schema ready: `emergency_profiles.helmet_id`).
 - S3 storage provider implementation; photo storage is local-disk (volume) for now.
-- Email + password customer login (schema supports `users.email`/`password_hash`).
 - Server-side / edge rendering of the emergency page HTML (current page is already ~6 kB JS).
 - Scan notifications, anti-counterfeit analytics (Phase 6).

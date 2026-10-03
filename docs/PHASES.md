@@ -16,24 +16,24 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 
 ## Phase 2 — Customer identity, activation & emergency profile _(complete — see [`PHASE-2.md`](./PHASE-2.md))_
 
-- Customer auth: mobile + OTP (Redis-stored hashed OTP, attempt counters, resend cooldown, SMS
-  provider abstraction with a console provider for dev), optional email + password.
+- Customer auth: owned Helmet ID + password (Argon2id + pepper), offline recovery code, escalating
+  lockouts. No OTP/SMS (removed by product decision).
 - Customer JWT + rotating refresh tokens (reuse detection), logout/revocation.
-- Activation flow (helmetCode + PIN + mobile → OTP) in one PostgreSQL transaction with
+- Activation flow (helmetCode/QR + PIN → password) in one PostgreSQL transaction with
   `SELECT … FOR UPDATE` on the helmet row; PIN escrow purge on success; audit.
 - Emergency profile with AES-256-GCM field encryption, emergency contacts, visibility settings
   (all default **off** except none), photo upload abstraction (S3-compatible later).
 - Public emergency page full rendering, honoring visibility; Redis cache with invalidation.
-- Customer portal screens: login, OTP, dashboard, my helmets, activate, helmet details,
+- Customer portal screens: login, recovery, dashboard, my helmets, activate, helmet details,
   emergency profile, contacts, privacy controls, account.
 - Re-evaluate SSR/edge-rendered emergency page for minimal JS.
 - Tests: activation, double-activation race, ownership authorization, visibility filtering,
-  OTP rate limits.
+  login/recovery/PIN lockouts.
 
 ## Phase 3 — Ownership lifecycle
 
 - Owner-initiated LOST / STOLEN / found; public safe-status messaging.
-- Ownership transfer: 6-digit code in Redis (30 min TTL, attempt-limited), new owner OTP claim,
+- Ownership transfer: 6-digit code in Redis (30 min TTL, attempt-limited), new owner claims with the code,
   ownership history, previous owner's emergency data never carried over, cache purge.
 - Admin support tools: helmet lookup, ownership history, deactivate/replace, PIN re-issue for
   unactivated helmets whose escrow was purged.
