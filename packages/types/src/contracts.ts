@@ -97,6 +97,7 @@ export interface HelmetStatusHistoryDto {
 
 /** Operational ownership summary for admins — no personal or medical data beyond a masked number. */
 export interface HelmetOwnerSummaryDto {
+  /** Owner-provided, unverified contact number (masked). */
   maskedMobile: string | null;
   since: IsoDateString;
   emergencyProfileStatus: EmergencyProfileStatus;
@@ -175,30 +176,32 @@ export interface PublicEmergencyContactDto {
 
 export interface CustomerProfile {
   id: string;
-  mobile: string;
   name: string | null;
+  /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
   email: string | null;
+  /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
+  mobile: string | null;
   createdAt: IsoDateString;
-}
-
-export interface OtpRequestResponse {
-  sent: true;
-  /** Seconds until the code expires. */
-  expiresIn: number;
-  /** Seconds before another code can be requested. */
-  resendAfter: number;
-  /** Normalised E.164 number the code was sent to. */
-  mobile: string;
-  /** DEVELOPMENT ONLY — present only when the development OTP provider is active. */
-  devOtp?: string;
 }
 
 export interface CustomerLoginResponse {
   accessToken: string;
   accessTokenExpiresIn: number;
   customer: CustomerProfile;
-  isNewCustomer: boolean;
 }
+
+/** Returned once when a recovery code is created or rotated. Never retrievable again. */
+export interface RecoveryCodeIssued {
+  recoveryCode: string;
+}
+
+export interface CustomerRecoverResponse {
+  /** Single-use, short-lived token that authorises one password reset. */
+  resetToken: string;
+  expiresIn: number;
+}
+
+export type CustomerResetPasswordResponse = CustomerLoginResponse & RecoveryCodeIssued;
 
 export interface CustomerSessionDto {
   id: string;
@@ -225,9 +228,13 @@ export interface CustomerHelmetDto {
   emergencyProfileStatus: EmergencyProfileStatus;
 }
 
-export interface ActivationResultDto {
+/** First activation: account created, signed in, recovery code shown once. */
+export type ActivationRegisterResponse = CustomerLoginResponse &
+  RecoveryCodeIssued & { helmet: CustomerHelmetDto };
+
+/** Existing customer adding another helmet. */
+export interface ActivationAddHelmetResponse {
   helmet: CustomerHelmetDto;
-  customer: CustomerProfile;
 }
 
 export interface EmergencyProfileDto {

@@ -6,6 +6,7 @@ import {
   type HelmetStatus,
 } from '@helmet/types';
 import { AppConfigService } from '../../../config/app-config.service';
+import { escalatingLockSeconds } from '../../../security/lockout';
 
 /** Snapshot of a (row-locked) helmet used to decide whether activation may proceed. */
 export interface ActivationSnapshot {
@@ -67,20 +68,15 @@ export function evaluateActivation(
   return null;
 }
 
-/**
- * Progressive lockout: every `threshold` consecutive failures locks the helmet for
- * base × 2^(n-1) seconds (capped at 24 h). Returns null when no lock should start.
- */
+/** Progressive per-helmet lockout after repeated wrong PINs (temporary, capped at 24 h). */
 export function lockoutAfterFailure(
   failures: number,
   threshold: number,
   baseSeconds: number,
   now: Date,
 ): Date | null {
-  if (failures <= 0 || failures % threshold !== 0) return null;
-  const step = failures / threshold;
-  const seconds = Math.min(baseSeconds * 2 ** (step - 1), 86_400);
-  return new Date(now.getTime() + seconds * 1000);
+  const seconds = escalatingLockSeconds(failures, threshold, baseSeconds, 86_400);
+  return seconds > 0 ? new Date(now.getTime() + seconds * 1000) : null;
 }
 
 /** Single source of truth for which statuses a customer may activate from. */

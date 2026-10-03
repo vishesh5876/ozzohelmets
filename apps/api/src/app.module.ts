@@ -12,7 +12,6 @@ import { ActivationModule } from './modules/activation/activation.module';
 import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CustomerAuthModule } from './modules/customer-auth/customer-auth.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BatchesModule } from './modules/batches/batches.module';
 import { CustomerHelmetsModule } from './modules/customer-helmets/customer-helmets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -41,7 +40,6 @@ import { SecurityModule } from './security/security.module';
     EmergencyReadinessModule,
     FileStorageModule,
     AdminAuthModule,
-    NotificationsModule,
     CustomerAuthModule,
     // Features
     HealthModule,

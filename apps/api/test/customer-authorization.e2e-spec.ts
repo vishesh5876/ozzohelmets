@@ -1,11 +1,4 @@
-import {
-  bearer,
-  createTestApp,
-  createTestHelmet,
-  customerLogin,
-  resetState,
-  type TestContext,
-} from './utils';
+import { bearer, createTestApp, newCustomer, resetState, type TestContext } from './utils';
 
 /** Customer A must never read or change customer B's helmets, profile, contacts or settings. */
 describe('Customer authorization (e2e)', () => {
@@ -18,16 +11,10 @@ describe('Customer authorization (e2e)', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     await resetState(ctx);
-    a = await customerLogin(ctx, '+919876522221');
-    b = await customerLogin(ctx, '+919876522222');
-    const helmet = await createTestHelmet(ctx, 'SOLD');
-    await ctx
-      .http()
-      .post('/api/v1/customer/activation/complete')
-      .set(bearer(b.token))
-      .send({ publicToken: helmet.publicToken, pin: helmet.pin })
-      .expect(200);
-    bHelmetId = helmet.id;
+    a = await newCustomer(ctx);
+    const created = await newCustomer(ctx);
+    b = created;
+    bHelmetId = created.helmet.id;
     await ctx
       .http()
       .put('/api/v1/customer/emergency-profile')
@@ -48,9 +35,10 @@ describe('Customer authorization (e2e)', () => {
   });
 
   it("cannot see or open B's helmet", async () => {
-    expect(
-      (await ctx.http().get('/api/v1/customer/helmets').set(bearer(a.token)).expect(200)).body.data,
-    ).toEqual([]);
+    const mine = (await ctx.http().get('/api/v1/customer/helmets').set(bearer(a.token)).expect(200))
+      .body.data as { id: string }[];
+    expect(mine).toHaveLength(1); // only A's own helmet (created at activation)
+    expect(mine.map((h) => h.id)).not.toContain(bHelmetId);
     expect(
       (
         await ctx

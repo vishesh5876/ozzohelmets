@@ -4,8 +4,8 @@ import {
   createAdmin,
   createTestApp,
   createTestHelmet,
-  customerLogin,
   login,
+  registerCustomer,
   resetState,
   type TestContext,
 } from './utils';
@@ -35,14 +35,15 @@ describe('Emergency profile & public boundary (e2e)', () => {
     ctx = await createTestApp();
     await resetState(ctx);
     helmet = await createTestHelmet(ctx, 'SOLD');
-    const session = await customerLogin(ctx, '+919876511111');
+    const session = await registerCustomer(ctx, helmet);
     token = session.token;
     userId = session.userId;
+    // Optional, unverified contact number (used below to check admin masking).
     await ctx
       .http()
-      .post('/api/v1/customer/activation/complete')
+      .patch('/api/v1/customer/auth/me')
       .set(bearer(token))
-      .send({ publicToken: helmet.publicToken, pin: helmet.pin })
+      .send({ mobile: '+919876511111' })
       .expect(200);
   });
   afterAll(async () => {
@@ -252,7 +253,8 @@ describe('Emergency profile & public boundary (e2e)', () => {
     expect(res.body.data).toEqual({
       state: 'ACTIVE',
       helmet: { modelName: 'Roadster X1', brand: 'Ozzo', helmetCode: helmet.helmetCode },
-      message: 'Emergency information was provided by the helmet owner.',
+      message:
+        'Emergency information and contacts were provided by the helmet owner and are not verified.',
       profile: {
         name: 'Rahul Sharma',
         bloodGroup: 'O_POSITIVE',

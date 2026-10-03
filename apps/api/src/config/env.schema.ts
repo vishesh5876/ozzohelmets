@@ -82,14 +82,16 @@ export const envSchema = z
     JWT_CUSTOMER_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
     CUSTOMER_REFRESH_TTL_DAYS: z.coerce.number().int().min(1).max(180).default(30),
 
-    OTP_PROVIDER: z.enum(['development', 'sms']).default('sms'),
-    OTP_HASH_SECRET: secret('OTP_HASH_SECRET'),
-    OTP_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
-    OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
-    OTP_RESEND_COOLDOWN_SECONDS: z.coerce.number().int().min(10).max(600).default(60),
-    OTP_MAX_PER_MOBILE_PER_HOUR: z.coerce.number().int().min(1).default(5),
-    OTP_MAX_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
-    OTP_GLOBAL_MAX_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+    /** Pepper for customer passwords and recovery codes (Argon2id `secret`). Rotating it invalidates them. */
+    CUSTOMER_CREDENTIAL_PEPPER: secret('CUSTOMER_CREDENTIAL_PEPPER'),
+    CUSTOMER_LOGIN_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(50).default(5),
+    CUSTOMER_LOGIN_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(5).default(60),
+    CUSTOMER_LOGIN_LOCKOUT_MAX_SECONDS: z.coerce.number().int().min(60).default(3600),
+    CUSTOMER_LOGIN_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(50),
+    RECOVERY_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(3),
+    RECOVERY_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
+    RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(10),
+    RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
     DEFAULT_PHONE_REGION: z
       .string()
       .regex(/^[A-Z]{2}$/)
@@ -128,7 +130,7 @@ export const envSchema = z
     const devSecrets: [string, string][] = [
       ['JWT_ACCESS_SECRET', env.JWT_ACCESS_SECRET],
       ['JWT_CUSTOMER_ACCESS_SECRET', env.JWT_CUSTOMER_ACCESS_SECRET],
-      ['OTP_HASH_SECRET', env.OTP_HASH_SECRET],
+      ['CUSTOMER_CREDENTIAL_PEPPER', env.CUSTOMER_CREDENTIAL_PEPPER],
       ['PIN_HASH_PEPPER', env.PIN_HASH_PEPPER],
       ['IP_HASH_SECRET', env.IP_HASH_SECRET],
     ];
@@ -149,13 +151,6 @@ export const envSchema = z
           message: 'dev-only key used in production',
         });
       }
-    }
-    if (env.OTP_PROVIDER === 'development') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['OTP_PROVIDER'],
-        message: 'development OTP provider is not allowed in production',
-      });
     }
     if (env.JWT_CUSTOMER_ACCESS_SECRET === env.JWT_ACCESS_SECRET) {
       ctx.addIssue({

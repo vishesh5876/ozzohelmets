@@ -83,6 +83,23 @@ export function maskPhone(e164: string): string {
   return `${e164.slice(0, 3)}${'*'.repeat(e164.length - 7)}${e164.slice(-4)}`;
 }
 
-export const OTP_LENGTH = 6;
-export const OTP_REGEX = /^\d{6}$/;
+/** Offline account-recovery code: `RK-XXXX-XXXX-XXXX`, 12 symbols ≈ 59.4 bits. */
+export const RECOVERY_CODE_PREFIX = 'RK';
+export const RECOVERY_CODE_LENGTH = 12;
+export const RECOVERY_CODE_REGEX =
+  /^RK-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
+
+/** Canonical `RK-XXXX-XXXX-XXXX` from user input (case/spaces/dashes ignored), or null. */
+export function normalizeRecoveryCode(input: string): string | null {
+  const compact = input.trim().toUpperCase().replace(/[\s-]/g, '');
+  const body = compact.startsWith(RECOVERY_CODE_PREFIX)
+    ? compact.slice(RECOVERY_CODE_PREFIX.length)
+    : compact;
+  if (body.length !== RECOVERY_CODE_LENGTH) return null;
+  const formatted = `${RECOVERY_CODE_PREFIX}-${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}`;
+  return RECOVERY_CODE_REGEX.test(formatted) ? formatted : null;
+}
+
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 128;
 export const MAX_EMERGENCY_CONTACTS = 5;

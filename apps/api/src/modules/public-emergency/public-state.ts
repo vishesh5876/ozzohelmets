@@ -40,7 +40,8 @@ export const PUBLIC_STATE_MESSAGES: Record<PublicHelmetState, string> = {
   NOT_ACTIVATED: 'This helmet has not yet been activated.',
   ACTIVATED_PROFILE_INCOMPLETE:
     'This helmet is registered, but its owner has not shared emergency information.',
-  ACTIVE: 'Emergency information was provided by the helmet owner.',
+  ACTIVE:
+    'Emergency information and contacts were provided by the helmet owner and are not verified.',
   LOST: 'This helmet has been reported lost.',
   STOLEN: 'This helmet has been reported stolen.',
   UNAVAILABLE: 'This helmet is no longer in service.',

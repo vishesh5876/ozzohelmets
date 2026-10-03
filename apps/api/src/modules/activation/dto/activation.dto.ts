@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { PASSWORD_MAX_LENGTH } from '@helmet/types';
 
-const upper = ({ value }: { value: unknown }) =>
+const pinTransform = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase().replace(/[\s-]/g, '') : value;
 
 /** Identify the helmet by the QR token (scan flow) or the printed Helmet ID (manual flow). */
@@ -20,12 +21,33 @@ export class ActivationTargetDto {
   helmetCode?: string;
 }
 
-export class CompleteActivationDto extends ActivationTargetDto {
+export class ActivationPinDto extends ActivationTargetDto {
   @ApiProperty({
     example: '73KP84QX',
-    description: 'Activation PIN from the helmet label (case/spaces ignored)',
+    description: 'Activation PIN from the concealed label/card (case and spaces ignored)',
   })
-  @Transform(upper)
-  @Matches(/^[A-Z0-9]{4,16}$/, { message: 'pin must be the code printed on your helmet label' })
+  @Transform(pinTransform)
+  @Matches(/^[A-Z0-9]{4,16}$/, { message: 'pin must be the code printed on your activation card' })
   pin: string;
+}
+
+export class RegisterActivationDto extends ActivationPinDto {
+  @ApiProperty({
+    format: 'password',
+    minLength: 8,
+    description: 'New account password (min 8 characters, passphrases welcome)',
+  })
+  @IsString()
+  @MaxLength(PASSWORD_MAX_LENGTH)
+  password: string;
+
+  @ApiPropertyOptional({ maxLength: 120 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  name?: string;
 }

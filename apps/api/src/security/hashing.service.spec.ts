@@ -4,6 +4,7 @@ import { HashingService } from './hashing.service';
 function makeService(pepper = 'test-pepper-0123456789abcdefghijklmnop'): HashingService {
   const values: Record<string, unknown> = {
     PIN_HASH_PEPPER: pepper,
+    CUSTOMER_CREDENTIAL_PEPPER: 'customer-pepper-0123456789abcdefghijklmn',
     PIN_ARGON2_MEMORY_KIB: 8192,
     PIN_ARGON2_TIME_COST: 1,
   };

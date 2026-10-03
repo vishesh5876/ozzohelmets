@@ -17,9 +17,11 @@ import type { CookieOptions, Request, Response } from 'express';
 import {
   type CustomerLoginResponse,
   type CustomerProfile,
+  type CustomerRecoverResponse,
+  type CustomerResetPasswordResponse,
   type CustomerSessionDto,
   ErrorCode,
-  type OtpRequestResponse,
+  type RecoveryCodeIssued,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
@@ -34,7 +36,14 @@ import {
 } from './customer-auth.types';
 import { CurrentCustomer } from './decorators/current-customer.decorator';
 import { CustomerAuth } from './decorators/customer-auth.decorator';
-import { OtpRequestDto, OtpVerifyDto, UpdateCustomerDto } from './dto/customer-auth.dto';
+import {
+  ChangePasswordDto,
+  ConfirmPasswordDto,
+  CustomerLoginDto,
+  RecoverDto,
+  ResetPasswordDto,
+  UpdateCustomerDto,
+} from './dto/customer-auth.dto';
 
 const CSRF_HEADER = 'x-requested-with';
 
@@ -46,40 +55,91 @@ export class CustomerAuthController {
     private readonly config: AppConfigService,
   ) {}
 
-  @Post('otp/request')
+  @Post('login')
   @HttpCode(HttpStatus.OK)
   @RateLimit('auth')
   @ApiOperation({
     summary:
-      'Send a one-time code to a mobile number. Same response whether or not an account exists.',
+      'Sign in with any currently owned Helmet ID + password. Generic errors; escalating lockouts.',
   })
-  requestOtp(
-    @Body() dto: OtpRequestDto,
-    @ReqMeta() meta: RequestMeta,
-  ): Promise<OtpRequestResponse> {
-    return this.auth.requestOtp(dto.mobile, meta);
-  }
-
-  @Post('otp/verify')
-  @HttpCode(HttpStatus.OK)
-  @RateLimit('auth')
-  @ApiOperation({
-    summary:
-      'Verify the code; signs in (creating the account on first use) and sets the refresh cookie.',
-  })
-  async verifyOtp(
-    @Body() dto: OtpVerifyDto,
+  async login(
+    @Body() dto: CustomerLoginDto,
     @ReqMeta() meta: RequestMeta,
     @Res({ passthrough: true }) res: Response,
   ): Promise<CustomerLoginResponse> {
-    const session = await this.auth.verifyOtp(dto.mobile, dto.otp, meta);
+    const session = await this.auth.login(dto.helmetCode, dto.password, meta);
     this.setRefreshCookie(res, session.refresh);
     return session.response;
   }
 
-  @Post('refresh')
+  @Post('recover')
   @HttpCode(HttpStatus.OK)
   @RateLimit('auth')
+  @ApiOperation({
+    summary: 'Account recovery step 1: Helmet ID + offline recovery code → single-use reset token.',
+  })
+  recover(@Body() dto: RecoverDto, @ReqMeta() meta: RequestMeta): Promise<CustomerRecoverResponse> {
+    return this.auth.recover(dto.helmetCode, dto.recoveryCode, meta);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Account recovery step 2: new password. Revokes all sessions, rotates the recovery code (returned once), signs in.',
+  })
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @ReqMeta() meta: RequestMeta,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<CustomerResetPasswordResponse> {
+    const { session, recoveryCode } = await this.auth.resetPassword(
+      dto.resetToken,
+      dto.newPassword,
+      meta,
+    );
+    this.setRefreshCookie(res, session.refresh);
+    return { ...session.response, recoveryCode };
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @RateLimit('auth')
+  @ApiOperation({
+    summary: 'Change password (current password required). Other sessions are revoked.',
+  })
+  async changePassword(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: ChangePasswordDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<{ changed: true }> {
+    await this.auth.changePassword(customer, dto.currentPassword, dto.newPassword, meta);
+    return { changed: true };
+  }
+
+  @Post('recovery-code')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Generate a new recovery code (password required). The previous code stops working. Shown once.',
+  })
+  rotateRecoveryCode(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: ConfirmPasswordDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<RecoveryCodeIssued> {
+    return this.auth.rotateRecoveryCode(customer, dto.password, meta);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  // Runs on every page load; customers often share carrier-grade NAT IPs. The 256-bit token can't
+  // be guessed, and rotation + reuse detection bound abuse, so the default policy applies.
+  @RateLimit('default')
   @ApiHeader({
     name: 'X-Requested-With',
     required: true,
@@ -144,7 +204,7 @@ export class CustomerAuthController {
     @CurrentCustomer() customer: AuthenticatedCustomer,
     @Body() dto: UpdateCustomerDto,
   ): Promise<CustomerProfile> {
-    return this.auth.updateProfile(customer.id, dto.name);
+    return this.auth.updateProfile(customer.id, dto);
   }
 
   @Get('sessions')

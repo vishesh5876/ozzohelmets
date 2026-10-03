@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { EncryptionService } from './encryption.service';
 import { HashingService } from './hashing.service';
 import { IpHashService } from './ip-hash.service';
+import { LockoutService } from './lockout';
 import { RedisRateLimiter } from './redis-rate-limiter.service';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 
@@ -13,6 +14,7 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
     IpHashService,
     RedisThrottlerStorage,
     RedisRateLimiter,
+    LockoutService,
   ],
   exports: [
     HashingService,
@@ -20,6 +22,7 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
     IpHashService,
     RedisThrottlerStorage,
     RedisRateLimiter,
+    LockoutService,
   ],
 })
 export class SecurityModule {}

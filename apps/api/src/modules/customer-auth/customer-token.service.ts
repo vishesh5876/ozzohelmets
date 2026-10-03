@@ -164,6 +164,14 @@ export class CustomerTokenService {
     return [...byFamily.values()];
   }
 
+  /** Revokes every session except the given one (after a password change). */
+  async revokeAllExcept(userId: string, keepFamilyId: string): Promise<void> {
+    await this.prisma.customerRefreshToken.updateMany({
+      where: { userId, revokedAt: null, familyId: { not: keepFamilyId } },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   /** Revokes one of the customer's own sessions; other users' families are never touched. */
   async revokeSession(userId: string, familyId: string): Promise<boolean> {
     const result = await this.prisma.customerRefreshToken.updateMany({

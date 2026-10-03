@@ -146,18 +146,25 @@ model AdminRefreshToken {
 
 // ─────────────────────────────── Customers (Phase 2 schema) ───────────────────────────────
 
+/// Customer account. Identity is established through helmet ownership + password; email and
+/// mobile are optional, owner-provided and UNVERIFIED (never used for auth or recovery, hence
+/// not unique).
 model User {
-  id             String     @id @default(uuid(7)) @db.Uuid
-  name           String?    @db.VarChar(120)
-  email          String?    @unique @db.VarChar(254)
-  mobile         String?    @unique @db.VarChar(20)
-  passwordHash   String?    @map("password_hash")
-  mobileVerified Boolean    @default(false) @map("mobile_verified")
-  emailVerified  Boolean    @default(false) @map("email_verified")
-  status         UserStatus @default(ACTIVE)
-  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(3)
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                    String     @id @default(uuid(7)) @db.Uuid
+  name                  String?    @db.VarChar(120)
+  email                 String?    @db.VarChar(254)
+  mobile                String?    @db.VarChar(20)
+  passwordHash          String?    @map("password_hash")
+  passwordChangedAt     DateTime?  @map("password_changed_at") @db.Timestamptz(3)
+  /// Argon2id (peppered) hash of the offline recovery code; the plaintext is shown once.
+  recoveryCodeHash      String?    @map("recovery_code_hash")
+  recoveryCodeCreatedAt DateTime?  @map("recovery_code_created_at") @db.Timestamptz(3)
+  mobileVerified        Boolean    @default(false) @map("mobile_verified")
+  emailVerified         Boolean    @default(false) @map("email_verified")
+  status                UserStatus @default(ACTIVE)
+  lastLoginAt           DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   ownerships          HelmetOwnership[]
   auditLogs           AuditLog[]

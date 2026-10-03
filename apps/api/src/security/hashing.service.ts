@@ -10,6 +10,7 @@ import { AppConfigService } from '../config/app-config.service';
 @Injectable()
 export class HashingService {
   private readonly pepper: Buffer;
+  private readonly customerPepper: Buffer;
   private readonly pinOptions: argon2.Options;
   /** OWASP-recommended baseline for interactive password hashing. */
   private readonly passwordOptions: argon2.Options = {
@@ -21,6 +22,7 @@ export class HashingService {
 
   constructor(config: AppConfigService) {
     this.pepper = Buffer.from(config.get('PIN_HASH_PEPPER'), 'utf8');
+    this.customerPepper = Buffer.from(config.get('CUSTOMER_CREDENTIAL_PEPPER'), 'utf8');
     this.pinOptions = {
       type: argon2.argon2id,
       memoryCost: config.get('PIN_ARGON2_MEMORY_KIB'),
@@ -37,6 +39,22 @@ export class HashingService {
   async verifyPassword(hash: string, password: string): Promise<boolean> {
     try {
       return await argon2.verify(hash, password);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Customer passwords and recovery codes: Argon2id (password-strength parameters) with a
+   * dedicated server-side pepper, so a database dump alone is not enough to attack them.
+   */
+  hashCustomerSecret(secret: string): Promise<string> {
+    return argon2.hash(secret, { ...this.passwordOptions, secret: this.customerPepper });
+  }
+
+  async verifyCustomerSecret(hash: string, secret: string): Promise<boolean> {
+    try {
+      return await argon2.verify(hash, secret, { secret: this.customerPepper });
     } catch {
       return false;
     }

@@ -8,7 +8,7 @@ const base = {
   PUBLIC_EMERGENCY_BASE_URL: 'https://safe.example.com/',
   JWT_ACCESS_SECRET: 'x'.repeat(40),
   JWT_CUSTOMER_ACCESS_SECRET: 'c'.repeat(40),
-  OTP_HASH_SECRET: 'o'.repeat(40),
+  CUSTOMER_CREDENTIAL_PEPPER: 'o'.repeat(40),
   PIN_HASH_PEPPER: 'y'.repeat(40),
   IP_HASH_SECRET: 'z'.repeat(40),
   PIN_ESCROW_KEYS: `v2:${key('a')},v1:${key('b')}`,
@@ -48,9 +48,6 @@ describe('validateEnv', () => {
       }),
     ).toThrow(/JWT_ACCESS_SECRET[\s\S]*PIN_ESCROW_KEYS[\s\S]*COOKIE_SECURE/);
     expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).not.toThrow();
-    expect(() =>
-      validateEnv({ ...base, NODE_ENV: 'production', OTP_PROVIDER: 'development' }),
-    ).toThrow(/OTP_PROVIDER/);
     expect(() =>
       validateEnv({
         ...base,

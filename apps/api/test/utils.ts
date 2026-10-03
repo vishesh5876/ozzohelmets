@@ -83,27 +83,55 @@ export async function waitFor<T>(
   }
 }
 
-/** Signs a customer in through the real OTP endpoints (development provider returns the code). */
-export async function customerLogin(
+export const TEST_PASSWORD = 'riding safe every day';
+
+export interface CustomerSessionInfo {
+  token: string;
+  cookie: string;
+  userId: string;
+  recoveryCode: string;
+}
+
+const cookieOf = (res: { headers: Record<string, unknown> }) =>
+  (res.headers['set-cookie'] as string[])[0]!.split(';')[0]!;
+
+/** First activation of a helmet through the real API: creates the account and signs in. */
+export async function registerCustomer(
   ctx: TestContext,
-  mobile: string,
-): Promise<{ token: string; cookie: string; userId: string; isNew: boolean }> {
-  const otp = await ctx
-    .http()
-    .post('/api/v1/customer/auth/otp/request')
-    .send({ mobile })
-    .expect(200);
+  helmet: { publicToken: string; pin: string },
+  password = TEST_PASSWORD,
+  name?: string,
+): Promise<CustomerSessionInfo> {
   const res = await ctx
     .http()
-    .post('/api/v1/customer/auth/otp/verify')
-    .send({ mobile, otp: otp.body.data.devOtp })
+    .post('/api/v1/customer/activation/register')
+    .send({ publicToken: helmet.publicToken, pin: helmet.pin, password, name })
     .expect(200);
-  const setCookie = res.headers['set-cookie'] as unknown as string[];
   return {
     token: res.body.data.accessToken,
-    cookie: setCookie[0]!.split(';')[0]!,
+    cookie: cookieOf(res),
     userId: res.body.data.customer.id,
-    isNew: res.body.data.isNewCustomer,
+    recoveryCode: res.body.data.recoveryCode,
+  };
+}
+
+/** Creates a SOLD helmet and registers a fresh customer with it. */
+export async function newCustomer(ctx: TestContext, password = TEST_PASSWORD) {
+  const helmet = await createTestHelmet(ctx, 'SOLD');
+  const session = await registerCustomer(ctx, helmet, password);
+  return { helmet, ...session };
+}
+
+export async function loginCustomer(
+  ctx: TestContext,
+  helmetCode: string,
+  password = TEST_PASSWORD,
+) {
+  const res = await ctx.http().post('/api/v1/customer/auth/login').send({ helmetCode, password });
+  return {
+    res,
+    token: res.body?.data?.accessToken as string | undefined,
+    cookie: res.status === 200 ? cookieOf(res) : undefined,
   };
 }
 

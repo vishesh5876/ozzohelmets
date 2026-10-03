@@ -4,7 +4,7 @@ export const RATE_LIMIT_POLICY_KEY = 'rate-limit:policy';
 
 /**
  * - `default`: generous limit for authenticated/admin traffic.
- * - `auth`:    strict limit for credential endpoints (login, refresh, later OTP/activation).
+ * - `auth`:    strict limit for credential endpoints (login, recovery, activation, admin refresh).
  * - `public`:  emergency QR endpoints — abuse-protected but deliberately lenient so real
  *              emergencies are never blocked.
  */
