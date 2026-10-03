@@ -1,0 +1,11 @@
+{
+  "extends": "@helmet/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": ".",
+    "incremental": true,
+    "strictPropertyInitialization": false,
+    "types": ["node", "jest"]
+  },
+  "include": ["src", "test", "prisma"]
+}

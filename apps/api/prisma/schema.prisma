@@ -1,0 +1,314 @@
+// Helmet Emergency Identity & Product Authentication Platform
+// Conventions: UUID (v7) primary keys, snake_case tables/columns, created_at/updated_at everywhere.
+// Schema changes go through `prisma migrate dev` → committed migrations → `prisma migrate deploy`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum HelmetStatus {
+  GENERATED
+  PRINTED
+  IN_INVENTORY
+  SOLD
+  ACTIVATED
+  ACTIVE
+  LOST
+  STOLEN
+  DAMAGED
+  REPLACED
+  DEACTIVATED
+  RECALLED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MANUFACTURING
+  SUPPORT
+  ANALYTICS_VIEWER
+}
+
+enum AdminUserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum HelmetModelStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum BatchGenerationStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+enum BatchPrintStatus {
+  NOT_PRINTED
+  PRINTED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum OwnershipStatus {
+  ACTIVE
+  TRANSFERRED
+  REVOKED
+}
+
+enum ActorType {
+  SYSTEM
+  ADMIN
+  OWNER
+}
+
+enum ScanType {
+  EMERGENCY_PAGE
+  VERIFY
+  ACTIVATION
+}
+
+// ─────────────────────────────── Admin ───────────────────────────────
+
+model AdminUser {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  name         String          @db.VarChar(120)
+  email        String          @unique @db.VarChar(254)
+  passwordHash String          @map("password_hash")
+  role         AdminRole
+  status       AdminUserStatus @default(ACTIVE)
+  lastLoginAt  DateTime?       @map("last_login_at") @db.Timestamptz(3)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  refreshTokens  AdminRefreshToken[]
+  auditLogs      AuditLog[]
+  createdBatches HelmetBatch[]
+
+  @@map("admin_users")
+}
+
+/// Opaque refresh tokens, stored as SHA-256 hashes. Rotated on every use; `familyId` groups a
+/// rotation chain so reuse of a revoked token revokes the whole family.
+model AdminRefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  adminId    String    @map("admin_id") @db.Uuid
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedBy String?   @map("replaced_by") @db.Uuid
+  userAgent  String?   @map("user_agent") @db.VarChar(255)
+  ipHash     String?   @map("ip_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([familyId])
+  @@map("admin_refresh_tokens")
+}
+
+// ─────────────────────────────── Customers (Phase 2 schema) ───────────────────────────────
+
+model User {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  name           String?    @db.VarChar(120)
+  email          String?    @unique @db.VarChar(254)
+  mobile         String?    @unique @db.VarChar(20)
+  passwordHash   String?    @map("password_hash")
+  mobileVerified Boolean    @default(false) @map("mobile_verified")
+  emailVerified  Boolean    @default(false) @map("email_verified")
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  ownerships HelmetOwnership[]
+  auditLogs  AuditLog[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────── Catalogue & manufacturing ───────────────────────────────
+
+model HelmetModel {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  name        String            @db.VarChar(120)
+  sku         String            @unique @db.VarChar(64)
+  brand       String            @db.VarChar(80)
+  description String?           @db.Text
+  status      HelmetModelStatus @default(ACTIVE)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  batches HelmetBatch[]
+  helmets Helmet[]
+
+  @@index([status])
+  @@map("helmet_models")
+}
+
+model HelmetBatch {
+  id                    String                @id @default(uuid(7)) @db.Uuid
+  batchCode             String                @unique @map("batch_code") @db.VarChar(32)
+  helmetModelId         String                @map("helmet_model_id") @db.Uuid
+  manufacturingDate     DateTime              @map("manufacturing_date") @db.Date
+  quantity              Int
+  generatedCount        Int                   @default(0) @map("generated_count")
+  generationStatus      BatchGenerationStatus @default(PENDING) @map("generation_status")
+  generationError       String?               @map("generation_error") @db.VarChar(500)
+  generationStartedAt   DateTime?             @map("generation_started_at") @db.Timestamptz(3)
+  generationCompletedAt DateTime?             @map("generation_completed_at") @db.Timestamptz(3)
+  printStatus           BatchPrintStatus      @default(NOT_PRINTED) @map("print_status")
+  printedAt             DateTime?             @map("printed_at") @db.Timestamptz(3)
+  notes                 String?               @db.VarChar(1000)
+  createdBy             String?               @map("created_by") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmetModel HelmetModel @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
+  creator     AdminUser?  @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  helmets     Helmet[]
+
+  @@index([helmetModelId])
+  @@index([generationStatus])
+  @@index([createdAt])
+  @@map("helmet_batches")
+}
+
+/// One physical helmet. `id` is the internal helmet UUID and never appears in public URLs.
+model Helmet {
+  id                String       @id @default(uuid(7)) @db.Uuid
+  helmetCode        String       @unique @map("helmet_code") @db.VarChar(16)
+  publicToken       String       @unique @map("public_token") @db.VarChar(32)
+  activationPinHash String       @map("activation_pin_hash")
+  activationPinUsed Boolean      @default(false) @map("activation_pin_used")
+  activationAttempts Int         @default(0) @map("activation_attempts")
+  serialNumber      String       @unique @map("serial_number") @db.VarChar(40)
+  helmetModelId     String       @map("helmet_model_id") @db.Uuid
+  batchId           String       @map("batch_id") @db.Uuid
+  status            HelmetStatus @default(GENERATED)
+  activatedAt       DateTime?    @map("activated_at") @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmetModel      HelmetModel             @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
+  batch            HelmetBatch             @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  activationSecret HelmetActivationSecret?
+  ownerships       HelmetOwnership[]
+  statusHistory    HelmetStatusHistory[]
+  scans            HelmetScan[]
+
+  @@index([status])
+  @@index([batchId])
+  @@index([helmetModelId])
+  @@index([createdAt])
+  @@map("helmets")
+}
+
+/// Encrypted (AES-256-GCM, PIN_ESCROW_KEY) activation PIN escrow, kept only until labels are
+/// printed or the PIN is used. Never holds plaintext. See docs/SECURITY.md.
+model HelmetActivationSecret {
+  helmetId      String   @id @map("helmet_id") @db.Uuid
+  pinCiphertext String   @map("pin_ciphertext") @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@map("helmet_activation_secrets")
+}
+
+model HelmetStatusHistory {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  helmetId   String        @map("helmet_id") @db.Uuid
+  fromStatus HelmetStatus? @map("from_status")
+  toStatus   HelmetStatus  @map("to_status")
+  actorType  ActorType     @map("actor_type")
+  actorId    String?       @map("actor_id") @db.Uuid
+  reason     String?       @db.VarChar(500)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@index([helmetId, createdAt])
+  @@map("helmet_status_history")
+}
+
+/// Ownership history — never overwritten. Exactly one ACTIVE row per helmet (partial unique
+/// index added in migration SQL).
+model HelmetOwnership {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  helmetId      String          @map("helmet_id") @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  status        OwnershipStatus @default(ACTIVE)
+  activatedAt   DateTime        @default(now()) @map("activated_at") @db.Timestamptz(3)
+  transferredAt DateTime?       @map("transferred_at") @db.Timestamptz(3)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([helmetId])
+  @@index([userId])
+  @@map("helmet_ownerships")
+}
+
+// ─────────────────────────────── Telemetry & audit ───────────────────────────────
+
+/// Append-only QR scan log. IPs are stored only as keyed HMAC-SHA256 hashes.
+model HelmetScan {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  helmetId    String   @map("helmet_id") @db.Uuid
+  scannedAt   DateTime @default(now()) @map("scanned_at") @db.Timestamptz(3)
+  ipHash      String?  @map("ip_hash") @db.Char(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(255)
+  countryCode String?  @map("country_code") @db.Char(2)
+  scanType    ScanType @map("scan_type")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@index([helmetId, scannedAt])
+  @@index([scannedAt])
+  @@map("helmet_scans")
+}
+
+/// Append-only audit trail for security-relevant operations.
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  adminId    String?  @map("admin_id") @db.Uuid
+  action     String   @db.VarChar(80)
+  entityType String   @map("entity_type") @db.VarChar(60)
+  entityId   String?  @map("entity_id") @db.VarChar(64)
+  metadata   Json?
+  ipHash     String?  @map("ip_hash") @db.Char(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user  User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  admin AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
