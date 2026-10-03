@@ -89,7 +89,8 @@ helmet-platform/
 | `customer-auth`                                        | Helmet ID + password, recovery code, customer JWT + refresh                  | 2         |
 | `activation`                                           | atomic, row-locked activation flow                                           | 2         |
 | `emergency-profile`                                    | encrypted medical profile, contacts, visibility                              | 2         |
-| `ownership`                                            | transfer codes, history                                                      | 3         |
+| `ownership`                                            | ownership periods, transfer codes + atomic claim, history, revocation        | 3         |
+| `helmet-lifecycle`                                     | owner lost/stolen/damaged/retire, support restore/deactivate, replacements   | 3         |
 | `warranty`, `dealers`, `anti-counterfeit`, `analytics` | 4+                                                                           |
 
 ## 5. Request pipeline (API)
@@ -196,3 +197,30 @@ Readiness and the public cache live in their own small global modules so the gra
 | 21  | **Cache the filtered DTO, invalidate per owner on every change**                   | Privacy changes take effect on the next scan; raw medical data is never cached.                                                              |
 | 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                       |
 | 23  | **Photos re-encoded by `sharp`**                                                   | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                  |
+
+## 12. Phase 3 additions
+
+### Dependency direction
+
+```
+ownership        ─► helmets (status service, OwnedHelmetLocker), customer-helmets, customer-auth (accounts, sessions)
+helmet-lifecycle ─► ownership (admin controller), helmets, customer-helmets, emergency-readiness
+emergency        ─► helmets (status service, OwnedHelmetLocker)        (per-helmet enable/disable)
+activation       ─► customer-auth (CustomerAccountsService — shared with transfer claims)
+```
+
+Pure rules live in `@helmet/types` (`HELMET_STATUS_TRANSITIONS`, `ownerActions`,
+`helmetListGroup`) and `helmet-lifecycle/domain/lifecycle-policy.ts` (`assertOwnerAction`,
+`restoreTarget`), so API and portal agree.
+
+### Key decisions
+
+| #   | Decision                                                                   | Rationale                                                                                                    |
+| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 24  | **Ownership periods** extend `helmet_ownerships` instead of a new table    | History already lived there; one ACTIVE row per helmet stays enforced by the existing partial unique index.  |
+| 25  | **Per-helmet emergency switch**, profile stays per user                    | Multiple helmets and transfers without duplicating medical data; nothing is exposed on a helmet by accident. |
+| 26  | **Transfer state in PostgreSQL** (HMAC'd code), lockouts in Redis          | The claim must commit atomically with the ownership change under the same row locks.                         |
+| 27  | **One lock order** (helmet → ownership → transfer) via `OwnedHelmetLocker` | Claims, lifecycle actions and support actions serialise instead of racing or deadlocking.                    |
+| 28  | **Side effects central in `HelmetStatusService.apply`**                    | Previous-status bookkeeping, reason codes and pending-transfer cancellation can't be forgotten by a caller.  |
+| 29  | **Recent-auth tokens** instead of re-sending passwords                     | One password prompt per 5 minutes for sensitive actions; revocable; never in URLs.                           |
+| 30  | **No event bus yet**                                                       | Explicit post-commit cache invalidation + audit is shorter and easier to verify; revisit with notifications. |

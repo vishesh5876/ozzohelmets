@@ -16,27 +16,31 @@ never used).
 
 ## Tables (Phase 1)
 
-| Table                       | Purpose                                                                                              | Key constraints / indexes                                                                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin_users`               | Staff accounts (separate from customers)                                                             | unique `email`                                                                                                                                  |
-| `admin_refresh_tokens`      | Hashed rotating refresh tokens, `family_id`, `replaced_by`                                           | unique `token_hash`; idx `admin_id`, `family_id`                                                                                                |
-| `helmet_models`             | Models / SKUs                                                                                        | unique `sku`; idx `status`                                                                                                                      |
-| `helmet_batches`            | Manufacturing batches + generation progress (`generated_count`, `generation_status`, `print_status`) | unique `batch_code`; idx model, status, created_at; CHECK `quantity > 0`, `0 ≤ generated_count ≤ quantity`                                      |
-| `helmets`                   | One row per physical helmet                                                                          | unique `helmet_code`, `public_token`, `serial_number`; idx `status`, `batch_id`, `helmet_model_id`, `created_at`; CHECK pin used ⇒ activated_at |
-| `helmet_activation_secrets` | Temporary AES-GCM PIN escrow (PK = helmet_id)                                                        | deleted on print / activation                                                                                                                   |
-| `helmet_status_history`     | Every lifecycle change with actor + reason                                                           | idx (`helmet_id`, `created_at`)                                                                                                                 |
-| `helmet_scans`              | QR scan log (hashed IP, UA, country, type)                                                           | idx (`helmet_id`, `scanned_at`), `scanned_at`                                                                                                   |
-| `audit_logs`                | Append-only audit trail                                                                              | idx (admin, created), (user, created), (entity_type, entity_id), action, created_at                                                             |
-| `users`                     | Customers: Argon2id password + recovery-code hashes; optional unverified email/mobile                | `email`, `mobile` intentionally **not** unique (never used to identify)                                                                         |
-| `helmet_ownerships`         | Ownership history, never overwritten                                                                 | partial unique index: one `ACTIVE` row per helmet                                                                                               |
+| Table                       | Purpose                                                                                                   | Key constraints / indexes                                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin_users`               | Staff accounts (separate from customers)                                                                  | unique `email`                                                                                                                                  |
+| `admin_refresh_tokens`      | Hashed rotating refresh tokens, `family_id`, `replaced_by`                                                | unique `token_hash`; idx `admin_id`, `family_id`                                                                                                |
+| `helmet_models`             | Models / SKUs                                                                                             | unique `sku`; idx `status`                                                                                                                      |
+| `helmet_batches`            | Manufacturing batches + generation progress (`generated_count`, `generation_status`, `print_status`)      | unique `batch_code`; idx model, status, created_at; CHECK `quantity > 0`, `0 ≤ generated_count ≤ quantity`                                      |
+| `helmets`                   | One row per physical helmet                                                                               | unique `helmet_code`, `public_token`, `serial_number`; idx `status`, `batch_id`, `helmet_model_id`, `created_at`; CHECK pin used ⇒ activated_at |
+| `helmet_activation_secrets` | Temporary AES-GCM PIN escrow (PK = helmet_id)                                                             | deleted on print / activation                                                                                                                   |
+| `helmet_status_history`     | Every lifecycle change with actor + reason                                                                | idx (`helmet_id`, `created_at`)                                                                                                                 |
+| `helmet_scans`              | QR scan log (hashed IP, UA, country, type)                                                                | idx (`helmet_id`, `scanned_at`), `scanned_at`                                                                                                   |
+| `audit_logs`                | Append-only audit trail                                                                                   | idx (admin, created), (user, created), (entity_type, entity_id), action, created_at                                                             |
+| `users`                     | Customers: Argon2id password + recovery-code hashes; optional unverified email/mobile                     | `email`, `mobile` intentionally **not** unique (never used to identify)                                                                         |
+| `helmet_ownerships`         | Ownership **periods** (acquired via activation/transfer, ended by transfer/revocation), never overwritten | partial unique index: one `ACTIVE` row per helmet; CHECK `ACTIVE ⇔ ended_at IS NULL`; idx (`helmet_id`, `activated_at`), (`user_id`, `status`)  |
+| `helmet_transfers`          | Transfer offers; HMAC of the code only; `PENDING/CLAIMED/CANCELLED/EXPIRED` (expiry computed)             | partial unique index: one `PENDING` per helmet; CHECK claim consistency, not-to-self; idx (`helmet_id`, `created_at`)                           |
+| `helmet_replacements`       | Original ↔ replacement helmet links                                                                       | unique `original_helmet_id`, unique `replacement_helmet_id`; CHECK distinct                                                                     |
+| `helmet_emergency_settings` | Per-(helmet, user) switch: does this helmet expose this owner's profile                                   | unique (`helmet_id`, `user_id`)                                                                                                                 |
 
 Migrations: `20261003082113_init` (Phase 1) `20261003093118_phase2_customer_activation_profile` and
-`20261003144957_phase2_password_auth_recovery` (Phase 2). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
+`20261003144957_phase2_password_auth_recovery` (Phase 2), `20261003162224_phase3_ownership_lifecycle` (Phase 3:
+ownership period columns, `helmets.previous_operational_status`, `helmet_status_history.reason_code`,
+transfers, replacements, per-helmet emergency settings + backfill). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
 partial unique ownership index and CHECK constraints.
 
 ## Planned (later phases)
 
-- **Phase 3:** `ownership_transfers` (or Redis-only codes) with audit.
 - **Phase 4:** `warranties` (`helmet_id`, `purchase_date`, `dealer_id`, `invoice_number`,
   `warranty_start_date`, `warranty_end_date`, `warranty_status`).
 - **Phase 5:** `dealers`, `dealer_users`, inventory movements.

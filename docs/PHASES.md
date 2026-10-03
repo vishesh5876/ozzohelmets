@@ -2,7 +2,7 @@
 
 Each phase ends with lint, typecheck, tests and build passing, docs updated, and a demoable flow.
 
-## Phase 1 — Foundation + manufacturing _(current)_
+## Phase 1 — Foundation + manufacturing _(complete)_
 
 Monorepo, NestJS API, PostgreSQL/Prisma migrations, Redis, Docker dev setup, env validation,
 admin authentication (JWT + rotating refresh), RBAC foundation, helmet models, manufacturing
@@ -30,13 +30,16 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 - Tests: activation, double-activation race, ownership authorization, visibility filtering,
   login/recovery/PIN lockouts.
 
-## Phase 3 — Ownership lifecycle
+## Phase 3 — Ownership & helmet lifecycle _(complete — see [`PHASE-3.md`](./PHASE-3.md))_
 
-- Owner-initiated LOST / STOLEN / found; public safe-status messaging.
-- Ownership transfer: 6-digit code in Redis (30 min TTL, attempt-limited), new owner claims with the code,
-  ownership history, previous owner's emergency data never carried over, cache purge.
-- Admin support tools: helmet lookup, ownership history, deactivate/replace, PIN re-issue for
-  unactivated helmets whose escrow was purged.
+- Multiple helmets per account; per-helmet emergency exposure.
+- Secure ownership transfer: recent password check, one-time `TR-` code (HMAC at rest, 30 min),
+  atomic row-locked claim by existing or new customers, previous owner's data removed instantly.
+- Owner LOST / found, STOLEN / recovered, DAMAGED, retirement (DEACTIVATED) with restore to the
+  previous safe state; explicit, data-free public states.
+- Replacement links between two separate helmet identities; ownership periods and owner timeline.
+- Permission-gated support actions: history, cancel transfer, restore, forced deactivation,
+  ownership revocation (SUPER_ADMIN), replacement linking.
 
 ## Phase 4 — Warranty & printing
 

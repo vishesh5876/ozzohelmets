@@ -97,14 +97,20 @@ Separate `admin_users` table (customers can never be admins). Roles map to permi
 (optionally `@Roles(...)`), enforced by `AdminJwtGuard` + `RbacGuard` on the server. The admin UI
 only hides what the server would reject. Integration tests assert 403s per role.
 
-| Permission                                          | SUPER_ADMIN | ADMIN | MANUFACTURING | SUPPORT | ANALYTICS_VIEWER |
-| --------------------------------------------------- | :---------: | :---: | :-----------: | :-----: | :--------------: |
-| dashboard / models / batches / helmets read         |      ✓      |   ✓   |       ✓       |    ✓    |        ✓         |
-| models write, batches write/generate, helmet status |      ✓      |   ✓   |       ✓       |    –    |        –         |
-| QR / barcode labels                                 |      ✓      |   ✓   |       ✓       |    ✓    |        –         |
-| **export manufacturing CSV (PINs)**                 |      ✓      |   ✓   |       –       |    –    |        –         |
-| audit logs                                          |      ✓      |   ✓   |       –       |    –    |        –         |
-| admin users                                         |      ✓      |   –   |       –       |    –    |        –         |
+| Permission                                                           | SUPER_ADMIN | ADMIN | MANUFACTURING | SUPPORT | ANALYTICS_VIEWER |
+| -------------------------------------------------------------------- | :---------: | :---: | :-----------: | :-----: | :--------------: |
+| dashboard / models / batches / helmets read                          |      ✓      |   ✓   |       ✓       |    ✓    |        ✓         |
+| models write, batches write/generate, helmet status                  |      ✓      |   ✓   |       ✓       |    –    |        –         |
+| QR / barcode labels                                                  |      ✓      |   ✓   |       ✓       |    ✓    |        –         |
+| **export manufacturing CSV (PINs)**                                  |      ✓      |   ✓   |       –       |    –    |        –         |
+| audit logs                                                           |      ✓      |   ✓   |       –       |    –    |        –         |
+| admin users                                                          |      ✓      |   –   |       –       |    –    |        –         |
+| ownership & transfer history (`ownership:view`)                      |      ✓      |   ✓   |       –       |    ✓    |        –         |
+| cancel transfer, link replacement, restore / deactivate owned helmet |      ✓      |   ✓   |       –       |    ✓    |        –         |
+| **revoke ownership** (`ownership:revoke`)                            |      ✓      |   –   |       –       |    –    |        –         |
+
+Changing a customer-owned helmet through the generic status endpoint additionally requires
+`helmet-lifecycle:manage`, and operational statuses (ACTIVATED/ACTIVE) can't be set there at all.
 
 ## 6. Cryptography
 
@@ -207,3 +213,36 @@ contacts] }`; profile and contacts only when the helmet is ACTIVE/DAMAGED/RECALL
   profile status — never names, contacts or medical data.
 - **Emergency page.** Framework-free, renders owner text only via `textContent`; responses are
   `no-store`/`noindex`; `Referrer-Policy: no-referrer` meta on the page.
+
+## 13. Phase 3 — ownership & lifecycle
+
+Details: [`OWNERSHIP.md`](./OWNERSHIP.md), [`TRANSFER.md`](./TRANSFER.md),
+[`REPLACEMENT.md`](./REPLACEMENT.md), [`HELMET-LIFECYCLE.md`](./HELMET-LIFECYCLE.md).
+
+- **Recent auth.** Sensitive actions need a password re-check within `RECENT_AUTH_TTL_SECONDS`
+  (300): `POST /customer/auth/reauthenticate` or `/admin/auth/reauthenticate` returns a 256-bit
+  random token, stored only as a SHA-256 key in Redis with that TTL, bound to the subject (and
+  the customer's session), sent as the `X-Recent-Auth` header (never query/body). A per-subject
+  generation counter invalidates all outstanding tokens on password change, password reset,
+  logout-all and admin-requested session revocation. Wrong passwords use an escalating lockout.
+  The portal keeps the token in memory only. Required for: transfer creation, report stolen,
+  mark recovered, retire; admin forced deactivation and ownership revocation.
+- **Transfer codes.** ~59-bit CSPRNG codes, HMAC-SHA256 at rest (server key, domain separated),
+  single use, ≤ 30 min, one PENDING per helmet (DB index), tied to the helmet and the creating
+  owner, cancelled on supersede/cancel/status change, never logged or audited. Claims run in one
+  row-locked transaction; unknown Helmet IDs and wrong codes are indistinguishable; escalating
+  per-Helmet-ID lockouts plus a per-IP budget (`TRANSFER_*`).
+- **Old owner's data.** Disappears in the claim transaction (per-helmet switch off, helmet →
+  ACTIVATED) and the public cache is purged after commit; the public view checks the current
+  owner's switch, so nothing stale can be served from cache or rebuilt for the wrong user.
+- **Non-active states never expose data.** Only `ACTIVE` with the current owner's switch on
+  returns profile/contacts; lost/stolen/damaged/replaced/deactivated/recalled return a fixed
+  message only (unit + integration tested).
+- **Authorization.** Lifecycle and transfer endpoints lock the helmet with the caller's ACTIVE
+  ownership; other customers' helmets behave as missing (404). Support actions are each behind
+  their own permission; destructive ones require the admin password again.
+- **Audit (no secrets):** `helmet.transfer.created|cancelled|claimed|claim_failed|claim_locked`,
+  `helmet.lifecycle.lost|found|stolen|recovered|damaged|deactivated|restored`,
+  `helmet.ownership.revoked`, `helmet.replacement.linked`, `helmet.emergency.enabled|disabled`,
+  `customer.recent_auth.created|failed`, `admin.recent_auth.created|failed`. Never transfer codes,
+  passwords, recovery codes or medical values; owner damage notes live only in status history.

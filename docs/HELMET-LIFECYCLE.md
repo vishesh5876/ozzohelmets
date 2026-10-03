@@ -20,54 +20,94 @@ Each change writes a `helmet_status_history` row; admin changes are also audited
 | `REPLACED`        | Replaced by another helmet (terminal).                                 |
 | `DEACTIVATED`     | Permanently taken out of service (terminal).                           |
 
-## Transitions (actor: A = admin, S = system, O = owner)
+## Transitions (actor: A = admin/support, S = system, O = owner)
 
 ```
 GENERATED ──A,S──► PRINTED ──A──► IN_INVENTORY ──A──► SOLD ──S──► ACTIVATED
     │                                │                  └──A──► IN_INVENTORY (return)
     └─A─► DEACTIVATED                └──S──► ACTIVATED  (only while ACTIVATION_ALLOW_IN_INVENTORY=true)
 
-ACTIVATED ──S,O──► ACTIVE   (owner enables the emergency profile)
-ACTIVE ──S,O──► ACTIVATED   (owner disables the emergency profile)
-ACTIVATED / ACTIVE ──O,A──► LOST | STOLEN | DAMAGED
-ACTIVE ──A──► REPLACED | RECALLED | DEACTIVATED
-LOST ──O,A──► ACTIVE | STOLEN      LOST/STOLEN ──A──► REPLACED | DEACTIVATED
-STOLEN ──O,A──► ACTIVE
-DAMAGED / RECALLED ──A──► REPLACED | DEACTIVATED
+ACTIVATED ──S,O──► ACTIVE        owner switches emergency info on for this helmet
+ACTIVE ──S,O,A──► ACTIVATED      switch off · ownership transferred (S) · ownership revoked (A)
+ACTIVATED / ACTIVE ──O,A──► LOST | STOLEN | DAMAGED | DEACTIVATED (retire)
+ACTIVATED / ACTIVE ──A──► REPLACED | RECALLED
+LOST   ──O,A──► ACTIVE | ACTIVATED (found) | STOLEN | DEACTIVATED      ──A──► REPLACED
+STOLEN ──O,A──► ACTIVE | ACTIVATED (recovered) | DEACTIVATED          ──A──► REPLACED
+DAMAGED ──O,A──► DEACTIVATED      ──A──► ACTIVE | ACTIVATED (support restore) | REPLACED
+RECALLED ──A──► REPLACED | DEACTIVATED
+DEACTIVATED ──A──► ACTIVATED      (support restore of an owned helmet only)
+REPLACED: terminal
 PRINTED / IN_INVENTORY / SOLD ──A──► DAMAGED | RECALLED | DEACTIVATED
-REPLACED, DEACTIVATED: terminal
 ```
 
-The authoritative list is `HELMET_STATUS_TRANSITIONS`. Unit tests verify: every status is in the
-table, no self-loops, every status reachable from `GENERATED`, terminal states have no exits,
-only `SYSTEM` can activate, owners can report lost/stolen but not deactivate/recall.
+The authoritative list is `HELMET_STATUS_TRANSITIONS`; `ownerActions(status)` (same file) is the
+single list of explicit owner actions per status, used by the API to authorise and by the portal
+to show buttons. Unit tests verify: every status in the table, no self-loops, reachability from
+`GENERATED`, REPLACED terminal, only `SYSTEM` activates, owner vs support edges.
+
+## Owner actions (Phase 3)
+
+| Action         | Endpoint (`/customer/helmets/:id/…`) | From                    | To                  | Recent password |
+| -------------- | ------------------------------------ | ----------------------- | ------------------- | --------------- |
+| Emergency on   | `emergency/enable`                   | ACTIVATED               | ACTIVE              | –               |
+| Emergency off  | `emergency/disable`                  | ACTIVE                  | ACTIVATED           | –               |
+| Transfer       | `transfer` (see TRANSFER.md)         | ACTIVATED, ACTIVE       | (owner changes)     | yes             |
+| Report lost    | `lost`                               | ACTIVATED, ACTIVE       | LOST                | –               |
+| Mark found     | `found`                              | LOST                    | previous safe state | –               |
+| Report stolen  | `stolen`                             | ACTIVATED, ACTIVE, LOST | STOLEN              | yes             |
+| Mark recovered | `recovered`                          | STOLEN                  | previous safe state | yes             |
+| Mark damaged   | `damaged` `{reason?, note?}`         | ACTIVATED, ACTIVE       | DAMAGED             | –               |
+| Retire         | `deactivate` `{confirmHelmetCode}`   | ACTIVATED…DAMAGED       | DEACTIVATED         | yes             |
+
+There is no generic "set status" for customers.
+
+### Restoring to the previous safe state
+
+`helmets.previous_operational_status` is maintained **only** by `HelmetStatusService.apply`:
+entering LOST/STOLEN/DAMAGED from ACTIVE/ACTIVATED records it, moving between interruptions keeps
+it, anything else clears it. `restoreTarget(previous, canExpose)` returns ACTIVE only if the
+helmet was ACTIVE **and** the owner's information may still be exposed on it (per-helmet switch
+on, profile enabled and complete); otherwise ACTIVATED. Owner "found"/"recovered" and the support
+restore all use this one function.
 
 ## Design rules
 
-- **Eligibility** is decided only by `ActivationPolicy` (see ACTIVATION.md).
-- **Activation is system-only.** No admin can move a helmet to `ACTIVATED`; only the Phase 2
-  activation flow (PIN as proof of possession, row-locked transaction) can, so ownership always exists.
-- **Concurrency.** Single changes lock the row (`SELECT … FOR UPDATE`) and update with
-  `WHERE status = <from>`; a concurrent change fails with `CONFLICT` rather than overwriting.
-- **Bulk changes** (mark printed) validate the transition once and apply it in one transaction
-  with history rows inserted via `INSERT … SELECT`.
-- **Public cache** for the QR page is invalidated after every status change.
+- **Eligibility** for activation is decided only by `ActivationPolicy` (see ACTIVATION.md).
+- **Operational statuses are never set by hand.** ACTIVATED/ACTIVE are reached only through
+  activation, per-helmet enablement, transfer, or the support restore; the generic admin status
+  endpoint refuses them, and changing a customer-owned helmet there requires
+  `helmet-lifecycle:manage` (so MANUFACTURING can't touch owned helmets).
+- **Concurrency.** Every lifecycle change locks the helmet row, then its ACTIVE ownership row
+  (`OwnedHelmetLocker`), and updates with `WHERE status = <from>`.
+- **Pending transfers die** whenever a helmet leaves ACTIVATED/ACTIVE (central, in `apply`).
+- **History** rows carry a machine `reason_code` (e.g. `LOST_REPORTED`, `DAMAGED:ACCIDENT`,
+  `TRANSFERRED`, `RESTORED_BY_SUPPORT`); free text is limited to short admin reasons and an
+  optional ≤200-char owner damage note.
+- **Public cache** for the QR page is invalidated after every change (status, owner, settings).
 
 ## Public page mapping
 
-| Status                                 | Public state                                                                                                                       |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| GENERATED, PRINTED, IN_INVENTORY, SOLD | `NOT_ACTIVATED` — "This helmet has not yet been activated."                                                                        |
-| ACTIVATED, ACTIVE                      | `ACTIVE`                                                                                                                           |
-| DAMAGED, RECALLED                      | `ACTIVE` if the helmet has an owner (emergency info must stay reachable for a rider wearing a recalled helmet), else `UNAVAILABLE` |
-| LOST, STOLEN                           | `LOST` / `STOLEN` safe message (whether emergency info is still shown is a Phase 3 product decision)                               |
-| REPLACED, DEACTIVATED                  | `UNAVAILABLE`                                                                                                                      |
+Only `ACTIVE` can return emergency information, and only when the **current** owner's per-helmet
+switch is on and their profile is enabled and complete.
+
+| Status                                 | Public state / message                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| GENERATED, PRINTED, IN_INVENTORY, SOLD | `NOT_ACTIVATED` — "This helmet has not yet been activated."                 |
+| ACTIVE (+ switch on, profile complete) | `ACTIVE` — owner-approved fields only                                       |
+| ACTIVATED / ACTIVE otherwise           | `ACTIVATED_PROFILE_INCOMPLETE` (no owner → `UNAVAILABLE`)                   |
+| LOST                                   | `LOST` — "This helmet has been reported lost."                              |
+| STOLEN                                 | `STOLEN` — "This helmet has been reported stolen."                          |
+| DAMAGED                                | `DAMAGED` — "This helmet is currently marked as damaged."                   |
+| REPLACED                               | `REPLACED` — "This helmet has been replaced and is no longer active."       |
+| DEACTIVATED                            | `DEACTIVATED` — "This helmet is no longer active."                          |
+| RECALLED                               | `RECALLED` — safe placeholder, no personal data (recall design is Phase 6+) |
 
 ## Flagged business decisions
 
 1. **Decided (Phase 2):** customers activate from `SOLD`; `IN_INVENTORY` only via the temporary
-   `ACTIVATION_ALLOW_IN_INVENTORY` allowance (`ActivationPolicy`). `PRINTED → ACTIVATED` was removed.
-   Retailers must therefore move helmets to SOLD (admin today, dealer scanning in Phase 5).
-2. **Decided (Phase 2):** `ACTIVATED` = owned, PIN consumed; `ACTIVE` = owner explicitly enabled a
-   complete emergency profile. Disabling returns the helmet to `ACTIVATED`.
-3. Lost/stolen helmets: show emergency info or only a status message? (Phase 3.)
+   `ACTIVATION_ALLOW_IN_INVENTORY` allowance.
+2. **Decided (Phase 2/3):** `ACTIVATED` = owned; `ACTIVE` = owner explicitly switched emergency
+   information on **for this helmet**.
+3. **Decided (Phase 3):** lost, stolen, damaged, replaced, deactivated and recalled helmets show a
+   status message only — no medical data or contacts. Open: should LOST helmets optionally show an
+   owner-chosen "if found, call" contact? Should RECALLED keep emergency access?

@@ -97,7 +97,7 @@ customer's own data. Details: [CUSTOMER-AUTH](./CUSTOMER-AUTH.md), [ACTIVATION](
 | GET / PUT          | `/customer/emergency-profile`                                                         | Bearer                      | partial update; `null` clears; medical fields encrypted                                                                                               |
 | GET                | `/customer/emergency-profile/readiness`                                               | Bearer                      | `{ status, enabled, canEnable, missing[], completionPercent, steps[] }`                                                                               |
 | GET                | `/customer/emergency-profile/preview`                                                 | Bearer                      | exact public projection                                                                                                                               |
-| POST               | `/customer/emergency-profile/enable` / `disable`                                      | Bearer                      | ACTIVATED ⇄ ACTIVE for owned helmets                                                                                                                  |
+| POST               | `/customer/emergency-profile/enable` `{ helmetIds? }` / `disable`                     | Bearer                      | enable: profile on + switch on the given helmets (or the only one in use); disable: everything off, ACTIVE → ACTIVATED                                |
 | PUT / GET / DELETE | `/customer/emergency-profile/photo`                                                   | Bearer                      | multipart field `photo`; JPEG/PNG/WebP ≤ 5 MB                                                                                                         |
 | GET / POST         | `/customer/emergency-contacts`                                                        | Bearer                      | max 5                                                                                                                                                 |
 | PATCH / DELETE     | `/customer/emergency-contacts/:id`                                                    | Bearer                      | delete = deactivate + re-number                                                                                                                       |
@@ -106,11 +106,11 @@ customer's own data. Details: [CUSTOMER-AUTH](./CUSTOMER-AUTH.md), [ACTIVATION](
 
 ## Public
 
-| Method | Path                             | Notes                                                                                                                                                                                  |
-| ------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/public/emergency/:token`       | No auth. Rate limit `public`. `state` ∈ `NOT_ACTIVATED`, `ACTIVATED_PROFILE_INCOMPLETE`, `ACTIVE`, `LOST`, `STOLEN`, `UNAVAILABLE`. Unknown/malformed tokens → 404 `HELMET_NOT_FOUND`. |
-| GET    | `/public/emergency/:token/photo` | Only while the owner's photo is publicly visible.                                                                                                                                      |
-| GET    | `/health`                        | DB + Redis readiness.                                                                                                                                                                  |
+| Method | Path                             | Notes                                                                                                                                                                                                                                                                                |
+| ------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/public/emergency/:token`       | No auth. Rate limit `public`. `state` ∈ `NOT_ACTIVATED`, `ACTIVATED_PROFILE_INCOMPLETE`, `ACTIVE`, `LOST`, `STOLEN`, `DAMAGED`, `REPLACED`, `DEACTIVATED`, `RECALLED`, `UNAVAILABLE`; only `ACTIVE` carries `profile`/`contacts`. Unknown/malformed tokens → 404 `HELMET_NOT_FOUND`. |
+| GET    | `/public/emergency/:token/photo` | Only while the owner's photo is publicly visible.                                                                                                                                                                                                                                    |
+| GET    | `/health`                        | DB + Redis readiness.                                                                                                                                                                                                                                                                |
 
 Example (`ACTIVE`, owner shared name, blood group, allergies and contacts):
 
@@ -120,7 +120,7 @@ Example (`ACTIVE`, owner shared name, blood group, allergies and contacts):
   "data": {
     "state": "ACTIVE",
     "helmet": { "modelName": "Roadster X1", "brand": "Ozzo", "helmetCode": "HM-A8F3-KL92" },
-    "message": "Emergency information was provided by the helmet owner.",
+    "message": "Emergency information and contacts were provided by the helmet owner and are not verified.",
     "profile": {
       "name": "Rahul Sharma",
       "bloodGroup": "O_POSITIVE",
@@ -136,8 +136,45 @@ Hidden fields are omitted entirely. Phase 1 returned `profile: null` for non-act
 2 omits the key.
 
 Admin helmet detail (`GET /admin/helmets/:id`) now includes
-`owner: { maskedMobile, since, emergencyProfileStatus } | null`.
+`owner: { customerId, maskedMobile, since, emergencyProfileStatus } | null`, `pendingTransfer`,
+`replacement: { replacedBy, replaces }` and `restoreTarget`.
 
-## Planned (Phase 3+)
+## Phase 3 — ownership & lifecycle
 
-Ownership transfer, owner lost/stolen reporting, warranty, dealers.
+Sensitive calls need `X-Recent-Auth` from `POST /customer/auth/reauthenticate {password}` (or
+`/admin/auth/reauthenticate`) → `{ recentAuthToken, expiresIn }`. Missing/expired →
+403 `RECENT_AUTH_REQUIRED`.
+
+| Method       | Path                                                                                | Auth                                    | Notes                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| GET          | `/customer/helmets`                                                                 | Bearer                                  | each item: `group`, `availableActions`, `emergencyEnabled`, `pendingTransfer`, `replacedBy`, `replaces`, `acquiredVia` |
+| GET          | `/customer/helmets/:id`                                                             | Bearer                                  | + `timeline` (this ownership only)                                                                                     |
+| POST         | `/customer/helmets/:id/emergency/enable` · `/disable`                               | Bearer                                  | per-helmet exposure switch                                                                                             |
+| POST         | `/customer/helmets/:id/transfer`                                                    | Bearer + recent auth                    | → `{ transferCode, expiresAt }` (once; supersedes any previous code)                                                   |
+| GET / DELETE | `/customer/helmets/:id/transfer`                                                    | Bearer                                  | `{ pending, expiresAt }` / cancel (404 `TRANSFER_NOT_FOUND`)                                                           |
+| POST         | `/customer/transfers/preview` `{ helmetCode, transferCode }`                        | —                                       | → `{ helmet: { helmetCode, modelName, brand } }`                                                                       |
+| POST         | `/customer/transfers/claim` `{ helmetCode, transferCode }`                          | Bearer                                  | → `{ helmet }`                                                                                                         |
+| POST         | `/customer/transfers/claim/register` `{ …, password, name? }`                       | —                                       | → login response + `recoveryCode` + `helmet`, refresh cookie                                                           |
+| POST         | `/customer/helmets/:id/lost` · `/found`                                             | Bearer                                  | → helmet                                                                                                               |
+| POST         | `/customer/helmets/:id/stolen` · `/recovered`                                       | Bearer + recent auth                    | → helmet                                                                                                               |
+| POST         | `/customer/helmets/:id/damaged` `{ reason?, note? }`                                | Bearer                                  | reason ∈ ACCIDENT, IMPACT, CRACKED, OTHER; note ≤ 200                                                                  |
+| POST         | `/customer/helmets/:id/deactivate` `{ confirmHelmetCode }`                          | Bearer + recent auth                    | permanent (support can restore)                                                                                        |
+| GET          | `/admin/helmets/:id/ownership-history` · `/transfers`                               | `ownership:view`                        | paginated                                                                                                              |
+| DELETE       | `/admin/helmets/:id/transfer`                                                       | `transfer:cancel`                       |                                                                                                                        |
+| POST         | `/admin/helmets/:id/restore-status` `{ reason }`                                    | `helmet-lifecycle:manage`               | LOST/STOLEN/DAMAGED/DEACTIVATED → previous safe state                                                                  |
+| POST         | `/admin/helmets/:id/force-deactivate` `{ reason }`                                  | `helmet-lifecycle:manage` + recent auth |                                                                                                                        |
+| POST         | `/admin/helmets/:id/revoke-ownership` `{ reason, targetStatus, revokeSessions? }`   | `ownership:revoke` + recent auth        | targetStatus ∈ ACTIVATED, DEACTIVATED                                                                                  |
+| POST         | `/admin/replacements` `{ originalHelmetId, replacementHelmetCode, reason, notes? }` | `replacement:manage`                    | → `{ replacedBy, replaces }`                                                                                           |
+| GET          | `/admin/replacements/:helmetId`                                                     | `helmets:read`                          |                                                                                                                        |
+
+Domain errors: `HELMET_NOT_TRANSFERABLE`, `TRANSFER_CODE_INVALID`, `TRANSFER_CODE_EXPIRED`,
+`TRANSFER_ALREADY_USED`, `TRANSFER_ATTEMPTS_EXCEEDED`, `TRANSFER_NOT_FOUND`,
+`CANNOT_TRANSFER_TO_CURRENT_OWNER`, `HELMET_ALREADY_LOST`, `HELMET_ALREADY_STOLEN`,
+`HELMET_NOT_LOST`, `HELMET_NOT_STOLEN`, `HELMET_NOT_DEACTIVATABLE`, `HELMET_NOT_RECOVERABLE`,
+`HELMET_ACTION_NOT_ALLOWED`, `HELMET_REPLACED`, `OWNERSHIP_NOT_FOUND`,
+`OWNERSHIP_ALREADY_REVOKED`, `REPLACEMENT_INVALID`, `RECENT_AUTH_REQUIRED`,
+`CONFIRMATION_MISMATCH`.
+
+## Planned (Phase 4+)
+
+Warranty, dealers.

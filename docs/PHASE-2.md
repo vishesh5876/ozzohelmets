@@ -106,7 +106,7 @@ review → enable → ACTIVE → anonymous scan shows only approved fields → v
 2. **Retail flow for SOLD**: with `ACTIVATION_ALLOW_IN_INVENTORY=false`, someone must mark helmets
    SOLD before customers can activate (admin today; dealer scanning is Phase 5). Turn the allowance
    on temporarily if retail sales are not recorded yet.
-3. **Lost/stolen public behaviour**: currently a status message only, no owner data (Phase 3).
+3. **Lost/stolen public behaviour**: decided in Phase 3 — status message only, no owner data.
 4. **Emergency number** shown on the public page (`VITE_EMERGENCY_NUMBER`, default 112) — per
    market?
 5. **Recalled helmets**: emergency profile still shown (safety first); a separate recall notice

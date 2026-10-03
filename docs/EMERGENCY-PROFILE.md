@@ -44,10 +44,16 @@ enable the profile:
 plus the explicit `enable` action. Blood group is optional. `completionPercent` (20 % per step:
 activated, details, contacts, privacy, enabled) is a UX hint only — never an authorisation input.
 
-- `POST /customer/emergency-profile/enable` → checks readiness (`PROFILE_INCOMPLETE` + `missing`),
-  sets the flag and moves every owned `ACTIVATED` helmet to `ACTIVE` (actor OWNER, history,
-  audit) in one transaction.
-- `POST …/disable` → clears the flag and moves owned `ACTIVE` helmets back to `ACTIVATED`.
+- **Per-helmet exposure (Phase 3).** The profile belongs to the customer; whether a helmet shows
+  it is the per-(helmet, user) switch in `helmet_emergency_settings`. A helmet is `ACTIVE` exactly
+  when its switch is on (and the profile enabled).
+- `POST /customer/emergency-profile/enable {helmetIds?}` → checks readiness (`PROFILE_INCOMPLETE`
+  - `missing`), sets the account flag and switches on the given helmets — or, without
+    `helmetIds`, the helmet only if exactly one is in use — moving them `ACTIVATED → ACTIVE`.
+- `POST /customer/helmets/:id/emergency/enable|disable` → one helmet on/off.
+- `POST …/emergency-profile/disable` → clears the flag, turns every switch off and moves owned
+  `ACTIVE` helmets back to `ACTIVATED`.
+- A transferred-in, newly added or replacement helmet starts with its switch **off**.
 - While enabled, edits that would break a requirement (removing the last contact, clearing the
   name) are rejected with `PROFILE_REQUIREMENT`; a DB CHECK also forbids an enabled profile
   without a name.

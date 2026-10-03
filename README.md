@@ -71,6 +71,20 @@ No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → password
 Sign in later with **any Helmet ID you own + your password**; forgot it? `/recover` with a Helmet ID +
 recovery code. Signed-in owners add more helmets from **Add helmet** (PIN only, no new account).
 
+## Phase 3 walkthrough (ownership & lifecycle)
+
+1. **My helmets** groups helmets into Active / Needs attention / Retired; each helmet shows only
+   the actions valid for its state, and emergency info is switched on **per helmet**.
+2. **Transfer**: helmet → Transfer → confirm password → one-time code `TR-XXXX-XXXX-XXXX`
+   (30 min, shown once). The recipient opens **/claim**, enters Helmet ID + code and signs in or
+   creates a password (recovery code shown once). The previous owner's emergency data disappears
+   from the QR page immediately; the new owner's appears only after they enable it.
+3. **Lost / found, stolen / recovered, damaged, retire**: confirmation pages (password for stolen,
+   recovered and retire; typed Helmet ID to retire). The QR page shows a safe message without
+   personal data; found/recovered return to the previous safe state.
+4. **Admin helmet page**: ownership periods, transfers, replacement links and support actions
+   (restore, forced deactivation, ownership revocation) behind dedicated permissions.
+
 ## Quality gates
 
 ```bash
@@ -93,17 +107,24 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **Customer auth = Helmet ID + password** (Argon2id + pepper), offline recovery code, rotating refresh tokens, escalating lockouts — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
 - **Atomic, row-locked activation** with progressive PIN lockouts — [ACTIVATION](docs/ACTIVATION.md)
 - **Encrypted emergency profile** and allow-list public sanitizer (hidden fields omitted) — [EMERGENCY-PROFILE](docs/EMERGENCY-PROFILE.md)
+- **Ownership periods** with one ACTIVE owner enforced in the database; **atomic transfers** with
+  single-use HMAC'd codes and recent-auth — [OWNERSHIP](docs/OWNERSHIP.md), [TRANSFER](docs/TRANSFER.md)
+- **Explicit owner lifecycle actions** through one policy; only ACTIVE helmets expose data —
+  [HELMET-LIFECYCLE](docs/HELMET-LIFECYCLE.md), [REPLACEMENT](docs/REPLACEMENT.md)
 
 ## Flagged for product decisions
 
-Open items are listed in [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
-(retail SOLD flow, lost/stolen behaviour, emergency number per market) and
+Open items are listed in [`docs/PHASE-3.md`](docs/PHASE-3.md#business-decisions-still-open)
+(transferring away your only helmet, damaged/recalled visibility, "if found" contact, revoked
+helmet re-assignment), [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
+(retail SOLD flow, emergency number per market) and
 [`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation)
 (MANUFACTURING PIN export, serial format, final QR domain printed on labels).
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) ·
+[Ownership](docs/OWNERSHIP.md) · [Transfer](docs/TRANSFER.md) · [Replacement](docs/REPLACEMENT.md) ·
 [Customer auth](docs/CUSTOMER-AUTH.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
 [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [API](docs/API.md) ·
 [Helmet lifecycle](docs/HELMET-LIFECYCLE.md) · [Development](docs/DEVELOPMENT.md) ·

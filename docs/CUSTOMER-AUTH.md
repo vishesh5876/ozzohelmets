@@ -29,6 +29,7 @@ POST /customer/auth/logout-all       (Bearer)                                   
 GET  /customer/auth/sessions         (Bearer)                                    → active logins (one per token family)
 DELETE /customer/auth/sessions/:id   (Bearer)                                    → revoke one of your own sessions
 GET|PATCH /customer/auth/me          (Bearer)                                    → profile; name, email, mobile (optional, unverified)
+POST /customer/auth/reauthenticate { password } (Bearer) → { recentAuthToken, expiresIn }  for X-Recent-Auth (Phase 3)
 ```
 
 ## Sign-in

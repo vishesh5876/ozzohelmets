@@ -74,6 +74,13 @@ ineligible statuses), `emergency-profile` (encryption at rest, contacts, visibil
 ACTIVE, public boundary, cache invalidation, photo, admin masking, disable, scan dedup) and
 `customer-authorization` (customer A vs B on every resource).
 
+Phase 3 suites: `ownership-transfer` (multi-helmet login, recent auth, atomic transfer, old
+owner's data disappears, new-customer claim with recovery code, self-transfer, cancel/supersede,
+expiry, blocked states, brute-force lockout, **two-recipient race**, **claim-vs-stolen race**,
+DB uniqueness, cross-customer authorization) and `helmet-lifecycle` (per-helmet enablement,
+lost/found restore rules, stolen/recovered, damaged, retirement, recent-auth expiry and
+revocation, support permissions, restore, forced deactivation, revocation, replacement).
+
 ### Browser end-to-end (Playwright)
 
 `e2e/tests/phase2-activation-emergency.spec.ts` drives the whole Phase 2 journey: admin creates a
@@ -82,6 +89,14 @@ anonymous mobile scan shows "not activated" → activation with PIN + password �
 (details, contact, visibility, review, enable) → anonymous scan shows only the approved fields →
 logout → sign in with Helmet ID + password → account recovery with the recovery code → old password
 and old recovery code rejected, new password works.
+
+`e2e/tests/phase3-ownership-lifecycle.spec.ts` (Phase 3, 27 steps): two helmets manufactured
+through the admin API → customer A (both helmets, emergency info on the first) signs in → starts
+a transfer, confirms the password, gets the one-time code, signs out → a new customer claims with
+Helmet ID + code, creates a password, saves the recovery code → A keeps only the other helmet and
+the public page shows none of A's data → B onboards and the public page shows B's data → lost →
+found → stolen (password) → transfer unavailable → recovered → damaged → retired → public page
+"no longer active". Public pages are checked in a mobile viewport.
 
 ```bash
 pnpm dev                     # in another terminal
