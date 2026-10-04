@@ -3,11 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  type AccountDeletionRequestDto,
   type CustomerProfile,
+  type CustomerSecurityEventDto,
+  type CustomerSecurityStatusDto,
   type CustomerSessionDto,
   normalizeEmail,
   type RecoveryCodeIssued,
 } from '@helmet/types';
+import { RecentAuthGate } from '../lifecycle/ConfirmPassword';
+import { recentAuthToken } from '../../lib/recent-auth';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
 import { PageTitle } from '../../components/AppLayout';
 import { InlineError, LoadingState, SavedNote } from '../../components/States';
@@ -22,31 +27,6 @@ import { keys, queryClient } from '../../lib/query';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-function describeDevice(ua: string | null): string {
-  if (!ua) return 'Unknown device';
-  const os = /Android/.test(ua)
-    ? 'Android'
-    : /iPhone|iPad/.test(ua)
-      ? 'iOS'
-      : /Mac OS/.test(ua)
-        ? 'macOS'
-        : /Windows/.test(ua)
-          ? 'Windows'
-          : /Linux/.test(ua)
-            ? 'Linux'
-            : 'Device';
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /Chrome\//.test(ua)
-      ? 'Chrome'
-      : /Firefox\//.test(ua)
-        ? 'Firefox'
-        : /Safari\//.test(ua)
-          ? 'Safari'
-          : 'Browser';
-  return `${browser} on ${os}`;
-}
-
 export function AccountPage() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -57,6 +37,9 @@ export function AccountPage() {
       <ChangePasswordCard />
       <RecoveryCodeCard />
       <SessionsCard />
+      <ActivityCard />
+      <DataExportCard />
+      <DeletionCard />
     </div>
   );
 }
@@ -189,18 +172,38 @@ function ChangePasswordCard() {
 function RecoveryCodeCard() {
   const [password, setPassword] = useState('');
   const [code, setCode] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const security = useQuery({
+    queryKey: keys.security,
+    queryFn: () => api.get<CustomerSecurityStatusDto>('/customer/account/security'),
+  });
   const rotate = useMutation({
     mutationFn: () => api.post<RecoveryCodeIssued>('/customer/auth/recovery-code', { password }),
     onSuccess: (r) => {
       setPassword('');
       setCode(r.recoveryCode);
+      void qc.invalidateQueries({ queryKey: ['account'] });
     },
   });
+  const status = security.data
+    ? !security.data.recoveryCodeConfigured
+      ? 'Missing'
+      : security.data.recoveryCodeAcknowledged
+        ? 'Configured'
+        : 'Configured — not confirmed as saved'
+    : '…';
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
         {code ? (
-          <RecoveryCodeNotice code={code} continueLabel="Done" onContinue={() => setCode(null)} />
+          <RecoveryCodeNotice
+            code={code}
+            continueLabel="Done"
+            onContinue={() => {
+              setCode(null);
+              void qc.invalidateQueries({ queryKey: ['account'] });
+            }}
+          />
         ) : (
           <form
             className="flex flex-col gap-4"
@@ -210,8 +213,12 @@ function RecoveryCodeCard() {
             }}
           >
             <p className="text-display-sm font-bold">Recovery code</p>
+            <p className="font-medium" data-testid="recovery-status">
+              Recovery code: {status}
+            </p>
             <p className="text-sm text-body">
-              Lost your recovery code? Generate a new one. The old code stops working immediately.
+              The code itself is never shown again. Lost it? Generate a new one — the old code stops
+              working immediately and the new one is shown once.
             </p>
             <Field label="Confirm with your password" htmlFor="rc-password">
               <Input
@@ -241,9 +248,14 @@ function SessionsCard() {
     queryKey: keys.sessions,
     queryFn: () => api.get<CustomerSessionDto[]>('/customer/auth/sessions'),
   });
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.sessions });
   const revoke = useMutation({
     mutationFn: (id: string) => api.delete(`/customer/auth/sessions/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+    onSuccess: refresh,
+  });
+  const revokeOthers = useMutation({
+    mutationFn: () => api.post('/customer/auth/sessions/revoke-others'),
+    onSuccess: refresh,
   });
   const logoutAll = useMutation({
     mutationFn: () => api.post('/customer/auth/logout-all'),
@@ -253,18 +265,22 @@ function SessionsCard() {
       navigate('/login');
     },
   });
+  const others = sessions.data?.filter((s) => !s.current) ?? [];
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
         <p className="text-display-sm font-bold">Signed-in devices</p>
+        <p className="text-sm text-body">
+          Only a browser and system name is kept for each sign-in — no device fingerprint.
+        </p>
         {sessions.isLoading && <LoadingState />}
-        <ul className="flex flex-col divide-y divide-hairline">
+        <ul className="flex flex-col divide-y divide-hairline" data-testid="sessions">
           {sessions.data?.map((s) => (
-            <li key={s.id} className="flex items-center justify-between gap-3 py-3">
+            <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <div>
                 <p className="font-medium">
-                  {describeDevice(s.userAgent)}{' '}
+                  {s.device ?? 'Unknown device'}{' '}
                   {s.current && (
                     <span className="ml-1 rounded-pill bg-ink px-2 py-0.5 text-xs text-on-dark">
                       This device
@@ -272,30 +288,235 @@ function SessionsCard() {
                   )}
                 </p>
                 <p className="text-sm text-body">
-                  Last active {dateFmt.format(new Date(s.lastUsedAt))}
+                  Signed in {dateFmt.format(new Date(s.createdAt))} · last active{' '}
+                  {dateFmt.format(new Date(s.lastUsedAt))}
                 </p>
               </div>
               {!s.current && (
-                <Button variant="ghost" size="sm" onClick={() => revoke.mutate(s.id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => revoke.mutate(s.id)}
+                  aria-label={`Sign out ${s.device ?? 'device'}`}
+                >
                   Sign out
                 </Button>
               )}
             </li>
           ))}
         </ul>
-        <InlineError error={revoke.error ?? logoutAll.error} />
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <InlineError error={revoke.error ?? revokeOthers.error ?? logoutAll.error} />
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button variant="subtle" onClick={() => void signOut().then(() => navigate('/'))}>
             Sign out
           </Button>
+          {others.length > 0 && (
+            <Button
+              variant="subtle"
+              loading={revokeOthers.isPending}
+              onClick={() => revokeOthers.mutate()}
+            >
+              Sign out other devices
+            </Button>
+          )}
           <Button
             variant="secondary"
             loading={logoutAll.isPending}
             onClick={() => logoutAll.mutate()}
           >
-            Sign out of all devices
+            Sign out everywhere
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActivityCard() {
+  const activity = useQuery({
+    queryKey: keys.activity,
+    queryFn: () => api.get<CustomerSecurityEventDto[]>('/customer/account/activity', { limit: 20 }),
+  });
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <p id="activity" className="text-display-sm font-bold">
+          Account activity
+        </p>
+        {activity.isLoading && <LoadingState />}
+        {activity.data?.length === 0 && <p className="text-body">No activity yet.</p>}
+        <ul className="flex flex-col divide-y divide-hairline" data-testid="activity">
+          {activity.data?.map((e) => (
+            <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+              <span className="font-medium">{e.label}</span>
+              <span className="text-body">
+                {dateFmt.format(new Date(e.createdAt))}
+                {e.device ? ` · ${e.device}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** JSON download of your own data (requires a recent password confirmation). */
+function DataExportCard() {
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState(false);
+  const download = useMutation({
+    mutationFn: async () => {
+      const { blob, headers } = await api.blob('/customer/account/export', {
+        headers: { 'X-Recent-Auth': recentAuthToken() ?? '' },
+      });
+      const name =
+        /filename="([^"]+)"/.exec(headers.get('Content-Disposition') ?? '')?.[1] ??
+        'helmet-account-export.json';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+    onSuccess: () => setDone(true),
+  });
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-display-sm font-bold">Download your data</p>
+        <p className="text-sm text-body">
+          A JSON file with your account, helmets, ownership history, emergency profile, contacts,
+          privacy settings, warranties and account activity. It never contains passwords or recovery
+          codes. Keep it safe — it includes your medical information.
+        </p>
+        {!open ? (
+          <div>
+            <Button variant="subtle" onClick={() => setOpen(true)}>
+              Request data export
+            </Button>
+          </div>
+        ) : (
+          <RecentAuthGate intro="Confirm your password to download your data.">
+            <div className="flex flex-col gap-2">
+              <InlineError error={download.error} />
+              {done && <p className="text-sm font-medium">Your download has started.</p>}
+              <div>
+                <Button loading={download.isPending} onClick={() => download.mutate()}>
+                  Download my data (JSON)
+                </Button>
+              </div>
+            </div>
+          </RecentAuthGate>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Deletion is a reviewed request; nothing is erased automatically. */
+function DeletionCard() {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const request = useQuery({
+    queryKey: keys.deletion,
+    queryFn: () => api.get<AccountDeletionRequestDto | null>('/customer/account/deletion-request'),
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ['account'] });
+  const create = useMutation({
+    mutationFn: () =>
+      api.request<AccountDeletionRequestDto>('/customer/account/deletion-request', {
+        method: 'POST',
+        body: { reason: reason.trim() || undefined },
+        headers: { 'X-Recent-Auth': recentAuthToken() ?? '' },
+      }),
+    onSuccess: () => {
+      setOpen(false);
+      setReason('');
+      void refresh();
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: () => api.delete('/customer/account/deletion-request'),
+    onSuccess: () => void refresh(),
+  });
+  const current = request.data;
+  const pending = current && (current.status === 'REQUESTED' || current.status === 'APPROVED');
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3">
+        <p className="text-display-sm font-bold">Delete account</p>
+        {pending ? (
+          <div className="flex flex-col gap-3" data-testid="deletion-pending">
+            <p className="font-medium">
+              Deletion requested on {dateFmt.format(new Date(current.requestedAt))} (
+              {current.status === 'APPROVED' ? 'approved, awaiting completion' : 'awaiting review'}
+              ).
+            </p>
+            <p className="text-sm text-body">You can cancel the request until it is completed.</p>
+            <InlineError error={cancel.error} />
+            <div>
+              <Button
+                variant="secondary"
+                loading={cancel.isPending}
+                onClick={() => cancel.mutate()}
+              >
+                Cancel deletion request
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-body">
+              Support reviews deletion requests. Helmet, warranty and other records we must keep for
+              product safety or legal reasons may be retained or anonymised. Your emergency
+              information stops being shared when the deletion is completed.
+            </p>
+            {current?.status === 'CANCELLED' && (
+              <p className="text-sm">Your previous request was cancelled.</p>
+            )}
+            {current?.status === 'REJECTED' && (
+              <p className="text-sm">Your previous request was declined by support.</p>
+            )}
+            {!open ? (
+              <div>
+                <Button variant="ghost" onClick={() => setOpen(true)}>
+                  Request account deletion
+                </Button>
+              </div>
+            ) : (
+              <RecentAuthGate intro="Confirm your password to request account deletion.">
+                <form
+                  className="flex flex-col gap-3"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    create.mutate();
+                  }}
+                >
+                  <Field label="Reason (optional)" htmlFor="del-reason">
+                    <Input
+                      id="del-reason"
+                      value={reason}
+                      maxLength={500}
+                      onChange={(e) => setReason(e.target.value)}
+                    />
+                  </Field>
+                  <InlineError error={create.error} />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button type="submit" variant="secondary" loading={create.isPending}>
+                      Request deletion
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                      Keep my account
+                    </Button>
+                  </div>
+                </form>
+              </RecentAuthGate>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );

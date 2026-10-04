@@ -26,6 +26,16 @@ import type {
   WarrantyVoidReason,
 } from './enums';
 import type { HelmetListGroup, OwnerHelmetAction } from './lifecycle';
+import type {
+  CustomerSecurityEventDto,
+  CustomerSecurityStatusDto,
+  CustomerWarrantySummaryDto,
+  HealthWarningDto,
+  HelmetSupportSummaryDto,
+  ProductReportEventDto,
+  ProfileCompletionDto,
+} from './support';
+import type { ProductReportPriority } from './enums';
 import type { Permission } from './permissions';
 
 /** ISO-8601 timestamp string as serialised by the API. */
@@ -134,6 +144,8 @@ export interface HelmetDetailDto extends HelmetListItemDto {
   replacement: HelmetReplacementLinksDto;
   /** Target a support "restore" would apply now, or null when nothing can be restored. */
   restoreTarget: HelmetStatus | null;
+  /** Phase 5: operational summary (no medical content). */
+  support: HelmetSupportSummaryDto;
   updatedAt: IsoDateString;
 }
 
@@ -193,6 +205,11 @@ export interface AuditLogDto {
   entityId: string | null;
   admin: { id: string; name: string; email: string } | null;
   userId: string | null;
+  /** Phase 5: readable label, actor type and the customer's public Customer ID when known. */
+  label: string;
+  actorType: 'ADMIN' | 'CUSTOMER' | 'SYSTEM';
+  customerId: string | null;
+  /** Secret-looking keys are redacted server-side. */
   metadata: Record<string, unknown> | null;
   createdAt: IsoDateString;
 }
@@ -289,8 +306,10 @@ export interface CustomerRecoverResponse {
 export type CustomerResetPasswordResponse = CustomerLoginResponse & RecoveryCodeIssued;
 
 export interface CustomerSessionDto {
+  /** Safe session id (the refresh-token family id) — never a token or token hash. */
   id: string;
-  userAgent: string | null;
+  /** Coarse "Browser on OS" summary; nothing more is stored. */
+  device: string | null;
   createdAt: IsoDateString;
   lastUsedAt: IsoDateString;
   current: boolean;
@@ -457,6 +476,12 @@ export interface CustomerDashboardDto {
   helmets: CustomerHelmetDto[];
   readiness: EmergencyReadinessDto;
   contactCount: number;
+  /** Phase 5 */
+  completion: ProfileCompletionDto;
+  health: HealthWarningDto[];
+  security: CustomerSecurityStatusDto;
+  warranty: CustomerWarrantySummaryDto;
+  recentActivity: CustomerSecurityEventDto[];
 }
 
 // ─────────────── Phase 4: warranty ───────────────
@@ -588,6 +613,13 @@ export interface ProductReportDto {
   helmet: { id: string; helmetCode: string } | null;
   resolutionNote: string | null;
   reviewedByName: string | null;
+  /** Phase 5 triage */
+  priority: ProductReportPriority;
+  assignee: { id: string; name: string } | null;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
+}
+
+export interface ProductReportDetailDto extends ProductReportDto {
+  events: ProductReportEventDto[];
 }

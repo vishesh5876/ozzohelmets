@@ -60,6 +60,8 @@ export type BatchPrintStatus = (typeof BatchPrintStatus)[keyof typeof BatchPrint
 export const UserStatus = {
   ACTIVE: 'ACTIVE',
   SUSPENDED: 'SUSPENDED',
+  /** Admin security lock. Automatic brute-force lockouts are temporary and never set this. */
+  LOCKED: 'LOCKED',
   DELETED: 'DELETED',
 } as const;
 export type UserStatus = (typeof UserStatus)[keyof typeof UserStatus];
@@ -291,3 +293,54 @@ export const PublicProductVerificationState = {
 } as const;
 export type PublicProductVerificationState =
   (typeof PublicProductVerificationState)[keyof typeof PublicProductVerificationState];
+
+// ─────────────── Phase 5: support, privacy, security ───────────────
+
+export const CustomerSecurityEventType = {
+  LOGIN_SUCCESS: 'LOGIN_SUCCESS',
+  LOGIN_FAILURE_THRESHOLD: 'LOGIN_FAILURE_THRESHOLD',
+  PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+  EMAIL_CHANGED: 'EMAIL_CHANGED',
+  RECOVERY_CODE_ROTATED: 'RECOVERY_CODE_ROTATED',
+  RECOVERY_CODE_ACKNOWLEDGED: 'RECOVERY_CODE_ACKNOWLEDGED',
+  PASSWORD_RECOVERED: 'PASSWORD_RECOVERED',
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  ALL_SESSIONS_REVOKED: 'ALL_SESSIONS_REVOKED',
+  ACCOUNT_RECOVERY_GRANT_ISSUED: 'ACCOUNT_RECOVERY_GRANT_ISSUED',
+  ACCOUNT_RECOVERY_GRANT_USED: 'ACCOUNT_RECOVERY_GRANT_USED',
+  HELMET_ACTIVATED: 'HELMET_ACTIVATED',
+  HELMET_TRANSFERRED_OUT: 'HELMET_TRANSFERRED_OUT',
+  HELMET_RECEIVED: 'HELMET_RECEIVED',
+  ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  ACCOUNT_RESTORED: 'ACCOUNT_RESTORED',
+  ACCOUNT_DELETED: 'ACCOUNT_DELETED',
+  DATA_EXPORTED: 'DATA_EXPORTED',
+  DELETION_REQUESTED: 'DELETION_REQUESTED',
+  DELETION_CANCELLED: 'DELETION_CANCELLED',
+} as const;
+export type CustomerSecurityEventType =
+  (typeof CustomerSecurityEventType)[keyof typeof CustomerSecurityEventType];
+
+export const AccountDeletionStatus = {
+  REQUESTED: 'REQUESTED',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type AccountDeletionStatus =
+  (typeof AccountDeletionStatus)[keyof typeof AccountDeletionStatus];
+
+export const ProductReportPriority = { LOW: 'LOW', NORMAL: 'NORMAL', HIGH: 'HIGH' } as const;
+export type ProductReportPriority =
+  (typeof ProductReportPriority)[keyof typeof ProductReportPriority];
+
+export const ProductReportEventType = {
+  STATUS_CHANGED: 'STATUS_CHANGED',
+  PRIORITY_CHANGED: 'PRIORITY_CHANGED',
+  ASSIGNED: 'ASSIGNED',
+  NOTE: 'NOTE',
+} as const;
+export type ProductReportEventType =
+  (typeof ProductReportEventType)[keyof typeof ProductReportEventType];

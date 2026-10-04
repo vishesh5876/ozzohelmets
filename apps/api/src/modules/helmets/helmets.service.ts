@@ -1,9 +1,12 @@
+import { effectiveStatus } from '../warranty/domain/warranty-policy';
+import { helmetHealthFlags } from './helmet-health';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   ActorType,
   ErrorCode,
   type HelmetDetailDto,
+  type HelmetScanSummaryDto,
   type HelmetListItemDto,
   type HelmetStatus,
   type HelmetOwnerSummaryDto,
@@ -85,6 +88,7 @@ export class HelmetsService {
         previousOperationalStatus: true,
         updatedAt: true,
         activationSecret: { select: { helmetId: true } },
+        warranty: { select: { status: true, warrantyEndDate: true } },
         _count: { select: { scans: true } },
         statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 },
       },
@@ -113,7 +117,7 @@ export class HelmetsService {
         user: { select: { id: true, customerCode: true, mobile: true } },
       },
     });
-    const [owner, pending, replacement, restoreTo] = await Promise.all([
+    const [owner, pending, replacement, restoreTo, scans, sharing] = await Promise.all([
       this.ownerSummary(id, ownership),
       this.prisma.helmetTransfer.findFirst({
         where: { helmetId: id, status: 'PENDING', expiresAt: { gt: new Date() } },
@@ -125,7 +129,10 @@ export class HelmetsService {
             .canExpose(ownership.user.id, id)
             .then((ok) => restoreTarget(helmet.previousOperationalStatus, ok))
         : Promise.resolve(null),
+      this.scanSummary(id),
+      ownership ? this.readiness.helmetEnabled(id, ownership.user.id) : Promise.resolve(false),
     ]);
+    const warrantyStatus = effectiveStatus(helmet.warranty);
 
     return {
       ...toListItem(helmet),
@@ -157,7 +164,42 @@ export class HelmetsService {
         : null,
       replacement,
       restoreTarget: restoreTo,
+      support: {
+        activatedAt: helmet.activatedAt?.toISOString() ?? null,
+        emergencySharing: sharing,
+        warrantyStatus,
+        flags: helmetHealthFlags({
+          status: helmet.status,
+          hasOwner: ownership !== null,
+          activated: helmet.activatedAt !== null,
+          emergencySharing: sharing,
+          warrantyStatus,
+          scans24h: scans.last24h,
+          highScanThreshold24h: this.config.get('HELMET_HIGH_SCAN_THRESHOLD_24H'),
+        }),
+        scans,
+      },
       updatedAt: helmet.updatedAt.toISOString(),
+    };
+  }
+
+  /** Aggregate scan counts only — no IPs, no locations. One indexed query. */
+  private async scanSummary(helmetId: string): Promise<HelmetScanSummaryDto> {
+    const [row] = await this.prisma.$queryRaw<
+      { last: Date | null; d1: bigint; d7: bigint; e7: bigint; v7: bigint }[]
+    >`
+      SELECT max(scanned_at) AS last,
+        count(*) FILTER (WHERE scanned_at >= now() - interval '24 hours') AS d1,
+        count(*) FILTER (WHERE scanned_at >= now() - interval '7 days') AS d7,
+        count(*) FILTER (WHERE scanned_at >= now() - interval '7 days' AND scan_type = 'EMERGENCY_PAGE') AS e7,
+        count(*) FILTER (WHERE scanned_at >= now() - interval '7 days' AND scan_type = 'VERIFY') AS v7
+      FROM helmet_scans WHERE helmet_id = ${helmetId}::uuid`;
+    return {
+      lastScannedAt: row?.last?.toISOString() ?? null,
+      last24h: Number(row?.d1 ?? 0),
+      last7d: Number(row?.d7 ?? 0),
+      emergency7d: Number(row?.e7 ?? 0),
+      verify7d: Number(row?.v7 ?? 0),
     };
   }
 

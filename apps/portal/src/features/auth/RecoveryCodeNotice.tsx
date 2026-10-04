@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Button } from '@helmet/ui';
+import { api } from '../../lib/api';
 
 /**
  * One-time display of a recovery code. It is never shown again (only a hash is stored), so the
- * customer must confirm they saved it before continuing.
+ * customer must confirm they saved it before continuing. The confirmation is recorded so the
+ * dashboard can remind customers who never confirmed (best effort; never blocks continuing).
  */
 export function RecoveryCodeNotice({
   code,
@@ -16,6 +18,7 @@ export function RecoveryCodeNotice({
 }) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [acknowledging, setAcknowledging] = useState(false);
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -62,7 +65,22 @@ export function RecoveryCodeNotice({
         />
         <span className="font-medium">I’ve saved my recovery code</span>
       </label>
-      <Button size="lg" disabled={!saved} onClick={onContinue}>
+      <Button
+        size="lg"
+        disabled={!saved}
+        loading={acknowledging}
+        onClick={() => {
+          // Record the confirmation first so status views refresh correctly; never block on errors.
+          setAcknowledging(true);
+          void api
+            .post('/customer/auth/recovery-code/acknowledge')
+            .catch(() => undefined)
+            .finally(() => {
+              setAcknowledging(false);
+              onContinue();
+            });
+        }}
+      >
         {continueLabel}
       </Button>
     </div>

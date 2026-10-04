@@ -69,3 +69,14 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 
 ECS Fargate (API, SPAs or S3+CloudFront for SPAs), RDS PostgreSQL, ElastiCache Redis, KMS
 envelope encryption for keyrings, Secrets Manager, ALB + Cloudflare, CloudWatch/OTel.
+
+## Phase 5 configuration
+
+- `RECOVERY_GRANT_TTL_MINUTES` (60), `SECURITY_EVENT_RETENTION_DAYS` (365).
+- Public abuse controls: `PUBLIC_MISS_LIMIT_PER_IP` (30), `PUBLIC_MISS_WINDOW_SECONDS` (600),
+  `PUBLIC_UNCACHED_LIMIT_WHEN_FLAGGED` (10), `PUBLIC_GLOBAL_MISS_LIMIT_PER_MINUTE` (3000);
+  `THROTTLE_PUBLIC_LIMIT` default raised to 300. Make sure the real client IP reaches the API
+  (`TRUST_PROXY` / `TRUST_CLOUDFLARE`), otherwise every visitor shares one IP budget.
+- `HELMET_HIGH_SCAN_THRESHOLD_24H` (50) for the informational admin flag.
+- The Phase 5 migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`; the database role needs
+  permission to create it (or pre-create it as a superuser on managed PostgreSQL).

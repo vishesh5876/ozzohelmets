@@ -4,3 +4,4 @@ export * from './enums';
 export * from './identifiers';
 export * from './lifecycle';
 export * from './permissions';
+export * from './support';

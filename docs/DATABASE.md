@@ -68,6 +68,18 @@ SELECT customer_code, email FROM users
 WHERE email IS NOT NULL AND email_normalized IS NULL AND status <> 'DELETED';
 ```
 
+### Phase 5 migration (`20261005090000_phase5_support_privacy_security`)
+
+| Table / change                                                              | Purpose                                                                         | Notable constraints                                                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `UserStatus` + `LOCKED`                                                     | admin security lock                                                             | —                                                                                                              |
+| `users.status_changed_at`, `status_reason`, `recovery_code_acknowledged_at` | support notes, recovery-code acknowledgement (backfilled for existing accounts) | idx (`status`, `created_at`)                                                                                   |
+| `customer_security_events`                                                  | customer-facing security activity (no raw IP, device summary)                   | idx (`user_id`, `created_at`), (`type`, `created_at`), `created_at`; retention `SECURITY_EVENT_RETENTION_DAYS` |
+| `account_recovery_grants`                                                   | SUPER_ADMIN last-resort recovery (Argon2id hash only)                           | partial unique: one open grant per user; CHECK `expires_at > created_at`                                       |
+| `account_deletion_requests`                                                 | privacy requests                                                                | partial unique: one `REQUESTED/APPROVED` per user; idx (`status`, `requested_at`)                              |
+| `product_reports.priority`, `assigned_admin_id` + `product_report_events`   | report triage                                                                   | idx (`assigned_admin_id`, `status`), (`report_id`, `created_at`)                                               |
+| `pg_trgm` + GIN indexes on `lower(email_normalized)`, `lower(name)`         | admin partial search                                                            | expression indexes (kept out of Prisma's diff)                                                                 |
+
 ## Not modelled (by decision)
 
 Retailers, distributors, partner users, stock locations, inventory ledgers, transfers/manifests
@@ -75,7 +87,8 @@ and dealer sales are intentionally absent ([ADR-001](ADR-001-no-retail-inventory
 
 ## Planned (later phases)
 
-- **P5:** warranty claims / service handling on the warranty record.
+- **Later:** warranty claims / service handling on the warranty record; erasure/anonymisation
+  for completed deletion requests once retention rules are set.
 - **Scale:** partition `helmet_scans` and `audit_logs` by month.
 
 ## Bulk generation

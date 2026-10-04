@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Permission, type ProductReportDto } from '@helmet/types';
+import { Permission, type ProductReportDetailDto, type ProductReportDto } from '@helmet/types';
 import { PaginatedResult } from '../../common/http/api-response.interceptor';
 import { RateLimit } from '../../common/rate-limit/rate-limit.decorator';
 import { ReqMeta, type RequestMeta } from '../../common/utils/request-context';
@@ -49,8 +49,17 @@ export class AdminProductReportsController {
 
   @Get()
   @AdminAuth(Permission.PRODUCT_REPORT_VIEW)
-  list(@Query() q: ProductReportQueryDto): Promise<PaginatedResult<ProductReportDto>> {
-    return this.reports.list(q.status, q.page, q.pageSize);
+  list(
+    @Query() q: ProductReportQueryDto,
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+  ): Promise<PaginatedResult<ProductReportDto>> {
+    return this.reports.list(q, admin, q.page, q.pageSize);
+  }
+
+  @Get(':id')
+  @AdminAuth(Permission.PRODUCT_REPORT_VIEW)
+  detail(@Param('id', new ParseUUIDPipe()) id: string): Promise<ProductReportDetailDto> {
+    return this.reports.detail(id);
   }
 
   @Patch(':id')
@@ -60,7 +69,7 @@ export class AdminProductReportsController {
     @Body() dto: UpdateProductReportDto,
     @CurrentAdmin() admin: AuthenticatedAdmin,
     @ReqMeta() meta: RequestMeta,
-  ): Promise<ProductReportDto> {
-    return this.reports.update(admin, id, dto.status, dto.note, meta);
+  ): Promise<ProductReportDetailDto> {
+    return this.reports.update(admin, id, dto, meta);
   }
 }

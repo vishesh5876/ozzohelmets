@@ -230,6 +230,39 @@ export class EmergencyProfileService {
     return this.readiness.readiness(customer.id);
   }
 
+  /**
+   * Turns all public emergency sharing off for an account inside the caller's transaction (used
+   * when an account is marked deleted). The caller must invalidate the public cache after commit
+   * (`PublicEmergencyCacheService.invalidateForOwner`).
+   */
+  async switchOffAllSharing(
+    tx: PrismaTx,
+    userId: string,
+    actor: { type: ActorType; id: string | null },
+    reason: string,
+  ): Promise<number> {
+    await tx.emergencyProfile.updateMany({
+      where: { userId, helmetId: null },
+      data: { emergencyProfileEnabled: false, enabledAt: null },
+    });
+    await tx.helmetEmergencySetting.updateMany({
+      where: { userId, enabled: true },
+      data: { enabled: false },
+    });
+    const helmets = await this.ownedHelmetsInStatus(tx, userId, 'ACTIVE');
+    for (const helmetId of helmets) {
+      await this.statuses.apply(tx, {
+        helmetId,
+        from: 'ACTIVE',
+        to: 'ACTIVATED',
+        actor,
+        reason,
+        reasonCode: 'EMERGENCY_DISABLED',
+      });
+    }
+    return helmets.length;
+  }
+
   /** Switches emergency information on for ONE owned helmet (explicit, per-helmet consent). */
   async enableForHelmet(
     customer: AuthenticatedCustomer,

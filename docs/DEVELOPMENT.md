@@ -83,6 +83,14 @@ revocation, legacy account adds an email, deleted account releases its email, **
 routes in the OpenAPI document**). `activation` also checks PRINTED / IN_INVENTORY / SOLD all
 activate without a sale record.
 
+Phase 5 suite: `phase5-support` (admin search by email/Customer ID/Helmet ID + pagination,
+customer detail without medical data, RBAC matrix per endpoint, suspension vs emergency
+availability, force logout, SUPER_ADMIN recovery grant end to end incl. single use and expiry,
+session revoke/revoke-others with immediate access-token death, lockouts across identifiers,
+recovery-code acknowledgement, data export isolation, deletion request lifecycle, public cache
+invalidation regression, QR abuse controls, medical encryption DB inspection, activation review,
+operations dashboard/helmet summary/audit filters/report triage).
+
 Phase 3 suites: `ownership-transfer` (multi-helmet login, recent auth, atomic transfer, old
 owner's data disappears, new-customer claim with recovery code, self-transfer, cancel/supersede,
 expiry, blocked states, brute-force lockout, **two-recipient race**, **claim-vs-stolen race**,
@@ -91,6 +99,13 @@ lost/found restore rules, stolen/recovered, damaged, retirement, recent-auth exp
 revocation, support permissions, restore, forced deactivation, revocation, replacement).
 
 ### Browser end-to-end (Playwright)
+
+`e2e/tests/phase5-account-support.spec.ts` (25 steps): email sign-in → dashboard health → account
+→ Customer ID → sessions → revoke another device → password change → sign in again → recovery-code
+rotation → email change (old fails, new works) → data export download verified → deletion request
+→ cancel → admin searches by email → account summary without medical details → SUPER_ADMIN
+recovery grant → customer uses it → password reset, all sessions revoked, new code shown once →
+public emergency page still correct.
 
 `e2e/tests/customer-journey.spec.ts` (25 steps, no retail/partner dependency): admin generates
 helmets in the UI → PIN from the export → open the QR → "Ready to activate" → PIN → email →

@@ -24,6 +24,8 @@ import {
 } from '@helmet/ui';
 import { AuthImage } from '../../components/AuthImage';
 import { OwnershipCard, ReplacementCard, SupportActionsCard } from './HelmetLifecyclePanels';
+import { HelmetSupportCard } from './HelmetSupportCard';
+import { useAuth } from '../../lib/auth-context';
 import { PageHeader } from '../../components/PageHeader';
 import { RequirePermission } from '../../components/RequirePermission';
 import { ErrorState, InlineError, LoadingState } from '../../components/States';
@@ -40,6 +42,7 @@ const PROFILE_TONE: Record<EmergencyProfileStatus, NonNullable<BadgeProps['tone'
 
 export function HelmetDetailPage() {
   const { id = '' } = useParams();
+  const { can } = useAuth();
   const {
     data: helmet,
     isLoading,
@@ -119,9 +122,27 @@ export function HelmetDetailPage() {
                 <Item
                   label="Owner"
                   value={
-                    helmet.owner
-                      ? `Customer ${helmet.owner.customerId}${helmet.owner.maskedMobile ? ` · ${helmet.owner.maskedMobile} (unverified)` : ''} · since ${formatDateTime(helmet.owner.since)}`
-                      : 'No owner'
+                    helmet.owner ? (
+                      <>
+                        Customer{' '}
+                        {can(Permission.CUSTOMERS_READ) ? (
+                          <Link
+                            to={`/customers/${helmet.owner.customerId}`}
+                            className="font-mono underline"
+                          >
+                            {helmet.owner.customerId}
+                          </Link>
+                        ) : (
+                          <span className="font-mono">{helmet.owner.customerId}</span>
+                        )}
+                        {helmet.owner.maskedMobile
+                          ? ` · ${helmet.owner.maskedMobile} (unverified)`
+                          : ''}{' '}
+                        · since {formatDateTime(helmet.owner.since)}
+                      </>
+                    ) : (
+                      'No owner'
+                    )
                   }
                 />
                 <Item
@@ -165,6 +186,7 @@ export function HelmetDetailPage() {
               </dl>
             </CardContent>
           </Card>
+          <HelmetSupportCard helmet={helmet} />
           <RequirePermission permission={Permission.OWNERSHIP_VIEW}>
             <OwnershipCard helmet={helmet} />
           </RequirePermission>

@@ -1,3 +1,4 @@
+import { CustomerAccountService } from '../customer-account/customer-account.service';
 import { Injectable } from '@nestjs/common';
 import {
   type CustomerDashboardDto,
@@ -73,6 +74,7 @@ export class CustomerHelmetsService {
     private readonly prisma: PrismaService,
     private readonly readiness: EmergencyReadinessService,
     private readonly config: AppConfigService,
+    private readonly account: CustomerAccountService,
   ) {}
 
   async list(userId: string): Promise<CustomerHelmetDto[]> {
@@ -122,7 +124,8 @@ export class CustomerHelmetsService {
       this.readiness.readiness(userId),
       this.prisma.emergencyContact.count({ where: { userId, isActive: true } }),
     ]);
-    return { helmets, readiness, contactCount };
+    const extras = await this.account.dashboardExtras(userId, helmets, readiness, contactCount);
+    return { helmets, readiness, contactCount, ...extras };
   }
 
   private async findOwned(userId: string, helmetId: string): Promise<OwnedHelmetRow> {

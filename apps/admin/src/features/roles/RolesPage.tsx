@@ -28,6 +28,13 @@ const LABELS: Record<Permission, string> = {
   'warranty:document-view': 'View proof-of-purchase documents',
   'product-report:view': 'View product reports',
   'product-report:manage': 'Review product reports',
+  'customers:read': 'Search customers and view account summaries (no medical data)',
+  'customers:manage': 'Suspend, lock, restore accounts and force sign-out',
+  'customers:delete': 'Mark customer accounts deleted (irreversible)',
+  'customer-recovery:grant': 'Issue last-resort account recovery grants',
+  'privacy-requests:view': 'View customer privacy requests',
+  'privacy-requests:manage': 'Approve, reject and complete privacy requests',
+  'security-events:view': 'View customer security events',
 };
 
 export function RolesPage() {

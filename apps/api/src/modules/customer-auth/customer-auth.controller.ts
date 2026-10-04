@@ -141,6 +141,18 @@ export class CustomerAuthController {
     return this.auth.rotateRecoveryCode(customer, dto.password, meta);
   }
 
+  @Post('recovery-code/acknowledge')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @ApiOperation({ summary: 'Confirm the current recovery code has been saved ("I saved this").' })
+  async acknowledgeRecoveryCode(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<{ acknowledged: true }> {
+    await this.auth.acknowledgeRecoveryCode(customer, meta);
+    return { acknowledged: true };
+  }
+
   @Post('email')
   @HttpCode(HttpStatus.OK)
   @CustomerAuth()
@@ -249,6 +261,18 @@ export class CustomerAuthController {
   @CustomerAuth()
   sessions(@CurrentCustomer() customer: AuthenticatedCustomer): Promise<CustomerSessionDto[]> {
     return this.auth.sessions(customer);
+  }
+
+  @Post('sessions/revoke-others')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @ApiOperation({ summary: 'Sign out every other device; this one stays signed in.' })
+  async revokeOthers(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<{ revoked: true }> {
+    await this.auth.revokeOtherSessions(customer, meta);
+    return { revoked: true };
   }
 
   @Delete('sessions/:id')

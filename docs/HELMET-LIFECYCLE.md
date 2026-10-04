@@ -123,3 +123,11 @@ first; everything else returns a status message only. See
    owner-chosen "if found, call" contact?
 4. **Phase 4:** a warranty is per helmet and survives these states; registration is allowed in
    ACTIVATED, ACTIVE, LOST, STOLEN, DAMAGED and RECALLED. See [WARRANTY](WARRANTY.md).
+
+## Phase 5 notes
+
+- Admin helmet view adds operational health flags and scan aggregates (see
+  [CUSTOMER-SUPPORT](CUSTOMER-SUPPORT.md#helmet-support-view)); no status semantics changed.
+- Account suspension/lock never changes helmet status or public visibility. Marking an account
+  deleted moves its ACTIVE helmets back to ACTIVATED (sharing off) with reason code
+  `EMERGENCY_DISABLED`; ownership is retained.

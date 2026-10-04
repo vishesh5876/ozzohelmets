@@ -19,6 +19,7 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { formatDate, formatNumber } from '../../lib/format';
+import { OperationsPanel } from './OperationsPanel';
 
 export function DashboardPage() {
   const { admin } = useAuth();
@@ -31,7 +32,7 @@ export function DashboardPage() {
     <>
       <PageHeader
         title={`Good to see you, ${admin?.name.split(' ')[0] ?? ''}`}
-        description="Manufacturing and helmet identity at a glance."
+        description="Operations, manufacturing and helmet identity at a glance."
         actions={
           <RequirePermission permission={Permission.BATCHES_WRITE}>
             <Link to="/batches/new" className={buttonVariants()}>
@@ -44,6 +45,8 @@ export function DashboardPage() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {data && (
         <div className="flex flex-col gap-6">
+          <OperationsPanel />
+          <h2 className="text-display-sm font-bold">Manufacturing</h2>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard label="Helmets" value={formatNumber(data.helmets)} inverted />
             <StatCard

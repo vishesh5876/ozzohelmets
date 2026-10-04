@@ -94,3 +94,12 @@ RESOLVED | DISMISSED`; reviewer and time recorded, audited as `product_report.st
 Rationale: a helmet is most likely to be marked damaged right after the crash that damaged it, when
 responders still need the rider's information. Recalled helmets may still be worn. Lost/stolen
 helmets are probably not on the owner's head; replaced/retired ones are out of service.
+
+## Phase 5 notes
+
+- Product reports: priority (LOW/NORMAL/HIGH), optional assignee, internal triage history and notes
+  (never public, never in audit metadata), filters for "assigned to me" / "unassigned".
+- Public pages: verification stays secondary to emergency information; adaptive abuse controls
+  apply to `/public/verify/:token` too (unknown tokens count as misses).
+- Admin helmet view adds scan aggregates and a `HIGH_SCAN_ACTIVITY` flag — informational only, not a
+  counterfeit score (Phase 6).

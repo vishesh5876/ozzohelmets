@@ -1,3 +1,4 @@
+import { SecurityEventsService } from '../customer-security/security-events.service';
 import { createHash } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
@@ -73,6 +74,7 @@ export class TransferService {
     private readonly customerAuth: CustomerAuthService,
     private readonly customerHelmets: CustomerHelmetsService,
     private readonly config: AppConfigService,
+    private readonly events: SecurityEventsService,
   ) {}
 
   // ───────────── Current owner ─────────────
@@ -327,6 +329,8 @@ export class TransferService {
             },
             tx,
           );
+          await this.events.record(ownership.userId, 'HELMET_TRANSFERRED_OUT', {}, tx);
+          await this.events.record(userId, 'HELMET_RECEIVED', meta, tx);
           return { helmetId: helmet.id, userId, publicToken: helmet.publicToken };
         },
         { timeout: 20_000, maxWait: 10_000 },

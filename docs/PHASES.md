@@ -61,15 +61,20 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
   with admin review, recall-ready contract.
 - Revised public emergency rule for DAMAGED / RECALLED helmets.
 
-## P5 — Customer Experience + Admin Operations + Security Hardening
+## P5 — Customer Experience + Admin Operations + Security Hardening _(complete — see [`PHASE-5.md`](./PHASE-5.md))_
 
-- Customer: portal navigation (Dashboard, My helmets, Add helmet, Emergency profile, Emergency
-  contacts, Warranty, Account), email change (password + confirmation, no OTP), accessibility and
-  copy review, optional email reset links (architecture allows them; not built).
-- Admin operations: label PDFs (QR/barcode labels, print sheets), batch print workflow and reprint
-  controls, customer lookup for support, warranty claims / service handling on the Phase 4 record.
-- Security hardening: dependency and secret scanning in CI, CSP review, session/device
-  management polish, abuse rate-limit tuning.
+- Customer: operational dashboard (health check, profile completion, security status, activity,
+  quick actions), Account page (sessions with device summary, sign out one/others/everywhere,
+  recovery-code status + rotation, activity, JSON data export, deletion request/cancel), contacts
+  guidance, navigation: Dashboard, My helmets, Emergency profile, Emergency contacts, Privacy,
+  Warranty, Account.
+- Admin: customer search (Customer ID / Helmet ID / partial email or name) and support view (no
+  medical data), suspend/lock/restore/force sign-out, SUPER_ADMIN mark-deleted and last-resort
+  Account Recovery Grant, privacy requests, security events, operations dashboard, helmet support
+  summary, audit filters/labels, product-report triage.
+- Security: immediate session revocation, minimal device data, customer security events, adaptive
+  public QR abuse controls, RBAC matrix + customer isolation tests, encryption/upload review.
+- Moved to later phases: label PDFs and batch print workflow, warranty claims, emailed reset links.
 
 ## P6 — Analytics + QR Abuse / Anti-Copy Detection
 

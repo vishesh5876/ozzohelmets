@@ -148,6 +148,22 @@ customer`, `sid` (token family = session id). Held in SPA memory only. `Customer
 - **CSRF**: cookie endpoints require `X-Requested-With`, which forces a CORS preflight for
   cross-site callers (rejected by the allow-list), on top of SameSite=Strict.
 
+## Sessions, activity and recovery-code status (Phase 5)
+
+- Account page: current and other sessions (device summary, signed in, last active), sign out one
+  device, all other devices, or everywhere. Revocation also ends the session's live access token
+  immediately (Redis marker checked by the guard).
+- Account activity: the customer's own security events (sign-ins, blocks, password/email changes,
+  recovery-code rotation, sessions revoked, helmet activated/transferred, support actions, export,
+  deletion requests) — no IPs, no admin metadata.
+- Recovery code: shown as "Configured" / "Missing" / "not confirmed as saved"; rotating requires
+  the password, shows the new code once and records the "I saved this" acknowledgement.
+- Password change revokes other sessions and recent-auth tokens; email change revokes other
+  sessions. Neither uses OTP.
+- If both password and recovery code are lost: SUPER_ADMIN Account Recovery Grant —
+  [ACCOUNT-RECOVERY](ACCOUNT-RECOVERY.md).
+- Account status `ACTIVE | SUSPENDED | LOCKED | DELETED`: only ACTIVE may sign in or refresh.
+
 ## Portal behaviour
 
 The SPA restores the session with one silent refresh on load, retries a 401 once after a

@@ -125,3 +125,12 @@ recorded **by name only**) and an audit entry (`warranty.registered`, `warranty.
 
 The public verification page shows only the effective status and end date — never purchase
 details, the registrant or the document. See [PRODUCT-AUTHENTICITY](PRODUCT-AUTHENTICITY.md).
+
+## Phase 5 notes
+
+- Customer dashboard shows a warranty summary (active / expired / not registered) and a
+  "Warranty not registered" notice per in-service helmet; the portal has a Warranty overview page.
+- The customer data export includes warranties for owned helmets; purchase details only where the
+  customer was the registrant.
+- The admin customer view shows the number of warranties the customer registered and each owned
+  helmet's warranty status. No claims workflow yet.

@@ -1,7 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
-import { ProductReportReason, ProductReportStatus } from '@helmet/types';
+import {
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
+import { ProductReportPriority, ProductReportReason, ProductReportStatus } from '@helmet/types';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 import { plainText } from '../../../common/utils/plain-text';
 
@@ -45,12 +53,42 @@ export class ProductReportQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(Object.values(ProductReportStatus))
   status?: ProductReportStatus;
+
+  @ApiPropertyOptional({ enum: Object.values(ProductReportPriority) })
+  @IsOptional()
+  @IsIn(Object.values(ProductReportPriority))
+  priority?: ProductReportPriority;
+
+  @ApiPropertyOptional({ description: '`me`, `unassigned`, or omit for all' })
+  @IsOptional()
+  @IsIn(['me', 'unassigned'])
+  assignee?: 'me' | 'unassigned';
 }
 
+/** Triage update: any subset of status, priority, assignee, resolution note, internal note. */
 export class UpdateProductReportDto {
-  @ApiProperty({ enum: Object.values(ProductReportStatus) })
+  @ApiPropertyOptional({ enum: Object.values(ProductReportStatus) })
+  @IsOptional()
   @IsIn(Object.values(ProductReportStatus))
-  status: ProductReportStatus;
+  status?: ProductReportStatus;
+
+  @ApiPropertyOptional({ enum: Object.values(ProductReportPriority) })
+  @IsOptional()
+  @IsIn(Object.values(ProductReportPriority))
+  priority?: ProductReportPriority;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Admin user id, or null to unassign' })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  assignedAdminId?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 1000, description: 'Internal note (never public)' })
+  @IsOptional()
+  @Transform(plain)
+  @IsString()
+  @MaxLength(1000)
+  internalNote?: string;
 
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()

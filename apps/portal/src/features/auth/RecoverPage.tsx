@@ -109,7 +109,7 @@ export function RecoverPage() {
                 <Field
                   label="Recovery code"
                   htmlFor="rec-code"
-                  hint="Looks like RK-XXXX-XXXX-XXXX."
+                  hint="Looks like RK-XXXX-XXXX-XXXX. If support gave you a one-time code (AR-…), enter it here with your Customer ID."
                 >
                   <Input
                     id="rec-code"
@@ -132,7 +132,8 @@ export function RecoverPage() {
                   Continue
                 </Button>
                 <p className="text-sm text-body">
-                  Lost your recovery code too? Contact support with your helmet’s proof of purchase.
+                  Lost your recovery code too? Contact support. After verifying your identity they
+                  can give you a one-time code by phone — never by email.
                 </p>
               </form>
             )}

@@ -10,6 +10,7 @@ import {
   ErrorCode,
   normalizeEmail,
   normalizeRecoveryCode,
+  normalizeRecoveryGrant,
   type RecentAuthResponse,
   parseAccountIdentifier,
   type RecoveryCodeIssued,
@@ -29,6 +30,7 @@ import { opaqueToken } from '../../security/secure-random';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
 import type { AuthenticatedCustomer } from './customer-auth.types';
+import { SecurityEventsService } from '../customer-security/security-events.service';
 import { CustomerAccountsService } from './customer-accounts.service';
 import { CustomerCredentialsService } from './customer-credentials.service';
 import { CustomerTokenService } from './customer-token.service';
@@ -42,7 +44,9 @@ export interface CustomerSession {
 interface ResetTicket {
   userId: string;
   /** Recovery hash at verification time; the reset fails if it changed in between (single use). */
-  recoveryCodeHash: string;
+  recoveryCodeHash: string | null;
+  /** Set when verified with a support Account Recovery Grant (consumed atomically on reset). */
+  grantId?: string;
 }
 
 const HOUR = 3600;
@@ -67,6 +71,7 @@ export class CustomerAuthService {
     private readonly audit: AuditService,
     private readonly recentAuth: RecentAuthService,
     private readonly accounts: CustomerAccountsService,
+    private readonly events: SecurityEventsService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -177,6 +182,7 @@ export class CustomerAuthService {
     }
     await this.tokens.revokeAllExcept(user.id, customer.sessionId);
     await this.recentAuth.revokeAll('customer', user.id);
+    await this.events.record(user.id, 'EMAIL_CHANGED', { ...meta, sessionId: customer.sessionId });
     return toCustomerProfile(updated);
   }
 
@@ -214,7 +220,12 @@ export class CustomerAuthService {
       userId: user.id,
       ipHash: meta.ipHash,
     });
-    return this.startSession(user, meta);
+    const session = await this.startSession(user, meta);
+    await this.events.record(user.id, 'LOGIN_SUCCESS', {
+      ...meta,
+      sessionId: session.refresh.familyId,
+    });
+    return session;
   }
 
   /** Issues a new session (used after login, registration and password reset). */
@@ -254,12 +265,35 @@ export class CustomerAuthService {
       meta,
     );
 
-    const code = normalizeRecoveryCode(rawRecoveryCode);
-    const ok =
-      code !== null &&
-      (await this.credentials.verifyRecoveryCode(user?.recoveryCodeHash ?? null, code)) &&
-      user?.status === 'ACTIVE';
-    if (!ok || !user?.recoveryCodeHash) {
+    // The same field accepts the customer's recovery code or a support Account Recovery Grant.
+    const grantCode = normalizeRecoveryGrant(rawRecoveryCode);
+    let ok: boolean;
+    let grantId: string | undefined;
+    if (grantCode) {
+      const grant = user
+        ? await this.prisma.accountRecoveryGrant.findFirst({
+            where: {
+              userId: user.id,
+              usedAt: null,
+              revokedAt: null,
+              expiresAt: { gt: new Date() },
+            },
+            select: { id: true, credentialHash: true },
+          })
+        : null;
+      ok =
+        (await this.credentials.verifyRecoveryCode(grant?.credentialHash ?? null, grantCode)) &&
+        user?.status === 'ACTIVE';
+      grantId = ok ? grant?.id : undefined;
+    } else {
+      const code = normalizeRecoveryCode(rawRecoveryCode);
+      ok =
+        code !== null &&
+        !!user?.recoveryCodeHash &&
+        (await this.credentials.verifyRecoveryCode(user.recoveryCodeHash, code)) &&
+        user.status === 'ACTIVE';
+    }
+    if (!ok || !user) {
       await this.recordFailure(keys, meta, 'recovery', user?.id ?? null);
       throw this.invalidCredentials('The email, ID or recovery code is incorrect.');
     }
@@ -267,7 +301,11 @@ export class CustomerAuthService {
 
     const resetToken = opaqueToken(32);
     const ttl = this.config.get('RECOVERY_RESET_TOKEN_TTL_SECONDS');
-    const ticket: ResetTicket = { userId: user.id, recoveryCodeHash: user.recoveryCodeHash };
+    const ticket: ResetTicket = {
+      userId: user.id,
+      recoveryCodeHash: user.recoveryCodeHash,
+      ...(grantId ? { grantId } : {}),
+    };
     await this.redis.set(`customer-reset:${sha(resetToken)}`, JSON.stringify(ticket), 'EX', ttl);
     await this.audit.record({
       action: AuditAction.CUSTOMER_RECOVERY_VERIFIED,
@@ -302,15 +340,32 @@ export class CustomerAuthService {
       this.credentials.hashPassword(newPassword),
       this.credentials.newRecoveryCode(),
     ]);
-    // Conditional update makes the recovery code single-use even with parallel reset tokens.
-    const updated = await this.prisma.user.updateMany({
-      where: { id: ticket.userId, status: 'ACTIVE', recoveryCodeHash: ticket.recoveryCodeHash },
-      data: {
-        passwordHash,
-        passwordChangedAt: new Date(),
-        recoveryCodeHash: recovery.hash,
-        recoveryCodeCreatedAt: new Date(),
-      },
+    // Conditional updates make the recovery code (and a support grant) single-use even with
+    // parallel reset tokens; both happen in one transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (ticket.grantId) {
+        const consumed = await tx.accountRecoveryGrant.updateMany({
+          where: {
+            id: ticket.grantId,
+            userId: ticket.userId,
+            usedAt: null,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          data: { usedAt: new Date() },
+        });
+        if (consumed.count !== 1) return { count: 0 };
+      }
+      return tx.user.updateMany({
+        where: { id: ticket.userId, status: 'ACTIVE', recoveryCodeHash: ticket.recoveryCodeHash },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          recoveryCodeHash: recovery.hash,
+          recoveryCodeCreatedAt: new Date(),
+          recoveryCodeAcknowledgedAt: null,
+        },
+      });
     });
     if (updated.count !== 1)
       throw new AppException(
@@ -322,13 +377,24 @@ export class CustomerAuthService {
     await this.tokens.revokeAll(ticket.userId);
     await this.recentAuth.revokeAll('customer', ticket.userId);
     await this.audit.record({
-      action: AuditAction.CUSTOMER_PASSWORD_RESET,
+      action: ticket.grantId
+        ? AuditAction.CUSTOMER_RECOVERY_GRANT_USED
+        : AuditAction.CUSTOMER_PASSWORD_RESET,
       entityType: 'user',
       entityId: ticket.userId,
       userId: ticket.userId,
       ipHash: meta.ipHash,
-      metadata: { sessionsRevoked: true, recoveryCodeRotated: true },
+      metadata: {
+        sessionsRevoked: true,
+        recoveryCodeRotated: true,
+        viaSupportGrant: !!ticket.grantId,
+      },
     });
+    await this.events.record(
+      ticket.userId,
+      ticket.grantId ? 'ACCOUNT_RECOVERY_GRANT_USED' : 'PASSWORD_RECOVERED',
+      meta,
+    );
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: ticket.userId } });
     return { session: await this.startSession(user, meta), recoveryCode: recovery.code };
   }
@@ -365,6 +431,10 @@ export class CustomerAuthService {
       ipHash: meta.ipHash,
       metadata: { otherSessionsRevoked: true },
     });
+    await this.events.record(user.id, 'PASSWORD_CHANGED', {
+      ...meta,
+      sessionId: customer.sessionId,
+    });
   }
 
   /** Replaces the recovery code (requires the password). The new code is returned once. */
@@ -384,7 +454,11 @@ export class CustomerAuthService {
     const recovery = await this.credentials.newRecoveryCode();
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { recoveryCodeHash: recovery.hash, recoveryCodeCreatedAt: new Date() },
+      data: {
+        recoveryCodeHash: recovery.hash,
+        recoveryCodeCreatedAt: new Date(),
+        recoveryCodeAcknowledgedAt: null,
+      },
     });
     await this.audit.record({
       action: AuditAction.CUSTOMER_RECOVERY_CODE_ROTATED,
@@ -393,7 +467,24 @@ export class CustomerAuthService {
       userId: user.id,
       ipHash: meta.ipHash,
     });
+    await this.events.record(user.id, 'RECOVERY_CODE_ROTATED', {
+      ...meta,
+      sessionId: customer.sessionId,
+    });
     return { recoveryCode: recovery.code };
+  }
+
+  /** The customer confirmed saving the current recovery code ("I saved this recovery code"). */
+  async acknowledgeRecoveryCode(customer: AuthenticatedCustomer, meta: RequestMeta): Promise<void> {
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: customer.id, recoveryCodeHash: { not: null }, recoveryCodeAcknowledgedAt: null },
+      data: { recoveryCodeAcknowledgedAt: new Date() },
+    });
+    if (count === 1)
+      await this.events.record(customer.id, 'RECOVERY_CODE_ACKNOWLEDGED', {
+        ...meta,
+        sessionId: customer.sessionId,
+      });
   }
 
   async refresh(rawToken: string, meta: RequestMeta): Promise<CustomerSession> {
@@ -435,6 +526,24 @@ export class CustomerAuthService {
       ipHash: meta.ipHash,
       metadata: { scope: 'all' },
     });
+    await this.events.record(customer.id, 'ALL_SESSIONS_REVOKED', meta);
+  }
+
+  /** Signs out every other device; this session stays signed in. */
+  async revokeOtherSessions(customer: AuthenticatedCustomer, meta: RequestMeta): Promise<void> {
+    await this.tokens.revokeAllExcept(customer.id, customer.sessionId);
+    await this.audit.record({
+      action: AuditAction.CUSTOMER_SESSIONS_REVOKED,
+      entityType: 'user',
+      entityId: customer.id,
+      userId: customer.id,
+      ipHash: meta.ipHash,
+      metadata: { scope: 'others' },
+    });
+    await this.events.record(customer.id, 'ALL_SESSIONS_REVOKED', {
+      ...meta,
+      sessionId: customer.sessionId,
+    });
   }
 
   sessions(customer: AuthenticatedCustomer): Promise<CustomerSessionDto[]> {
@@ -455,6 +564,10 @@ export class CustomerAuthService {
       userId: customer.id,
       ipHash: meta.ipHash,
       metadata: { scope: 'one' },
+    });
+    await this.events.record(customer.id, 'SESSION_REVOKED', {
+      ...meta,
+      sessionId: customer.sessionId,
     });
   }
 
@@ -578,6 +691,8 @@ export class CustomerAuthService {
       ipHash: meta.ipHash,
       metadata: { failures: state.failures, knownAccount: userId !== null },
     });
+    if (state.locked && userId && kind === 'login')
+      await this.events.record(userId, 'LOGIN_FAILURE_THRESHOLD', meta);
     if (state.locked) {
       await this.audit.recordSafe({
         action:

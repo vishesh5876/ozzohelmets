@@ -5,9 +5,9 @@ human-readable Helmet ID (`HM-A8F3-KL92`), ≥128-bit QR token, Code128 barcode,
 activation PIN, serial number — bound to a model/SKU and a manufacturing batch. Customers activate
 and own helmets; first responders scan the QR code to see only what the owner chose to share.
 
-**Status: P1–P4 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
+**Status: P1–P5 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
 → email + password account) + emergency profile, ownership + lifecycle, warranty + product
-authenticity. Three surfaces only: Admin, Customer, public QR. See
+authenticity, and customer experience + admin support + security hardening. Three surfaces only: Admin, Customer, public QR. See
 [`docs/PHASES.md`](docs/PHASES.md).
 
 ```
@@ -109,6 +109,26 @@ add more helmets from **Add helmet** (PIN only, no new account). Change the acco
 5. **Emergency rule**: damaged and recalled helmets keep already-shared emergency information with
    a warning; lost, stolen, replaced and retired helmets show none.
 
+## Phase 5 walkthrough (customer experience, support, security)
+
+1. **Dashboard**: safety check (no emergency contact, sharing off on a helmet, lost/stolen/damaged,
+   recovery code not confirmed, warranty not registered…), profile completion %, security status,
+   recent account activity and quick actions.
+2. **Account**: account email, Customer ID, signed-in devices (sign out one, others, everywhere),
+   change password, recovery code status + rotation, activity, **Download your data** (JSON) and
+   **Request account deletion** (cancellable; reviewed by support, nothing erased automatically).
+3. **Admin → Customers**: search by Customer ID, Helmet ID, email or name; the support view shows
+   operational data only (never medical details). Suspend / lock / restore / sign out all sessions.
+   Suspension doesn't hide a rider's emergency information.
+4. **SUPER_ADMIN last resort**: Account Recovery Grant (admin password + reason + typed Customer ID)
+   → one-time `AR-…` credential handed over by phone → customer resets at `/recover` → all sessions
+   revoked, new recovery code shown once.
+5. **Admin → Privacy requests**, operations dashboard, helmet support summary, filterable audit log
+   and product-report triage.
+6. **Public page**: emergency information first, large call buttons, "Provided by helmet owner",
+   copy / print the approved information; repeated unknown-token lookups are rate-limited while
+   real scans keep working.
+
 ## Quality gates
 
 ```bash
@@ -140,6 +160,10 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
   identifier — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
 - **Per-helmet warranty**, server-computed dates, derived expiry, private content-validated proof
   of purchase, transfer inheritance without the previous owner's details — [WARRANTY](docs/WARRANTY.md)
+- **Customer support without medical access**, immediate session revocation, SUPER_ADMIN-only
+  recovery grants, privacy requests — [CUSTOMER-SUPPORT](docs/CUSTOMER-SUPPORT.md),
+  [ACCOUNT-RECOVERY](docs/ACCOUNT-RECOVERY.md), [PRIVACY-REQUESTS](docs/PRIVACY-REQUESTS.md),
+  [RBAC-MATRIX](docs/RBAC-MATRIX.md), [SECURITY-HARDENING](docs/SECURITY-HARDENING.md)
 - **No retail/distributor/inventory model** by design — [ADR-001](docs/ADR-001-no-retail-inventory.md)
 - **Product verification** that never claims more than "registered identity verified"; anonymous
   rate-limited product reports — [PRODUCT-AUTHENTICITY](docs/PRODUCT-AUTHENTICITY.md)
@@ -156,7 +180,8 @@ Open items are listed in [`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) · [Phase 4](docs/PHASE-4.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) · [Phase 4](docs/PHASE-4.md) · [Phase 5](docs/PHASE-5.md) ·
+[Customer support](docs/CUSTOMER-SUPPORT.md) · [Account recovery](docs/ACCOUNT-RECOVERY.md) · [Privacy requests](docs/PRIVACY-REQUESTS.md) · [RBAC matrix](docs/RBAC-MATRIX.md) · [Security hardening](docs/SECURITY-HARDENING.md) · [ADR-001](docs/ADR-001-no-retail-inventory.md) ·
 [Ownership](docs/OWNERSHIP.md) · [Transfer](docs/TRANSFER.md) · [Replacement](docs/REPLACEMENT.md) ·
 [Customer auth](docs/CUSTOMER-AUTH.md) · [Warranty](docs/WARRANTY.md) · [Product authenticity](docs/PRODUCT-AUTHENTICITY.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
 [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [API](docs/API.md) ·

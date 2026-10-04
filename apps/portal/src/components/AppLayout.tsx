@@ -5,7 +5,6 @@ import { useCustomerAuth } from '../lib/auth-context';
 const NAV = [
   { to: '/app', label: 'Dashboard', end: true },
   { to: '/app/helmets', label: 'My helmets' },
-  { to: '/activate', label: 'Add helmet' },
   { to: '/app/profile', label: 'Emergency profile' },
   { to: '/app/contacts', label: 'Emergency contacts' },
   { to: '/app/privacy', label: 'Privacy' },

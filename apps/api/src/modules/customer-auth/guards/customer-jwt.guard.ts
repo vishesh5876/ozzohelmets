@@ -5,6 +5,7 @@ import { ErrorCode } from '@helmet/types';
 import { AppConfigService } from '../../../config/app-config.service';
 import { AppException } from '../../../common/http/app.exception';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
+import { CustomerTokenService } from '../customer-token.service';
 import {
   type AuthenticatedCustomer,
   CUSTOMER_JWT_AUDIENCE,
@@ -13,7 +14,8 @@ import {
 
 /**
  * Verifies customer access tokens. Uses a different secret and audience from admin tokens, so a
- * token of one kind can never authenticate the other. Re-loads the user so suspension is immediate.
+ * token of one kind can never authenticate the other. Re-loads the user so suspension is immediate,
+ * and checks the session's revocation marker so a signed-out device loses access at once.
  */
 @Injectable()
 export class CustomerJwtGuard implements CanActivate {
@@ -21,6 +23,7 @@ export class CustomerJwtGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
+    private readonly tokens: CustomerTokenService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,6 +45,12 @@ export class CustomerJwtGuard implements CanActivate {
       throw AppException.unauthorized();
     }
     if (payload.typ !== 'customer') throw AppException.unauthorized();
+    // A revoked session (signed out remotely, password reset, suspension…) stops immediately.
+    if (!payload.sid || (await this.tokens.isSessionRevoked(payload.sid)))
+      throw AppException.unauthorized(
+        ErrorCode.TOKEN_EXPIRED,
+        'Session ended. Please sign in again.',
+      );
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },

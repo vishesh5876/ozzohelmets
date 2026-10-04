@@ -24,4 +24,7 @@ export const keys = {
   readiness: ['emergency', 'readiness'] as const,
   preview: ['emergency', 'preview'] as const,
   sessions: ['sessions'] as const,
+  security: ['account', 'security'] as const,
+  activity: ['account', 'activity'] as const,
+  deletion: ['account', 'deletion'] as const,
 };

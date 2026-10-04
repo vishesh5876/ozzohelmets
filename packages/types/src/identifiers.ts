@@ -176,6 +176,26 @@ export function normalizeRecoveryCode(input: string): string | null {
   return RECOVERY_CODE_REGEX.test(formatted) ? formatted : null;
 }
 
+/**
+ * Support recovery credential (Account Recovery Grant): `AR-XXXX-XXXX-XXXX-XXXX`, 16 symbols
+ * ≈ 79 bits, single use, short TTL, issued only by a SUPER_ADMIN. Entered in the same field as a
+ * recovery code.
+ */
+export const RECOVERY_GRANT_PREFIX = 'AR';
+export const RECOVERY_GRANT_LENGTH = 16;
+export const RECOVERY_GRANT_REGEX =
+  /^AR-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
+
+/** Canonical `AR-XXXX-XXXX-XXXX-XXXX` (the `AR` prefix is required), or null. */
+export function normalizeRecoveryGrant(input: string): string | null {
+  const compact = input.trim().toUpperCase().replace(/[\s-]/g, '');
+  if (!compact.startsWith(RECOVERY_GRANT_PREFIX)) return null;
+  const body = compact.slice(RECOVERY_GRANT_PREFIX.length);
+  if (body.length !== RECOVERY_GRANT_LENGTH) return null;
+  const formatted = `${RECOVERY_GRANT_PREFIX}-${body.slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}-${body.slice(12, 16)}`;
+  return RECOVERY_GRANT_REGEX.test(formatted) ? formatted : null;
+}
+
 /** Ownership transfer code: `TR-XXXX-XXXX-XXXX`, 12 symbols ≈ 59.4 bits, single use, short TTL. */
 export const TRANSFER_CODE_PREFIX = 'TR';
 export const TRANSFER_CODE_LENGTH = 12;

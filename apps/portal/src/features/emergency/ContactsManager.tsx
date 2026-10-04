@@ -117,9 +117,14 @@ export function ContactsManager() {
     <div className="flex flex-col gap-4">
       {contacts.length === 0 && editing !== 'new' && (
         <p className="rounded-xl border border-dashed border-hairline p-5 text-body">
+          <span className="block font-bold text-ink">Add someone responders can call</span>
           No emergency contacts yet. Add at least one — we recommend two.
         </p>
       )}
+      <p className="text-sm text-body">
+        Responders see these as “Provided by helmet owner”. Numbers are not verified — check them
+        carefully. Contact 1 is called first; use the arrows to change the order.
+      </p>
       <ol className="flex flex-col gap-3">
         {contacts.map((c, i) =>
           editing === c.id ? (

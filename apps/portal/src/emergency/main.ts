@@ -3,11 +3,12 @@
  * dependencies, DOM built only through textContent/attributes (never innerHTML with data), so it
  * loads fast on poor connections and owner-supplied text can never inject markup.
  */
-import type {
-  PublicEmergencyContactDto,
-  PublicEmergencyDto,
-  PublicEmergencyProfileDto,
-  PublicProductVerificationDto,
+import {
+  buildEmergencySummaryText,
+  type PublicEmergencyContactDto,
+  type PublicEmergencyDto,
+  type PublicEmergencyProfileDto,
+  type PublicProductVerificationDto,
 } from '@helmet/types';
 import './emergency.css';
 
@@ -131,6 +132,8 @@ function profileView(data: PublicEmergencyDto): Node[] {
       ),
     );
   nodes.push(listCard('Allergies', p.allergies, 'allergy'));
+  // Contacts come right after the most urgent medical facts: calling someone is the main action.
+  if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
   nodes.push(listCard('Medical conditions', p.medicalConditions));
   nodes.push(listCard('Medications', p.medications));
   if (p.emergencyNotes)
@@ -142,7 +145,6 @@ function profileView(data: PublicEmergencyDto): Node[] {
         h('p', { class: 'notes' }, p.emergencyNotes),
       ),
     );
-  if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
   if (nodes.every((n) => !n))
     nodes.push(
       messageCard('Emergency profile', 'The owner has chosen not to share details publicly.'),
@@ -157,7 +159,43 @@ function profileView(data: PublicEmergencyDto): Node[] {
     ),
     h('p', { class: 'disclaimer' }, data.message),
   );
+  const summary = buildEmergencySummaryText(data);
+  if (summary) nodes.push(summaryActions(summary));
   return nodes.filter((n): n is Node => n instanceof Node);
+}
+
+/** Copy / print the approved information only (built from the public DTO, nothing hidden). */
+function summaryActions(summary: string): HTMLElement {
+  const status = h('p', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+  const copy = h(
+    'button',
+    { class: 'btn btn-secondary', type: 'button' },
+    'Copy medical information',
+  );
+  copy.addEventListener('click', () => {
+    const done = () => (status.textContent = 'Copied. Paste it into a message or note.');
+    const fallback = () => {
+      const area = h('textarea', { readonly: 'true', class: 'copy-fallback', rows: '8' });
+      area.value = summary;
+      status.replaceChildren('Select and copy the text below:', area);
+      area.select();
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(summary).then(done, fallback);
+    else fallback();
+  });
+  const print = h(
+    'button',
+    { class: 'btn btn-secondary', type: 'button' },
+    'Print emergency information',
+  );
+  print.addEventListener('click', () => window.print());
+  return h(
+    'section',
+    { class: 'actions no-print', 'aria-label': 'Share this information' },
+    copy,
+    print,
+    status,
+  );
 }
 
 function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
@@ -165,6 +203,7 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
     'section',
     { class: 'card strong' },
     h('h3', {}, 'Emergency Contact'),
+    h('p', { class: 'muted' }, 'Provided by helmet owner'),
     ...contacts.map((c, i) =>
       h(
         'div',
@@ -277,14 +316,14 @@ function render(token: string, result: Lookup | null): void {
     main.append(
       messageCard(
         'QR code not recognised',
-        'This code is not registered with Helmet ID. If this helmet carries our label, it may not be genuine.',
+        'We couldn’t find this code. It may be damaged or mistyped. In an emergency, call the number below.',
       ),
     );
   } else if (result.kind === 'rate-limited') {
     main.append(
       messageCard(
         'Please wait a moment',
-        'Too many requests from this network. Try again in a minute.',
+        'Too many requests from this network. Try again in a minute. In an emergency, call the number below.',
       ),
     );
   } else {
@@ -299,7 +338,11 @@ function render(token: string, result: Lookup | null): void {
         'section',
         { class: 'card', role: 'alert' },
         h('h2', {}, 'Couldn’t load information'),
-        h('p', { class: 'lead' }, 'Check your connection and try again.'),
+        h(
+          'p',
+          { class: 'lead' },
+          'This may be a temporary problem. Check your connection and try again. In an emergency, call the number below.',
+        ),
         retry,
       ),
     );
@@ -312,7 +355,7 @@ function render(token: string, result: Lookup | null): void {
 function verifyLink(token: string): HTMLElement {
   return h(
     'p',
-    { class: 'muted', style: 'text-align:center;margin-top:8px' },
+    { class: 'muted no-print', style: 'text-align:center;margin-top:8px' },
     h('a', { href: `/verify/${encodeURIComponent(token)}` }, 'Verify product identity'),
   );
 }

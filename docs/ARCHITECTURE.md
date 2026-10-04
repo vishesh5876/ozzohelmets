@@ -259,3 +259,14 @@ customer-auth     ─► identifiers (`parseAccountIdentifier` / `normalizeEmail
 | 37  | **No retail/distributor/inventory model** ([ADR-001](./ADR-001-no-retail-inventory.md)) | The PIN already proves possession; a sale gate added a partner realm and app without improving safety.                               |
 | 38  | **Email bound at first activation, unique on a normalised key**                         | Familiar sign-in; partial unique index added by a new migration, duplicates never merged; email never treated as proof of ownership. |
 | 39  | **Recovery stays offline (recovery code)**                                              | No mail provider dependency; an emailed reset link can be added later as a second path through the same reset-token step.            |
+
+## Phase 5 decisions
+
+| #   | Decision                                            | Rationale                                                                                                   |
+| --- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 40  | **Auth state ≠ QR availability**                    | Suspending a rider must not hide safety-critical emergency information; only deletion switches sharing off. |
+| 41  | **Redis revocation markers per token family**       | Immediate session kill without a DB lookup per request and without racing refresh rotation.                 |
+| 42  | **Separate `customer_security_events` table**       | Customer-visible activity with its own retention and redaction, independent of the admin audit log.         |
+| 43  | **Recovery grant through the normal recovery flow** | One reset path, one set of lockouts; the grant is just a second kind of one-time credential.                |
+| 44  | **Deletion requests without erasure**               | Workflow and audit now; destructive steps wait for retention rules.                                         |
+| 45  | **Abuse controls count misses, not scans**          | Genuine QR scans never miss; enumeration does. Keeps emergency access highly available.                     |

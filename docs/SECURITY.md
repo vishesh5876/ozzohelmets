@@ -289,3 +289,19 @@ Details: [`CUSTOMER-AUTH.md`](./CUSTOMER-AUTH.md#customer-id-phase-4), [`WARRANT
   recent admin password confirmation.
 - **Audit (no secrets or documents):** `warranty.registered|updated|voided|restored|proof_uploaded|proof_viewed|proof_removed`,
   `product_report.created|status_changed`; `customer.created` carries the Customer ID.
+
+## 15. Phase 5 — support, privacy & hardening
+
+Summary (details in [SECURITY-HARDENING](SECURITY-HARDENING.md), [ACCOUNT-RECOVERY](ACCOUNT-RECOVERY.md),
+[PRIVACY-REQUESTS](PRIVACY-REQUESTS.md), [RBAC-MATRIX](RBAC-MATRIX.md)):
+
+- Session revocation is immediate (Redis marker per token family checked by `CustomerJwtGuard`).
+- Only a "Browser on OS" summary is stored per session/security event; security events never hold
+  raw IPs or secrets; retention is configurable.
+- Suspension/lock block sign-in and revoke sessions but leave emergency QR information available.
+- The last-resort Account Recovery Grant is SUPER_ADMIN-only, re-authenticated, confirmed, hashed,
+  single-use, short-lived, audited and never emailed.
+- Admin views use Customer IDs and never return medical data, contact details, hashes or tokens;
+  customer views are audited; audit metadata is redacted by key.
+- Public QR abuse controls count only misses (unknown/malformed tokens) per IP HMAC with a global
+  burst mode; cached emergency pages keep being served; no CAPTCHA.

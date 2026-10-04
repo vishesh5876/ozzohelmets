@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { type CustomerSessionDto, ErrorCode } from '@helmet/types';
+import type Redis from 'ioredis';
+import { type CustomerSessionDto, ErrorCode, summarizeUserAgent } from '@helmet/types';
+import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
@@ -24,6 +26,7 @@ export class CustomerTokenService {
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     const table = prisma.customerRefreshToken;
     const store: RefreshTokenStore = {
@@ -47,7 +50,8 @@ export class CustomerTokenService {
             familyId: d.familyId,
             tokenHash: d.tokenHash,
             expiresAt: d.expiresAt,
-            userAgent: d.userAgent,
+            // Only a coarse "Browser on OS" summary is stored — no full user-agent string.
+            userAgent: summarizeUserAgent(d.userAgent),
             ipHash: d.ipHash,
           },
           select: { id: true },
@@ -61,16 +65,20 @@ export class CustomerTokenService {
         ).count === 1,
       setReplacedBy: async (id, replacedBy) =>
         void (await table.update({ where: { id }, data: { replacedBy } })),
-      revokeFamily: async (familyId) =>
-        void (await table.updateMany({
+      revokeFamily: async (familyId) => {
+        await table.updateMany({
           where: { familyId, revokedAt: null },
           data: { revokedAt: new Date() },
-        })),
-      revokeAllForSubject: async (userId) =>
-        void (await table.updateMany({
+        });
+        await this.markRevoked([familyId]);
+      },
+      revokeAllForSubject: async (userId) => {
+        await this.markRevoked(await this.liveFamilies(userId));
+        await table.updateMany({
           where: { userId, revokedAt: null },
           data: { revokedAt: new Date() },
-        })),
+        });
+      },
     };
     this.rotator = new RefreshTokenRotator(
       store,
@@ -138,6 +146,46 @@ export class CustomerTokenService {
     return this.rotator.revokeAllForSubject(userId);
   }
 
+  /**
+   * Access tokens are stateless for 15 minutes, so revoking a session also writes a short-lived
+   * Redis marker (TTL = access-token lifetime) that `CustomerJwtGuard` checks on every request.
+   * This keeps revocation immediate without racing refresh-token rotation.
+   */
+  private async markRevoked(familyIds: string[]): Promise<void> {
+    if (familyIds.length === 0) return;
+    const ttl = this.config.get('JWT_CUSTOMER_ACCESS_TTL_SECONDS') + 5;
+    const pipeline = this.redis.pipeline();
+    for (const id of familyIds) pipeline.set(`customer-session-revoked:${id}`, '1', 'EX', ttl);
+    await pipeline.exec();
+  }
+
+  async isSessionRevoked(familyId: string): Promise<boolean> {
+    return (await this.redis.exists(`customer-session-revoked:${familyId}`)) === 1;
+  }
+
+  private async liveFamilies(userId: string, exceptFamilyId?: string): Promise<string[]> {
+    const rows = await this.prisma.customerRefreshToken.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(exceptFamilyId ? { familyId: { not: exceptFamilyId } } : {}),
+      },
+      select: { familyId: true },
+      distinct: ['familyId'],
+    });
+    return rows.map((r) => r.familyId);
+  }
+
+  /** Number of active logins (token families). */
+  async activeSessionCount(userId: string): Promise<number> {
+    const rows = await this.prisma.customerRefreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { familyId: true },
+      distinct: ['familyId'],
+    });
+    return rows.length;
+  }
+
   /** One entry per active login (token family), newest token's metadata. */
   async sessions(userId: string, currentFamilyId: string): Promise<CustomerSessionDto[]> {
     const rows = await this.prisma.customerRefreshToken.findMany({
@@ -155,7 +203,8 @@ export class CustomerTokenService {
       if (byFamily.has(row.familyId)) continue;
       byFamily.set(row.familyId, {
         id: row.familyId,
-        userAgent: row.userAgent,
+        // Rows written before Phase 5 may hold a full UA string: summarise on read too.
+        device: summarizeUserAgent(row.userAgent),
         createdAt: (startedAt.get(row.familyId) ?? row.createdAt).toISOString(),
         lastUsedAt: row.createdAt.toISOString(),
         current: row.familyId === currentFamilyId,
@@ -166,6 +215,7 @@ export class CustomerTokenService {
 
   /** Revokes every session except the given one (after a password change). */
   async revokeAllExcept(userId: string, keepFamilyId: string): Promise<void> {
+    await this.markRevoked(await this.liveFamilies(userId, keepFamilyId));
     await this.prisma.customerRefreshToken.updateMany({
       where: { userId, revokedAt: null, familyId: { not: keepFamilyId } },
       data: { revokedAt: new Date() },
@@ -178,6 +228,7 @@ export class CustomerTokenService {
       where: { userId, familyId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (result.count > 0) await this.markRevoked([familyId]);
     return result.count > 0;
   }
 }

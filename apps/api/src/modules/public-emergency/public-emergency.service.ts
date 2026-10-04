@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import {
   ErrorCode,
@@ -31,6 +31,7 @@ import {
   PUBLIC_STATE_MESSAGES,
   toPublicState,
 } from './public-state';
+import { PublicAbuseService } from './public-abuse.service';
 
 /** Public lifecycle summary for the verification page (no personal data). */
 const VERIFY_LIFECYCLE: Record<
@@ -90,10 +91,11 @@ export class PublicEmergencyService {
     private readonly warranties: WarrantyService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     @Inject(FILE_STORAGE_PROVIDER) private readonly storage: FileStorageProvider,
+    private readonly abuse: PublicAbuseService,
   ) {}
 
   async resolve(token: string, scan: ScanContext): Promise<PublicEmergencyDto> {
-    const entry = await this.entry(token);
+    const entry = await this.entry(token, scan.ipHash);
     this.logScan(entry.helmetId, scan, ScanType.EMERGENCY_PAGE);
     return entry.dto;
   }
@@ -108,10 +110,14 @@ export class PublicEmergencyService {
       state: PublicProductVerificationState.NOT_VERIFIED,
       message: 'We could not verify this Helmet ID. Check the QR code or contact support.',
     };
-    if (!isValidPublicToken(token)) return notVerified;
+    if (!isValidPublicToken(token)) {
+      await this.abuse.recordMiss(scan.ipHash);
+      return notVerified;
+    }
     let dto = await this.cache.getVerification(token);
     let helmetId: string | null = null;
     if (!dto) {
+      await this.assertUncachedAllowed(scan.ipHash);
       const helmet = await this.prisma.helmet.findUnique({
         where: { publicToken: token },
         select: {
@@ -122,7 +128,10 @@ export class PublicEmergencyService {
           batch: { select: { batchCode: true, manufacturingDate: true } },
         },
       });
-      if (!helmet) return notVerified; // not cached: unknown tokens stay cheap to re-check
+      if (!helmet) {
+        await this.abuse.recordMiss(scan.ipHash);
+        return notVerified; // not cached: unknown tokens stay cheap to re-check
+      }
       helmetId = helmet.id;
       const lifecycle = VERIFY_LIFECYCLE[helmet.status];
       dto = {
@@ -154,23 +163,43 @@ export class PublicEmergencyService {
   }
 
   /** Photo is served only while the cached public view says it is visible. */
-  async photo(token: string): Promise<StoredFile> {
-    const entry = await this.entry(token);
+  async photo(token: string, ipHash: string | null): Promise<StoredFile> {
+    const entry = await this.entry(token, ipHash);
     const file = entry.photo ? await this.storage.get(entry.photo.key) : null;
     if (!file) throw AppException.notFound(ErrorCode.NOT_FOUND, 'No photo available.');
     return file;
   }
 
-  private async entry(token: string): Promise<CachedPublicHelmet> {
+  private async entry(token: string, ipHash: string | null): Promise<CachedPublicHelmet> {
     // Cheap rejection before touching cache/DB; same error as unknown tokens (no oracle).
-    if (!isValidPublicToken(token)) throw this.notFound();
+    if (!isValidPublicToken(token)) {
+      await this.abuse.recordMiss(ipHash);
+      throw this.notFound();
+    }
     let entry = await this.cache.get(token);
     if (!entry) {
+      await this.assertUncachedAllowed(ipHash);
       entry = await this.load(token);
-      if (!entry) throw this.notFound();
+      if (!entry) {
+        await this.abuse.recordMiss(ipHash);
+        throw this.notFound();
+      }
       await this.cache.set(token, entry);
     }
     return entry;
+  }
+
+  /** Cached helmets are always served; a flagged IP gets only a small uncached allowance. */
+  private async assertUncachedAllowed(ipHash: string | null): Promise<void> {
+    if (!(await this.abuse.isFlagged(ipHash))) return;
+    const decision = await this.abuse.allowUncached(ipHash);
+    if (!decision.allowed)
+      throw new AppException(
+        ErrorCode.RATE_LIMITED,
+        'Too many requests. Please wait a moment and try again.',
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retryAfter: decision.retryAfter },
+      );
   }
 
   private async load(token: string): Promise<CachedPublicHelmet | null> {

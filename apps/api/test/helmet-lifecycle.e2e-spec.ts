@@ -313,7 +313,8 @@ describe('Helmet lifecycle, support actions & replacement (e2e)', () => {
 
       const r3 = await reauth(ctx, c.token, 'a whole new passphrase');
       await ctx.http().post('/api/v1/customer/auth/logout-all').set(bearer(c.token)).expect(200);
-      await act(c.token, c.helmet.id, 'stolen', r3).expect(403);
+      // Phase 5: signing out everywhere also ends the live access token itself.
+      await act(c.token, c.helmet.id, 'stolen', r3).expect(401);
       // A token is useless for another customer.
       const other = await newCustomer(ctx);
       await act(other.token, other.helmet.id, 'stolen', r3).expect(403);

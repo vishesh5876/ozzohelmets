@@ -40,8 +40,12 @@ export class PublicEmergencyController {
   @Get(':token/photo')
   @RawResponse()
   @ApiOperation({ summary: 'Owner photo, only while the owner has made it publicly visible.' })
-  async photo(@Param('token') token: string, @Res() res: Response): Promise<void> {
-    const file = await this.service.photo(token);
+  async photo(
+    @Param('token') token: string,
+    @ReqMeta() meta: RequestMeta,
+    @Res() res: Response,
+  ): Promise<void> {
+    const file = await this.service.photo(token, meta.ipHash);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.setHeader('X-Content-Type-Options', 'nosniff');

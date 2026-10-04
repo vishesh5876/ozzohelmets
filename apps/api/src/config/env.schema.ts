@@ -92,6 +92,14 @@ export const envSchema = z
     RECOVERY_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(10),
     RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+    // Phase 5: support recovery grants, security-event retention, public abuse controls.
+    RECOVERY_GRANT_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
+    SECURITY_EVENT_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
+    PUBLIC_MISS_LIMIT_PER_IP: z.coerce.number().int().min(5).max(10_000).default(30),
+    PUBLIC_MISS_WINDOW_SECONDS: z.coerce.number().int().min(60).max(86_400).default(600),
+    PUBLIC_UNCACHED_LIMIT_WHEN_FLAGGED: z.coerce.number().int().min(1).max(1000).default(10),
+    PUBLIC_GLOBAL_MISS_LIMIT_PER_MINUTE: z.coerce.number().int().min(10).default(3000),
+    HELMET_HIGH_SCAN_THRESHOLD_24H: z.coerce.number().int().min(1).default(50),
     /** Sensitive actions (transfer, stolen, retire, …) require a password re-check this recent. */
     RECENT_AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(300),
     TRANSFER_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
@@ -141,7 +149,7 @@ export const envSchema = z
     THROTTLE_WINDOW_SECONDS: z.coerce.number().int().min(1).default(60),
     THROTTLE_DEFAULT_LIMIT: z.coerce.number().int().min(1).default(300),
     THROTTLE_AUTH_LIMIT: z.coerce.number().int().min(1).default(10),
-    THROTTLE_PUBLIC_LIMIT: z.coerce.number().int().min(1).default(120),
+    THROTTLE_PUBLIC_LIMIT: z.coerce.number().int().min(1).default(300),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

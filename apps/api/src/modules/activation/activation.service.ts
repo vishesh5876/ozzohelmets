@@ -1,3 +1,4 @@
+import { SecurityEventsService } from '../customer-security/security-events.service';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   ACTIVATION_PIN_ALPHABET,
@@ -78,6 +79,7 @@ export class ActivationService {
     private readonly credentials: CustomerCredentialsService,
     private readonly accounts: CustomerAccountsService,
     private readonly config: AppConfigService,
+    private readonly events: SecurityEventsService,
   ) {}
 
   /**
@@ -254,6 +256,7 @@ export class ActivationService {
       throw err;
     }
     if (!outcome.ok) return this.failed(meta, actingUser, outcome.lockedUntil);
+    await this.events.record(outcome.userId, 'HELMET_ACTIVATED', meta);
     return { userId: outcome.userId, publicToken: outcome.publicToken };
   }
 

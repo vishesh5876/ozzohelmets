@@ -47,6 +47,19 @@ const ProductReportsPage = lazy(() =>
     default: m.ProductReportsPage,
   })),
 );
+const CustomersPage = lazy(() =>
+  import('./features/customers/CustomersPage').then((m) => ({ default: m.CustomersPage })),
+);
+const CustomerDetailPage = lazy(() =>
+  import('./features/customers/CustomerDetailPage').then((m) => ({
+    default: m.CustomerDetailPage,
+  })),
+);
+const PrivacyRequestsPage = lazy(() =>
+  import('./features/privacy/PrivacyRequestsPage').then((m) => ({
+    default: m.PrivacyRequestsPage,
+  })),
+);
 const RolesPage = lazy(() =>
   import('./features/roles/RolesPage').then((m) => ({ default: m.RolesPage })),
 );
@@ -115,6 +128,30 @@ export function App() {
           element={
             <Guard permission={Permission.BATCHES_READ}>
               <BatchDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="customers"
+          element={
+            <Guard permission={Permission.CUSTOMERS_READ}>
+              <CustomersPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="customers/:customerId"
+          element={
+            <Guard permission={Permission.CUSTOMERS_READ}>
+              <CustomerDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="privacy-requests"
+          element={
+            <Guard permission={Permission.PRIVACY_REQUESTS_VIEW}>
+              <PrivacyRequestsPage />
             </Guard>
           }
         />

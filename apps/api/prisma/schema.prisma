@@ -61,7 +61,54 @@ enum BatchPrintStatus {
 enum UserStatus {
   ACTIVE
   SUSPENDED
+  /// Admin security lock (e.g. suspected takeover). Brute-force lockouts stay temporary in Redis.
+  LOCKED
   DELETED
+}
+
+enum CustomerSecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE_THRESHOLD
+  PASSWORD_CHANGED
+  EMAIL_CHANGED
+  RECOVERY_CODE_ROTATED
+  RECOVERY_CODE_ACKNOWLEDGED
+  PASSWORD_RECOVERED
+  SESSION_REVOKED
+  ALL_SESSIONS_REVOKED
+  ACCOUNT_RECOVERY_GRANT_ISSUED
+  ACCOUNT_RECOVERY_GRANT_USED
+  HELMET_ACTIVATED
+  HELMET_TRANSFERRED_OUT
+  HELMET_RECEIVED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_LOCKED
+  ACCOUNT_RESTORED
+  ACCOUNT_DELETED
+  DATA_EXPORTED
+  DELETION_REQUESTED
+  DELETION_CANCELLED
+}
+
+enum AccountDeletionStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ProductReportPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum ProductReportEventType {
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  ASSIGNED
+  NOTE
 }
 
 enum OwnershipStatus {
@@ -195,11 +242,15 @@ model AdminUser {
   createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  refreshTokens  AdminRefreshToken[]
-  auditLogs      AuditLog[]
-  createdBatches HelmetBatch[]
-  replacements   HelmetReplacement[]
-  productReports ProductReport[]
+  refreshTokens            AdminRefreshToken[]
+  auditLogs                AuditLog[]
+  createdBatches           HelmetBatch[]
+  replacements             HelmetReplacement[]
+  productReports           ProductReport[]
+  assignedReports          ProductReport[]          @relation("ProductReportAssignee")
+  productReportEvents      ProductReportEvent[]
+  recoveryGrantsIssued     AccountRecoveryGrant[]
+  deletionRequestsReviewed AccountDeletionRequest[]
 
   @@map("admin_users")
 }
@@ -232,28 +283,33 @@ model AdminRefreshToken {
 /// mobile are optional, owner-provided and UNVERIFIED (never used for auth or recovery, hence
 /// not unique).
 model User {
-  id                    String     @id @default(uuid(7)) @db.Uuid
+  id                         String     @id @default(uuid(7)) @db.Uuid
   /// Permanent public Customer ID (`CU-XXXX-XXXY`, check symbol). Not a secret; never changes.
-  customerCode          String     @unique @map("customer_code") @db.VarChar(16)
-  name                  String?    @db.VarChar(120)
+  customerCode               String     @unique @map("customer_code") @db.VarChar(16)
+  name                       String?    @db.VarChar(120)
   /// Account email as entered (domain lowercased). Sign-in identifier; NOT proof of ownership.
-  email                 String?    @db.VarChar(254)
+  email                      String?    @db.VarChar(254)
   /// Canonical lookup key (whole address lowercased, no dot/plus stripping). Unique among
   /// non-DELETED accounts via a partial unique index in SQL. NULL with a non-NULL `email`
   /// marks a legacy duplicate that must be resolved by support (see docs/DATABASE.md).
-  emailNormalized       String?    @map("email_normalized") @db.VarChar(254)
-  mobile                String?    @db.VarChar(20)
-  passwordHash          String?    @map("password_hash")
-  passwordChangedAt     DateTime?  @map("password_changed_at") @db.Timestamptz(3)
+  emailNormalized            String?    @map("email_normalized") @db.VarChar(254)
+  mobile                     String?    @db.VarChar(20)
+  passwordHash               String?    @map("password_hash")
+  passwordChangedAt          DateTime?  @map("password_changed_at") @db.Timestamptz(3)
   /// Argon2id (peppered) hash of the offline recovery code; the plaintext is shown once.
-  recoveryCodeHash      String?    @map("recovery_code_hash")
-  recoveryCodeCreatedAt DateTime?  @map("recovery_code_created_at") @db.Timestamptz(3)
-  mobileVerified        Boolean    @default(false) @map("mobile_verified")
-  emailVerified         Boolean    @default(false) @map("email_verified")
-  status                UserStatus @default(ACTIVE)
-  lastLoginAt           DateTime?  @map("last_login_at") @db.Timestamptz(3)
-  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  recoveryCodeHash           String?    @map("recovery_code_hash")
+  recoveryCodeCreatedAt      DateTime?  @map("recovery_code_created_at") @db.Timestamptz(3)
+  /// When the customer confirmed saving the current recovery code (NULL = not confirmed yet).
+  recoveryCodeAcknowledgedAt DateTime?  @map("recovery_code_acknowledged_at") @db.Timestamptz(3)
+  mobileVerified             Boolean    @default(false) @map("mobile_verified")
+  emailVerified              Boolean    @default(false) @map("email_verified")
+  status                     UserStatus @default(ACTIVE)
+  statusChangedAt            DateTime?  @map("status_changed_at") @db.Timestamptz(3)
+  /// Internal support note for the last status change (never shown to the customer).
+  statusReason               String?    @map("status_reason") @db.VarChar(300)
+  lastLoginAt                DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt                  DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   ownerships           HelmetOwnership[]
   auditLogs            AuditLog[]
@@ -265,7 +321,11 @@ model User {
   warrantiesRegistered HelmetWarranty[]         @relation("WarrantyRegisteredBy")
   transfersFrom        HelmetTransfer[]         @relation("TransferFrom")
   transfersTo          HelmetTransfer[]         @relation("TransferTo")
+  securityEvents       CustomerSecurityEvent[]
+  recoveryGrants       AccountRecoveryGrant[]
+  deletionRequests     AccountDeletionRequest[]
 
+  @@index([status, createdAt])
   @@map("users")
 }
 
@@ -644,25 +704,114 @@ model WarrantyHistory {
 
 /// Public "report a problem with this product" submissions (no account required).
 model ProductReport {
-  id                String              @id @default(uuid(7)) @db.Uuid
-  helmetId          String?             @map("helmet_id") @db.Uuid
-  publicToken       String?             @map("public_token") @db.VarChar(32)
+  id                String                @id @default(uuid(7)) @db.Uuid
+  helmetId          String?               @map("helmet_id") @db.Uuid
+  publicToken       String?               @map("public_token") @db.VarChar(32)
   reason            ProductReportReason
-  description       String?             @db.VarChar(1000)
-  contactEmail      String?             @map("contact_email") @db.VarChar(254)
-  status            ProductReportStatus @default(OPEN)
-  ipHash            String?             @map("ip_hash") @db.Char(64)
-  reviewedByAdminId String?             @map("reviewed_by_admin_id") @db.Uuid
-  resolutionNote    String?             @map("resolution_note") @db.VarChar(500)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  description       String?               @db.VarChar(1000)
+  contactEmail      String?               @map("contact_email") @db.VarChar(254)
+  status            ProductReportStatus   @default(OPEN)
+  priority          ProductReportPriority @default(NORMAL)
+  assignedAdminId   String?               @map("assigned_admin_id") @db.Uuid
+  ipHash            String?               @map("ip_hash") @db.Char(64)
+  reviewedByAdminId String?               @map("reviewed_by_admin_id") @db.Uuid
+  resolutionNote    String?               @map("resolution_note") @db.VarChar(500)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmet     Helmet?    @relation(fields: [helmetId], references: [id], onDelete: SetNull)
-  reviewedBy AdminUser? @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  helmet     Helmet?              @relation(fields: [helmetId], references: [id], onDelete: SetNull)
+  reviewedBy AdminUser?           @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  assignee   AdminUser?           @relation("ProductReportAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  events     ProductReportEvent[]
 
   @@index([status, createdAt])
   @@index([helmetId])
+  @@index([assignedAdminId, status])
   @@map("product_reports")
+}
+
+/// Internal triage history of a product report: status/priority/assignment changes and internal
+/// notes. Separate from the reporter's public text; never shown publicly.
+model ProductReportEvent {
+  id        String                 @id @default(uuid(7)) @db.Uuid
+  reportId  String                 @map("report_id") @db.Uuid
+  adminId   String?                @map("admin_id") @db.Uuid
+  type      ProductReportEventType
+  fromValue String?                @map("from_value") @db.VarChar(40)
+  toValue   String?                @map("to_value") @db.VarChar(40)
+  note      String?                @db.VarChar(1000)
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  report ProductReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  admin  AdminUser?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+  @@map("product_report_events")
+}
+
+// ─────────────────────────────── Customer security & privacy ───────────────────────────────
+
+/// Customer-facing security activity (login, password/email changes, sessions, recovery). No raw
+/// IP (keyed HMAC only), coarse user-agent summary only. Retention: SECURITY_EVENT_RETENTION_DAYS.
+model CustomerSecurityEvent {
+  id               String                    @id @default(uuid(7)) @db.Uuid
+  userId           String                    @map("user_id") @db.Uuid
+  type             CustomerSecurityEventType
+  sessionId        String?                   @map("session_id") @db.Uuid
+  ipHash           String?                   @map("ip_hash") @db.Char(64)
+  userAgentSummary String?                   @map("user_agent_summary") @db.VarChar(60)
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([createdAt])
+  @@map("customer_security_events")
+}
+
+/// Last-resort support recovery credential issued by a SUPER_ADMIN. Only an Argon2id hash is
+/// stored; single use (`used_at`), short-lived (`expires_at`). At most one open grant per user.
+model AccountRecoveryGrant {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  credentialHash  String    @map("credential_hash")
+  issuedByAdminId String?   @map("issued_by_admin_id") @db.Uuid
+  reason          String    @db.VarChar(500)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt          DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuedBy AdminUser? @relation(fields: [issuedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("account_recovery_grants")
+}
+
+/// Customer privacy request to delete the account. Never executed automatically; reviewed and
+/// completed by a SUPER_ADMIN. At most one open (REQUESTED/APPROVED) request per user.
+model AccountDeletionRequest {
+  id                String                @id @default(uuid(7)) @db.Uuid
+  userId            String                @map("user_id") @db.Uuid
+  status            AccountDeletionStatus @default(REQUESTED)
+  reason            String?               @db.VarChar(500)
+  reviewNote        String?               @map("review_note") @db.VarChar(500)
+  requestedAt       DateTime              @default(now()) @map("requested_at") @db.Timestamptz(3)
+  reviewedAt        DateTime?             @map("reviewed_at") @db.Timestamptz(3)
+  reviewedByAdminId String?               @map("reviewed_by_admin_id") @db.Uuid
+  completedAt       DateTime?             @map("completed_at") @db.Timestamptz(3)
+  cancelledAt       DateTime?             @map("cancelled_at") @db.Timestamptz(3)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy AdminUser? @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, requestedAt])
+  @@index([userId])
+  @@map("account_deletion_requests")
 }
 
 // ─────────────────────────────── Telemetry & audit ───────────────────────────────

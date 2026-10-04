@@ -138,9 +138,19 @@ const NAV: NavSection[] = [
         icon: <Flag className={ICON} />,
         permission: Permission.PRODUCT_REPORT_VIEW,
       },
-      { label: 'Customers', icon: <Users className={ICON} />, soon: true },
+      {
+        label: 'Customers',
+        to: '/customers',
+        icon: <Users className={ICON} />,
+        permission: Permission.CUSTOMERS_READ,
+      },
+      {
+        label: 'Privacy requests',
+        to: '/privacy-requests',
+        icon: <LifeBuoy className={ICON} />,
+        permission: Permission.PRIVACY_REQUESTS_VIEW,
+      },
       { label: 'Analytics', icon: <BarChart3 className={ICON} />, soon: true },
-      { label: 'Support', icon: <LifeBuoy className={ICON} />, soon: true },
     ],
   },
   {

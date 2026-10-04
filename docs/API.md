@@ -213,6 +213,49 @@ No OTP/SMS/email-verification endpoints and no partner, dealer, distributor, org
 inventory endpoints ([ADR-001](ADR-001-no-retail-inventory.md)); an integration test asserts the
 OpenAPI document contains none.
 
-## Planned (P5+)
+## Phase 5 — customer account, support, privacy
 
-Warranty claims, label printing, admin customer lookup.
+Customer (Bearer; scoped to the caller):
+
+| Method              | Path                                       | Notes                                                                                           |
+| ------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| GET                 | `/customer/dashboard`                      | + `completion`, `health[]`, `security`, `warranty`, `recentActivity[]`                          |
+| GET                 | `/customer/account/security`               | recovery-code status, active sessions, password age (no secrets)                                |
+| GET                 | `/customer/account/activity?limit=`        | own security events (type, label, device, time)                                                 |
+| GET                 | `/customer/account/export`                 | `X-Recent-Auth`; JSON attachment of the customer's own data                                     |
+| GET / POST / DELETE | `/customer/account/deletion-request`       | POST needs `X-Recent-Auth` (`{ reason? }`) → 201; DELETE cancels; 409 `DELETION_REQUEST_EXISTS` |
+| POST                | `/customer/auth/recovery-code/acknowledge` | "I saved this recovery code"                                                                    |
+| POST                | `/customer/auth/sessions/revoke-others`    | sign out every other device                                                                     |
+| GET                 | `/customer/auth/sessions`                  | items now `{ id, device, createdAt, lastUsedAt, current }` (no raw user agent)                  |
+
+`POST /customer/auth/recover` also accepts a support Account Recovery Grant (`AR-…`) in
+`recoveryCode`.
+
+Admin (permission in brackets — full map in [RBAC-MATRIX](RBAC-MATRIX.md)):
+
+| Method        | Path                                                                                             | Notes                                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET           | `/admin/customers?q=&status=&page=&pageSize=`                                                    | [`customers:read`] search; 400 if a partial query is < 3 chars                                                                                   |
+| GET           | `/admin/customers/:customerId`                                                                   | [`customers:read`] operational summary; audited                                                                                                  |
+| POST          | `/admin/customers/:customerId/status` `{ action: SUSPEND\|LOCK\|RESTORE, reason }`               | [`customers:manage`] 409 `INVALID_STATUS_CHANGE`                                                                                                 |
+| POST          | `/admin/customers/:customerId/logout-all` `{ reason }`                                           | [`customers:manage`]                                                                                                                             |
+| POST          | `/admin/customers/:customerId/delete` `{ reason, confirmCustomerId }`                            | [`customers:delete`] `X-Recent-Auth`                                                                                                             |
+| POST / DELETE | `/admin/customers/:customerId/recovery-grants`                                                   | [`customer-recovery:grant`] POST `{ reason, confirmCustomerId }` + `X-Recent-Auth` → `{ credential, expiresAt }` once; 409 `CUSTOMER_NOT_ACTIVE` |
+| GET           | `/admin/customers/:customerId/security-events`, `/admin/security-events`                         | [`security-events:view`]                                                                                                                         |
+| GET           | `/admin/privacy-requests?status=`                                                                | [`privacy-requests:view`]                                                                                                                        |
+| POST          | `/admin/privacy-requests/:id/approve\|reject\|complete` `{ note? }`                              | [`privacy-requests:manage`]; complete needs `X-Recent-Auth`                                                                                      |
+| GET           | `/admin/dashboard/operations`                                                                    | [`dashboard:read`] counters; security events only with `security-events:view`                                                                    |
+| GET           | `/admin/product-reports?status=&priority=&assignee=me\|unassigned`, `/admin/product-reports/:id` | detail includes internal `events[]`                                                                                                              |
+| PATCH         | `/admin/product-reports/:id` `{ status?, priority?, assignedAdminId?, note?, internalNote? }`    | writes triage events                                                                                                                             |
+| GET           | `/admin/audit-logs?actorType=&action=&entityType=&adminId=&helmetCode=&customerId=&from=&to=`    | items add `label`, `actorType`, `customerId`; metadata redacted                                                                                  |
+
+`GET /admin/helmets/:id` adds `support { activatedAt, emergencySharing, warrantyStatus, flags[],
+scans }`. Public endpoints may now answer 429 `RATE_LIMITED` to an IP flagged for repeated
+unknown-token lookups (cached helmets are still served).
+
+New error codes: `CUSTOMER_NOT_ACTIVE`, `INVALID_STATUS_CHANGE`, `RECOVERY_GRANT_INVALID`,
+`DELETION_REQUEST_EXISTS`, `DELETION_REQUEST_NOT_FOUND`, `INVALID_DELETION_TRANSITION`.
+
+## Planned (P6+)
+
+Analytics and clone detection; label printing; warranty claims.
