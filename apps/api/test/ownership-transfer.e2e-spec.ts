@@ -13,6 +13,7 @@ import {
   startTransfer,
   TEST_PASSWORD,
   type TestContext,
+  uniqueEmail,
 } from './utils';
 
 describe('Ownership transfer (e2e)', () => {
@@ -183,6 +184,7 @@ describe('Ownership transfer (e2e)', () => {
       .send({
         helmetCode: a.helmet.helmetCode,
         transferCode,
+        email: uniqueEmail(),
         password: 'brand new owner phrase',
         name: 'Chen',
       })
@@ -207,7 +209,12 @@ describe('Ownership transfer (e2e)', () => {
     await ctx
       .http()
       .post('/api/v1/customer/transfers/claim/register')
-      .send({ helmetCode: a.helmet.helmetCode, transferCode, password: 'password' })
+      .send({
+        helmetCode: a.helmet.helmetCode,
+        transferCode,
+        email: uniqueEmail(),
+        password: 'password',
+      })
       .expect(400);
     const b = await newCustomer(ctx);
     await claim(b.token, a.helmet.helmetCode, transferCode).expect(200);

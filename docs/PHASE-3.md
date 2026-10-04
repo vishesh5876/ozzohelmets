@@ -12,7 +12,7 @@ stolen / damaged / retired states with restore, replacement links between two se
 identities, ownership history and owner timeline, permission-gated support actions, explicit
 public-page states, cache invalidation and audit for every lifecycle operation.
 
-Out of scope (later phases): warranty, dealers/distributors, logistics, anti-counterfeit engine,
+Out of scope (later phases): warranty, logistics, anti-counterfeit engine,
 analytics, recall workflow, AWS changes, any SMS/OTP/notification provider.
 
 ## Design decisions

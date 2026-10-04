@@ -236,7 +236,12 @@ model User {
   /// Permanent public Customer ID (`CU-XXXX-XXXY`, check symbol). Not a secret; never changes.
   customerCode          String     @unique @map("customer_code") @db.VarChar(16)
   name                  String?    @db.VarChar(120)
+  /// Account email as entered (domain lowercased). Sign-in identifier; NOT proof of ownership.
   email                 String?    @db.VarChar(254)
+  /// Canonical lookup key (whole address lowercased, no dot/plus stripping). Unique among
+  /// non-DELETED accounts via a partial unique index in SQL. NULL with a non-NULL `email`
+  /// marks a legacy duplicate that must be resolved by support (see docs/DATABASE.md).
+  emailNormalized       String?    @map("email_normalized") @db.VarChar(254)
   mobile                String?    @db.VarChar(20)
   passwordHash          String?    @map("password_hash")
   passwordChangedAt     DateTime?  @map("password_changed_at") @db.Timestamptz(3)

@@ -27,7 +27,7 @@ never used).
 | `helmet_status_history`     | Every lifecycle change with actor + reason                                                                                               | idx (`helmet_id`, `created_at`)                                                                                                                       |
 | `helmet_scans`              | QR scan log (hashed IP, UA, country, type)                                                                                               | idx (`helmet_id`, `scanned_at`), `scanned_at`                                                                                                         |
 | `audit_logs`                | Append-only audit trail                                                                                                                  | idx (admin, created), (user, created), (entity_type, entity_id), action, created_at                                                                   |
-| `users`                     | Customers: Argon2id password + recovery-code hashes; optional unverified email/mobile                                                    | `email`, `mobile` intentionally **not** unique (never used to identify)                                                                               |
+| `users`                     | Customers: Customer ID, account email (sign-in identifier, unverified), Argon2id password + recovery-code hashes, optional mobile        | partial unique `email_normalized` among non-DELETED accounts; `mobile` intentionally **not** unique                                                   |
 | `helmet_ownerships`         | Ownership **periods** (acquired via activation/transfer, ended by transfer/revocation), never overwritten                                | partial unique index: one `ACTIVE` row per helmet; CHECK `ACTIVE ⇔ ended_at IS NULL`; idx (`helmet_id`, `activated_at`), (`user_id`, `status`)        |
 | `helmet_transfers`          | Transfer offers; HMAC of the code only; `PENDING/CLAIMED/CANCELLED/EXPIRED` (expiry computed)                                            | partial unique index: one `PENDING` per helmet; CHECK claim consistency, not-to-self; idx (`helmet_id`, `created_at`)                                 |
 | `helmet_replacements`       | Original ↔ replacement helmet links                                                                                                      | unique `original_helmet_id`, unique `replacement_helmet_id`; CHECK distinct                                                                           |
@@ -43,13 +43,39 @@ transfers, replacements, per-helmet emergency settings + backfill), `20261003173
 (Phase 4: `users.customer_code` — PL/pgSQL backfill with checksum + uniqueness, then NOT NULL,
 unique index, format CHECK; the helper function is dropped afterwards) and
 `20261003173435_phase4_warranty_authenticity` (model warranty columns with CHECK 0–240, warranty
-enums, `helmet_warranties`, `warranty_history`, `product_reports`, CHECKs; the `VERIFY` scan type already existed since Phase 1). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
+enums, `helmet_warranties`, `warranty_history`, `product_reports`, CHECKs; the `VERIFY` scan type already existed since Phase 1) and
+`20261004090000_customer_email_signin` (`users.email_normalized` + email backfill + partial unique
+index `users_email_normalized_live_key`, see below). Hand-written SQL in the init migration: `helmet_batch_code_seq` (batch code numbering), the
 partial unique ownership index and CHECK constraints.
+
+### Customer email migration (`20261004090000_customer_email_signin`)
+
+The Phase 2 migration dropped `users_email_key`; it is **not** edited. The new migration:
+
+1. adds `email_normalized`;
+2. canonicalises stored emails like the app does (trim, empty → NULL, lower-case the domain);
+3. backfills `email_normalized = lower(email)` for well-formed addresses only;
+4. **duplicates among non-deleted accounts are never merged**: the oldest account
+   (`created_at`, `id`) keeps email sign-in; each other account keeps its raw `email` but gets
+   `email_normalized = NULL` and a `RAISE NOTICE` naming its Customer ID. Those accounts still
+   sign in with their Customer ID / Helmet ID and can set a new email from Account;
+5. creates the partial unique index.
+
+Find accounts that need support follow-up after deploy:
+
+```sql
+SELECT customer_code, email FROM users
+WHERE email IS NOT NULL AND email_normalized IS NULL AND status <> 'DELETED';
+```
+
+## Not modelled (by decision)
+
+Retailers, distributors, partner users, stock locations, inventory ledgers, transfers/manifests
+and dealer sales are intentionally absent ([ADR-001](ADR-001-no-retail-inventory.md)).
 
 ## Planned (later phases)
 
-- **Phase 5:** warranty claims, dealer link on warranties (`purchase_channel = DEALER` today).
-- **Phase 5:** `dealers`, `dealer_users`, inventory movements.
+- **P5:** warranty claims / service handling on the warranty record.
 - **Scale:** partition `helmet_scans` and `audit_logs` by month.
 
 ## Bulk generation

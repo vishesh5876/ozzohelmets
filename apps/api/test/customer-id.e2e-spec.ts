@@ -10,6 +10,7 @@ import {
   startTransfer,
   TEST_PASSWORD,
   type TestContext,
+  uniqueEmail,
 } from './utils';
 
 describe('Customer ID (e2e)', () => {
@@ -90,7 +91,12 @@ describe('Customer ID (e2e)', () => {
     const res = await ctx
       .http()
       .post('/api/v1/customer/transfers/claim/register')
-      .send({ helmetCode: a.helmet.helmetCode, transferCode, password: 'fresh owner phrase' })
+      .send({
+        helmetCode: a.helmet.helmetCode,
+        transferCode,
+        email: uniqueEmail(),
+        password: 'fresh owner phrase',
+      })
       .expect(200);
     expect(isValidCustomerCode(res.body.data.customer.customerId)).toBe(true);
     await loginWith(res.body.data.customer.customerId, 'fresh owner phrase').expect(200);

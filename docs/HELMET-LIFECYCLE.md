@@ -10,8 +10,8 @@ Each change writes a `helmet_status_history` row; admin changes are also audited
 | ----------------- | ---------------------------------------------------------------------- |
 | `GENERATED`       | Identity created in a batch; labels not yet confirmed printed.         |
 | `PRINTED`         | Labels printed and attached (batch "mark printed"). PIN escrow purged. |
-| `IN_INVENTORY`    | In a warehouse / distributor stock.                                    |
-| `SOLD`            | Sold to an end customer (dealer flow, Phase 5).                        |
+| `IN_INVENTORY`    | Optional admin bookkeeping (in the manufacturer's warehouse).          |
+| `SOLD`            | Optional admin bookkeeping (shipped). Not required for activation.     |
 | `ACTIVATED`       | Customer completed activation; ownership exists.                       |
 | `ACTIVE`          | Owner completed emergency-profile setup (Phase 2).                     |
 | `LOST` / `STOLEN` | Reported by owner or support.                                          |
@@ -24,8 +24,11 @@ Each change writes a `helmet_status_history` row; admin changes are also audited
 
 ```
 GENERATED ──A,S──► PRINTED ──A──► IN_INVENTORY ──A──► SOLD ──S──► ACTIVATED
-    │                                │                  └──A──► IN_INVENTORY (return)
-    └─A─► DEACTIVATED                └──S──► ACTIVATED  (only while ACTIVATION_ALLOW_IN_INVENTORY=true)
+    │                 │                │                  └──A──► IN_INVENTORY (return)
+    └─A─► DEACTIVATED └──S──► ACTIVATED └──S──► ACTIVATED
+
+Activation (S) is allowed from PRINTED, IN_INVENTORY and SOLD — the one-time PIN is the proof of
+possession; no sale or inventory record is needed (ADR-001).
 
 ACTIVATED ──S,O──► ACTIVE        owner switches emergency info on for this helmet
 ACTIVE ──S,O,A──► ACTIVATED      switch off · ownership transferred (S) · ownership revoked (A)
@@ -107,8 +110,10 @@ first; everything else returns a status message only. See
 
 ## Flagged business decisions
 
-1. **Decided (Phase 2):** customers activate from `SOLD`; `IN_INVENTORY` only via the temporary
-   `ACTIVATION_ALLOW_IN_INVENTORY` allowance.
+1. **Decided (scope correction, 2026-10-04):** customers activate from `PRINTED`, `IN_INVENTORY`
+   or `SOLD` (`ACTIVATABLE_STATUSES`). The platform does not model retail or inventory
+   ([ADR-001](ADR-001-no-retail-inventory.md)); the earlier `ACTIVATION_ALLOW_IN_INVENTORY` flag
+   was removed.
 2. **Decided (Phase 2/3):** `ACTIVATED` = owned; `ACTIVE` = owner explicitly switched emergency
    information on **for this helmet**.
 3. **Decided (Phase 3, revised Phase 4):** lost, stolen, replaced and deactivated helmets show a

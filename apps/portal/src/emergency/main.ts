@@ -227,6 +227,11 @@ function render(token: string, result: Lookup | null): void {
             h('h2', {}, 'Helmet not activated'),
             h('p', { class: 'lead' }, d.message),
             h(
+              'p',
+              { class: 'muted' },
+              'Ready to activate. You’ll need the activation PIN that came with this helmet.',
+            ),
+            h(
               'a',
               {
                 class: 'btn btn-primary',

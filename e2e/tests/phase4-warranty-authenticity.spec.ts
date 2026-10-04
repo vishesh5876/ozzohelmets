@@ -109,7 +109,7 @@ async function scan(browser: Browser, url: string) {
 
 async function signIn(page: Page, helmetCode: string, password: string) {
   await page.goto(`${PORTAL}/login`);
-  await page.fill('#login-helmet', helmetCode);
+  await page.fill('#login-identifier', helmetCode);
   await page.fill('#login-password', password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toHaveCount(0);
@@ -122,7 +122,13 @@ async function register(
   name: string,
 ): Promise<Account> {
   const res = await api.post(`${API}/customer/activation/register`, {
-    data: { helmetCode: helmet.helmetCode, pin: helmet.pin, password, name },
+    data: {
+      helmetCode: helmet.helmetCode,
+      pin: helmet.pin,
+      email: `${helmet.helmetCode.toLowerCase()}@example.com`,
+      password,
+      name,
+    },
   });
   expect(res.ok()).toBeTruthy();
   const data = (await res.json()).data;
@@ -225,9 +231,7 @@ test.describe.serial('Phase 4: Customer ID → warranty → verification → tra
     await signIn(customer, a.customerId.toLowerCase(), A_PASSWORD);
     await customer.goto(`${PORTAL}/app/account`);
     await expect(customer.getByTestId('customer-id')).toContainText(a.customerId);
-    await expect(
-      customer.getByText('Use your Customer ID to sign in even if you no longer own a helmet.'),
-    ).toBeVisible();
+    await expect(customer.getByText(/You can also sign in with your Customer ID/)).toBeVisible();
     await customer.goto(`${PORTAL}/app/helmets`);
     const card = customer.getByTestId('helmet-card').filter({ hasText: helmet.helmetCode });
     await card.getByRole('link', { name: 'View' }).click();

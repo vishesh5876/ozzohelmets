@@ -12,7 +12,10 @@ import {
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
-import { isUniqueViolation } from '../../infrastructure/prisma/prisma-errors';
+import {
+  isEmailUniqueViolation,
+  isUniqueViolation,
+} from '../../infrastructure/prisma/prisma-errors';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import { HashingService } from '../../security/hashing.service';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
@@ -103,9 +106,11 @@ export class ActivationService {
   }
 
   /**
-   * First activation: PIN + new password. In ONE transaction (helmet row locked): re-verify the
-   * PIN, create the account (password + recovery code hashes), create ownership, consume the
-   * PIN, purge escrow, move to ACTIVATED, write history and audits. Returns a session and the
+   * First activation: PIN + account email + new password. In ONE transaction (helmet row
+   * locked): check eligibility, re-verify the PIN, confirm the email is free, create the account
+   * (Customer ID, password + recovery code hashes), create ownership, consume the PIN, purge
+   * escrow, move to ACTIVATED, write history and audits. Any failure rolls everything back, so a
+   * taken email never consumes the PIN. Returns a session and the
    * plaintext recovery code (shown once).
    */
   async register(
@@ -123,6 +128,7 @@ export class ActivationService {
     });
     // Policy check + expensive hashing happen before taking the row lock.
     const account = await this.accounts.prepare(dto.password, {
+      email: dto.email,
       helmetCode,
       activationPin: dto.pin,
       name: dto.name,
@@ -237,7 +243,9 @@ export class ActivationService {
         { timeout: 20_000, maxWait: 10_000 },
       );
     } catch (err) {
-      // Defence in depth: the partial unique index allows only one ACTIVE ownership per helmet.
+      // Defence in depth: partial unique indexes allow one live account per email and one ACTIVE
+      // ownership per helmet.
+      if (isEmailUniqueViolation(err)) throw this.accounts.emailTaken();
       if (isUniqueViolation(err))
         throw AppException.conflict(
           ErrorCode.HELMET_ALREADY_ACTIVATED,
@@ -405,7 +413,7 @@ export class ActivationService {
   private notActivatable(): AppException {
     return new AppException(
       ErrorCode.HELMET_NOT_ACTIVATABLE,
-      'This helmet cannot be activated. Check the Helmet ID, or contact your retailer or support.',
+      'This helmet cannot be activated. Check the Helmet ID, or contact support.',
       HttpStatus.CONFLICT,
     );
   }

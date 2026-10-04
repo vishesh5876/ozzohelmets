@@ -90,6 +90,14 @@ export interface CustomerSessionInfo {
   cookie: string;
   userId: string;
   recoveryCode: string;
+  email: string;
+}
+
+let emailSeq = 0;
+/** A unique, well-formed account email for tests. */
+export function uniqueEmail(prefix = 'rider'): string {
+  emailSeq += 1;
+  return `${prefix}.${Date.now().toString(36)}.${emailSeq}@example.com`;
 }
 
 const cookieOf = (res: { headers: Record<string, unknown> }) =>
@@ -101,13 +109,15 @@ export async function registerCustomer(
   helmet: { publicToken: string; pin: string },
   password = TEST_PASSWORD,
   name?: string,
+  email = uniqueEmail(),
 ): Promise<CustomerSessionInfo> {
   const res = await ctx
     .http()
     .post('/api/v1/customer/activation/register')
-    .send({ publicToken: helmet.publicToken, pin: helmet.pin, password, name })
+    .send({ publicToken: helmet.publicToken, pin: helmet.pin, email, password, name })
     .expect(200);
   return {
+    email,
     token: res.body.data.accessToken,
     cookie: cookieOf(res),
     userId: res.body.data.customer.id,

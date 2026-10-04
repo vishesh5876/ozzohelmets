@@ -5,8 +5,10 @@ human-readable Helmet ID (`HM-A8F3-KL92`), ≥128-bit QR token, Code128 barcode,
 activation PIN, serial number — bound to a model/SKU and a manufacturing batch. Customers activate
 and own helmets; first responders scan the QR code to see only what the owner chose to share.
 
-**Status: Phase 2 complete** — foundation + manufacturing (Phase 1) and customer authentication,
-helmet activation and emergency profiles (Phase 2). See [`docs/PHASES.md`](docs/PHASES.md).
+**Status: P1–P4 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
+→ email + password account) + emergency profile, ownership + lifecycle, warranty + product
+authenticity. Three surfaces only: Admin, Customer, public QR. See
+[`docs/PHASES.md`](docs/PHASES.md).
 
 ```
 apps/
@@ -58,18 +60,22 @@ activationPin`) — SUPER_ADMIN/ADMIN only, audited.
 
 ## Phase 2 walkthrough (customer)
 
-1. Admin: export the batch CSV (gives the activation PIN), **Mark printed**, then on the helmet page
-   move it **In inventory → Sold** (customers can only activate SOLD helmets by default).
-2. Open the helmet's QR URL on a phone → **Activate helmet** → enter the PIN → create a password →
-   save the recovery code (shown once) → the helmet is yours (status ACTIVATED).
+1. Admin: export the batch CSV (gives the activation PIN) and **Mark printed**. No inventory or
+   sale step is needed — the helmet ships with its QR + PIN and can be bought anywhere
+   ([ADR-001](docs/ADR-001-no-retail-inventory.md)).
+2. Open the helmet's QR URL on a phone → _Ready to activate_ → **Activate helmet** → enter the PIN
+   → enter your **email** → create a password → save the recovery code (shown once) → the helmet
+   is yours (status ACTIVATED).
 3. Onboarding: emergency details → contacts → choose what's public → review → **Turn on** →
    status ACTIVE.
 4. Scan the QR anonymously: only the information you switched on is shown, with call buttons.
    Change privacy or turn the profile off and the next scan reflects it.
 
-No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → password.
-Sign in later with **any Helmet ID you own + your password**; forgot it? `/recover` with a Helmet ID +
-recovery code. Signed-in owners add more helmets from **Add helmet** (PIN only, no new account).
+No camera? `/activate` → "Helmet ID" (checksum-validated) → PIN → email + password.
+Sign in later with **email + password** (your Customer ID or an owned Helmet ID also work); forgot
+it? `/recover` with your email (or ID) + recovery code — no mailbox access needed. Signed-in owners
+add more helmets from **Add helmet** (PIN only, no new account). Change the account email from
+**Account** (password + confirmation; no OTP).
 
 ## Phase 3 walkthrough (ownership & lifecycle)
 
@@ -77,7 +83,7 @@ recovery code. Signed-in owners add more helmets from **Add helmet** (PIN only, 
    the actions valid for its state, and emergency info is switched on **per helmet**.
 2. **Transfer**: helmet → Transfer → confirm password → one-time code `TR-XXXX-XXXX-XXXX`
    (30 min, shown once). The recipient opens **/claim**, enters Helmet ID + code and signs in or
-   creates a password (recovery code shown once). The previous owner's emergency data disappears
+   creates an account (email + password) (recovery code shown once). The previous owner's emergency data disappears
    from the QR page immediately; the new owner's appears only after they enable it.
 3. **Lost / found, stolen / recovered, damaged, retire**: confirmation pages (password for stolen,
    recovered and retire; typed Helmet ID to retire). The QR page shows a safe message without
@@ -122,7 +128,7 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **Admin auth**: Argon2id, 15-min JWT in memory, rotating hashed refresh tokens with reuse
   detection, backend RBAC — [SECURITY §4–5](docs/SECURITY.md)
 - **Resumable, chunked, transactional batch generation** — [DATABASE](docs/DATABASE.md)
-- **Customer auth = Helmet ID + password** (Argon2id + pepper), offline recovery code, rotating refresh tokens, escalating lockouts — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
+- **Customer auth = email + password** (email bound at first activation, unique, unverified; PIN is the possession proof), Argon2id + pepper, offline recovery code, rotating refresh tokens, escalating lockouts, no OTP — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
 - **Atomic, row-locked activation** with progressive PIN lockouts — [ACTIVATION](docs/ACTIVATION.md)
 - **Encrypted emergency profile** and allow-list public sanitizer (hidden fields omitted) — [EMERGENCY-PROFILE](docs/EMERGENCY-PROFILE.md)
 - **Ownership periods** with one ACTIVE owner enforced in the database; **atomic transfers** with
@@ -130,10 +136,11 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **Explicit owner lifecycle actions** through one policy; ACTIVE (and already-sharing DAMAGED /
   RECALLED, with a warning) helmets expose data — [HELMET-LIFECYCLE](docs/HELMET-LIFECYCLE.md),
   [REPLACEMENT](docs/REPLACEMENT.md)
-- **Permanent Customer ID** `CU-XXXX-XXXX` (checksummed, not a secret) as a second sign-in
+- **Permanent Customer ID** `CU-XXXX-XXXX` (checksummed, not a secret) as an alternative sign-in
   identifier — [CUSTOMER-AUTH](docs/CUSTOMER-AUTH.md)
 - **Per-helmet warranty**, server-computed dates, derived expiry, private content-validated proof
   of purchase, transfer inheritance without the previous owner's details — [WARRANTY](docs/WARRANTY.md)
+- **No retail/distributor/inventory model** by design — [ADR-001](docs/ADR-001-no-retail-inventory.md)
 - **Product verification** that never claims more than "registered identity verified"; anonymous
   rate-limited product reports — [PRODUCT-AUTHENTICITY](docs/PRODUCT-AUTHENTICITY.md)
 
@@ -143,7 +150,7 @@ Open items are listed in [`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-
 (replacement warranty policy, warranty start date, proof retention, report triage),
 [`docs/PHASE-3.md`](docs/PHASE-3.md#business-decisions-still-open)
 ("if found" contact, revoked helmet re-assignment — the other two were decided in Phase 4), [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
-(retail SOLD flow, emergency number per market) and
+(emergency number per market) and
 [`docs/PHASE-1.md`](docs/PHASE-1.md#flagged-business-decisions-need-product-confirmation)
 (MANUFACTURING PIN export, serial format, final QR domain printed on labels).
 

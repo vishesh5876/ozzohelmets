@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import { PASSWORD_MAX_LENGTH } from '@helmet/types';
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '@helmet/types';
 
 const pinTransform = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase().replace(/[\s-]/g, '') : value;
@@ -32,6 +32,15 @@ export class ActivationPinDto extends ActivationTargetDto {
 }
 
 export class RegisterActivationDto extends ActivationPinDto {
+  @ApiProperty({
+    example: 'rider@example.com',
+    description:
+      'Account email — the normal sign-in identifier. Not verified and not proof of ownership.',
+  })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  email: string;
+
   @ApiProperty({
     format: 'password',
     minLength: 8,

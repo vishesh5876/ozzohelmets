@@ -8,7 +8,9 @@ Every physical helmet gets a cryptographically generated identity (internal UUID
 public QR token, one-time activation PIN, serial number) bound to a model/SKU and manufacturing
 batch. Customers activate and own helmets; first responders scan the QR to see an emergency page
 that shows only what the owner chose to publish. The brand uses an admin portal to manage
-manufacturing, inventory and support.
+manufacturing and support. There are exactly three surfaces — Admin, Customer, public QR — and no
+retail/distributor/inventory model: the one-time PIN proves possession
+([ADR-001](./ADR-001-no-retail-inventory.md)).
 
 ```
 ┌────────────────────┐ ┌────────────────────┐ ┌──────────────────────────┐
@@ -73,25 +75,26 @@ helmet-platform/
 
 ## 4. Backend module map
 
-| Module                                                 | Responsibility                                                               | Phase     |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- | --------- |
-| `health`                                               | liveness/readiness (DB + Redis)                                              | 1         |
-| `audit`                                                | append-only audit log writer/reader; transaction-aware                       | 1         |
-| `admin-auth`                                           | admin login, JWT access, rotating refresh tokens, guards, RBAC decorators    | 1         |
-| `admin-users`                                          | admin user management (SUPER_ADMIN only)                                     | 1         |
-| `helmet-models`                                        | models / SKUs                                                                | 1         |
-| `batches`                                              | manufacturing batches, bulk identity generation job, PIN escrow purge        | 1         |
-| `helmets`                                              | helmet registry, search/filter, lifecycle (status transition domain service) | 1         |
-| `labels`                                               | QR (SVG/PNG) and Code128 barcode (SVG/PNG) rendering                         | 1         |
-| `exports`                                              | manufacturing CSV export (role-gated, audited)                               | 1         |
-| `public-emergency`                                     | unauthenticated QR resolution, scan logging, Redis cache                     | 1 (basic) |
-| `dashboard`                                            | headline counts                                                              | 1         |
-| `customer-auth`                                        | Helmet ID + password, recovery code, customer JWT + refresh                  | 2         |
-| `activation`                                           | atomic, row-locked activation flow                                           | 2         |
-| `emergency-profile`                                    | encrypted medical profile, contacts, visibility                              | 2         |
-| `ownership`                                            | ownership periods, transfer codes + atomic claim, history, revocation        | 3         |
-| `helmet-lifecycle`                                     | owner lost/stolen/damaged/retire, support restore/deactivate, replacements   | 3         |
-| `warranty`, `dealers`, `anti-counterfeit`, `analytics` | 4+                                                                           |
+| Module                          | Responsibility                                                               | Phase     |
+| ------------------------------- | ---------------------------------------------------------------------------- | --------- |
+| `health`                        | liveness/readiness (DB + Redis)                                              | 1         |
+| `audit`                         | append-only audit log writer/reader; transaction-aware                       | 1         |
+| `admin-auth`                    | admin login, JWT access, rotating refresh tokens, guards, RBAC decorators    | 1         |
+| `admin-users`                   | admin user management (SUPER_ADMIN only)                                     | 1         |
+| `helmet-models`                 | models / SKUs                                                                | 1         |
+| `batches`                       | manufacturing batches, bulk identity generation job, PIN escrow purge        | 1         |
+| `helmets`                       | helmet registry, search/filter, lifecycle (status transition domain service) | 1         |
+| `labels`                        | QR (SVG/PNG) and Code128 barcode (SVG/PNG) rendering                         | 1         |
+| `exports`                       | manufacturing CSV export (role-gated, audited)                               | 1         |
+| `public-emergency`              | unauthenticated QR resolution, scan logging, Redis cache                     | 1 (basic) |
+| `dashboard`                     | headline counts                                                              | 1         |
+| `customer-auth`                 | email (or Customer/Helmet ID) + password, recovery code, email change, JWT   | 2         |
+| `activation`                    | atomic, row-locked activation flow                                           | 2         |
+| `emergency-profile`             | encrypted medical profile, contacts, visibility                              | 2         |
+| `ownership`                     | ownership periods, transfer codes + atomic claim, history, revocation        | 3         |
+| `helmet-lifecycle`              | owner lost/stolen/damaged/retire, support restore/deactivate, replacements   | 3         |
+| `warranty`, `product-reports`   | customer-registered warranty, public verification, product reports           | 4         |
+| `anti-counterfeit`, `analytics` | planned                                                                      | 6         |
 
 ## 5. Request pipeline (API)
 
@@ -187,16 +190,16 @@ Readiness and the public cache live in their own small global modules so the gra
 
 ### Key decisions
 
-| #   | Decision                                                                           | Rationale                                                                                                                                    |
-| --- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 16  | **Shared `RefreshTokenRotator`** used by admin and customer token services         | One audited implementation of rotation + family reuse detection; separate tables, secrets, audiences and cookies keep the realms isolated.   |
-| 17  | **Identity = helmet ownership; no OTP/SMS**                                        | Login with any owned Helmet ID + password; offline recovery code. No SMS cost, no phone-number dependency, no unverified data used for auth. |
-| 18  | **PIN checked under the row lock, failures always committed**                      | Preliminary `validate` and the final `register`/`add-helmet` share one locked check; lockouts escalate but are never permanent.              |
-| 19  | **`ActivationPolicy` is the single eligibility rule** (SOLD; IN_INVENTORY via env) | Temporary business allowances live in one place.                                                                                             |
-| 20  | **Allow-list public sanitizer; hidden fields omitted**                             | A response never reveals that a hidden field exists.                                                                                         |
-| 21  | **Cache the filtered DTO, invalidate per owner on every change**                   | Privacy changes take effect on the next scan; raw medical data is never cached.                                                              |
-| 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                       |
-| 23  | **Photos re-encoded by `sharp`**                                                   | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                  |
+| #   | Decision                                                                            | Rationale                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 16  | **Shared `RefreshTokenRotator`** used by admin and customer token services          | One audited implementation of rotation + family reuse detection; separate tables, secrets, audiences and cookies keep the realms isolated. |
+| 17  | **PIN proves possession; email is only a sign-in identifier; no OTP/SMS**           | Login with account email (or Customer ID / owned Helmet ID) + password; offline recovery code. No SMS/email cost or provider dependency.   |
+| 18  | **PIN checked under the row lock, failures always committed**                       | Preliminary `validate` and the final `register`/`add-helmet` share one locked check; lockouts escalate but are never permanent.            |
+| 19  | **`ActivationPolicy` is the single eligibility rule** (PRINTED, IN_INVENTORY, SOLD) | No sale/inventory dependency (ADR-001); one shared list in `@helmet/types`.                                                                |
+| 20  | **Allow-list public sanitizer; hidden fields omitted**                              | A response never reveals that a hidden field exists.                                                                                       |
+| 21  | **Cache the filtered DTO, invalidate per owner on every change**                    | Privacy changes take effect on the next scan; raw medical data is never cached.                                                            |
+| 22  | **`ACTIVE ⇄ ACTIVATED` follows the explicit enable/disable switch**                 | Status reflects whether emergency data is shown; no automatic ACTIVE after activation.                                                     |
+| 23  | **Photos re-encoded by `sharp`**                                                    | Strips EXIF/GPS, defeats polyglots, normalises size/format.                                                                                |
 
 ## 12. Phase 3 additions
 
@@ -235,7 +238,7 @@ helmet-lifecycle  ─► warranty (replacement applies the warranty policy in th
 customer-helmets  ─► warranty (summary per helmet, one batched query)
 public-emergency  ─► warranty (public summary for /public/verify)
 product-reports   ─► helmets (token lookup only), audit
-customer-auth     ─► identifiers (`parseAccountIdentifier`: Helmet ID or Customer ID)
+customer-auth     ─► identifiers (`parseAccountIdentifier` / `normalizeEmail`: email, Helmet ID or Customer ID)
 ```
 
 ### Key decisions
@@ -248,3 +251,11 @@ customer-auth     ─► identifiers (`parseAccountIdentifier`: Helmet ID or Cus
 | 34  | **Registrant-only private details** instead of copying or deleting on transfer                         | Coverage follows the helmet; personal/commercial data stays with the person who supplied it.                          |
 | 35  | **Verification served by the emergency bundle** (`/verify/*`)                                          | Same tiny, framework-free, cache-friendly page and nginx routing; no SPA boot on a public scan.                       |
 | 36  | **Product reports without accounts or scoring**                                                        | Collect signals now; judgement (and clone detection) is a later, reviewed process.                                    |
+
+## Scope correction (2026-10-04)
+
+| #   | Decision                                                                                | Rationale                                                                                                                            |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 37  | **No retail/distributor/inventory model** ([ADR-001](./ADR-001-no-retail-inventory.md)) | The PIN already proves possession; a sale gate added a partner realm and app without improving safety.                               |
+| 38  | **Email bound at first activation, unique on a normalised key**                         | Familiar sign-in; partial unique index added by a new migration, duplicates never merged; email never treated as proof of ownership. |
+| 39  | **Recovery stays offline (recovery code)**                                              | No mail provider dependency; an emailed reset link can be added later as a second path through the same reset-token step.            |

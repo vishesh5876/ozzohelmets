@@ -1,38 +1,44 @@
 # Helmet activation
 
-Activation turns a sold helmet into an owned one. The concealed one-time **Activation PIN** printed
-on the activation card is the proof of possession: there is no OTP, SMS or mobile verification.
-The PIN is never encoded in the QR and is never used as the long-term password.
+Activation turns a manufactured helmet into an owned one, wherever it was bought. The concealed
+one-time **Activation PIN** shipped with the helmet is the proof of possession: there is no OTP,
+SMS, email or mobile verification, and no sale or inventory record is needed
+([ADR-001](ADR-001-no-retail-inventory.md)). The PIN is never encoded in the QR and is never used
+as the long-term password. The account email is a sign-in identifier, not a proof of ownership.
 
 ## Customer flow
 
 First activation (creates the account):
 
 ```
-scan QR → /e/<token> "Helmet not activated" → Activate helmet → /activate?t=<token>
+scan QR → /e/<token> "Helmet not activated · Ready to activate" → Activate helmet → /activate?t=<token>
   → enter PIN (kept in memory only)
   → POST /customer/activation/validate {publicToken, pin}      preliminary check, consumes nothing
-  → create password + confirm (optional name)
-  → POST /customer/activation/register {publicToken, pin, password, name?}
-       one transaction: account + ownership + PIN consumed + escrow purged + ACTIVATED + audits
+  → account email ("Make sure this email is correct. You will use it to sign in.")
+    + create password + confirm (optional name)
+  → POST /customer/activation/register {publicToken, pin, email, password, name?}
+       one transaction: account (email, Customer ID) + ownership + PIN consumed + escrow purged
+       + ACTIVATED + audits
   → recovery code shown ONCE ("Save this recovery code. It can be used if you forget your password.")
   → signed in → onboarding
 ```
 
-Existing customer adding another helmet (signed in, no new account, no password step):
+Existing customer adding another helmet (signed in, no new account, no email or password step):
 
 ```
 /activate?t=<token> (or Helmet ID) → PIN → POST /customer/activation/add-helmet {publicToken|helmetCode, pin}
 ```
 
 Manual fallback (no camera): `/activate` → "Helmet ID" → client-side checksum validation
-(`isValidHelmetCode`) before any request → PIN → password.
+(`isValidHelmetCode`) before any request → PIN → email + password.
 
 ## Eligibility (single policy)
 
-`ActivationPolicy` (API) is the only place that decides which statuses may be activated:
-`SOLD` always; `IN_INVENTORY` only while `ACTIVATION_ALLOW_IN_INVENTORY=true` (temporary
-allowance for retail channels that don't record sales). Everything else is refused. The shared
+`ActivationPolicy` (API) applies the one shared list `ACTIVATABLE_STATUSES`
+(`packages/types/src/lifecycle.ts`): **`PRINTED`, `IN_INVENTORY`, `SOLD`**. Possession of the PIN
+is the purchase proof, so no sale record is required and there is no configuration flag; the
+optional admin statuses `IN_INVENTORY`/`SOLD` don't change eligibility. Everything else
+(`GENERATED`, `DAMAGED`, `RECALLED`, `DEACTIVATED`, `REPLACED`, …) is refused. The shared
 lifecycle table only allows `SYSTEM` to move a helmet to `ACTIVATED`, so no admin or owner can
 bypass the flow.
 
@@ -46,6 +52,7 @@ Decision order (`evaluateActivation`, unit-tested):
 ## Atomic transaction (`ActivationService.activate`)
 
 ```
+validate + normalise email, password policy,
 hash password + generate recovery code (Argon2id)          -- before the lock, outside the tx
 BEGIN
   SELECT … FROM helmets WHERE id = $1 FOR UPDATE          -- serialises concurrent activations
@@ -57,7 +64,10 @@ BEGIN
   audit helmet.activation.failed [+ helmet.activation.locked]   (attempted PIN never recorded)
   COMMIT  → 400 INVALID_ACTIVATION_PIN (or 429 when the lock just started)
   ── correct PIN ────────────────────────────────────────────
-  [register]   INSERT users (password_hash, recovery_code_hash) + audit customer.created
+  [register]   email free among live accounts? else throw EMAIL_ALREADY_REGISTERED → ROLLBACK
+               (PIN not consumed, no account, helmet unchanged)
+               INSERT users (email, email_normalized, customer_code, password_hash,
+               recovery_code_hash) + audit customer.created
   INSERT helmet_ownerships (helmet, customer, ACTIVE)
   DELETE helmet_activation_secrets WHERE helmet_id = $1    -- escrow purge
   UPDATE helmets SET status='ACTIVATED' WHERE id=$1 AND status=<from>,
@@ -80,6 +90,9 @@ Guarantees:
 - **No duplicate ownership**: database partial unique index
   `helmet_ownerships(helmet_id) WHERE status='ACTIVE'`; a violation maps to
   `HELMET_ALREADY_ACTIVATED`.
+- **No duplicate email**: partial unique index `users_email_normalized_live_key`; two activations
+  racing with the same email on different helmets → one succeeds, the other gets
+  `EMAIL_ALREADY_REGISTERED` and its PIN stays unused (integration-tested).
 - **No partial activation**: all writes in one transaction; `CHECK (NOT activation_pin_used OR
 activated_at IS NOT NULL)` backs it up.
 - **Optimistic status guard** in `HelmetStatusService.apply` (`WHERE status = from`).
@@ -109,4 +122,5 @@ ineligible statuses and already-owned helmets, and never reveals owner informati
 always "the ACTIVE ownership row" — there is no `userId` on `helmets`. Customer helmet endpoints
 (`/customer/helmets…`) only return helmets with the caller's ACTIVE ownership; someone else's
 helmet is indistinguishable from a missing one (404). Any helmet the customer currently owns can
-be used to sign in (see [CUSTOMER-AUTH](CUSTOMER-AUTH.md)). Transfer is Phase 3.
+be used to sign in, next to the account email and Customer ID (see
+[CUSTOMER-AUTH](CUSTOMER-AUTH.md)). Transfer is Phase 3.

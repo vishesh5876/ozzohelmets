@@ -14,6 +14,7 @@ import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
+import { isEmailUniqueViolation } from '../../infrastructure/prisma/prisma-errors';
 import { LockoutService } from '../../security/lockout';
 import { RecentAuthService } from '../../security/recent-auth.service';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
@@ -218,13 +219,14 @@ export class TransferService {
   async claimAsNewCustomer(
     rawHelmetCode: string,
     rawCode: string,
+    email: string,
     password: string,
     name: string | undefined,
     meta: RequestMeta,
   ): Promise<{ result: TransferClaimRegisterResponse; session: CustomerSession }> {
     const { helmetCode, code } = await this.begin(rawHelmetCode, rawCode, meta);
-    // Password policy + hashing before any lock is taken.
-    const account = await this.accounts.prepare(password, { helmetCode, name });
+    // Email + password policy and hashing before any lock is taken.
+    const account = await this.accounts.prepare(password, { email, helmetCode, name });
     const { helmetId, userId } = await this.execute(
       helmetCode,
       code,
@@ -404,6 +406,7 @@ export class TransferService {
 
   /** Counts code failures (escalating per-helmet lock + per-IP budget); never records the code. */
   private async onFailure(err: unknown, helmetCode: string, meta: RequestMeta): Promise<unknown> {
+    if (isEmailUniqueViolation(err)) return this.accounts.emailTaken();
     if (!(err instanceof TransferCodeFailure)) return err;
     const locked = await this.recordFailure(helmetCode, meta);
     return locked ? this.attemptsExceeded(locked) : err;

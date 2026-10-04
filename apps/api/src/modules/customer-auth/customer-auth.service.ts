@@ -8,6 +8,7 @@ import {
   type CustomerRecoverResponse,
   type CustomerSessionDto,
   ErrorCode,
+  normalizeEmail,
   normalizeRecoveryCode,
   type RecentAuthResponse,
   parseAccountIdentifier,
@@ -17,6 +18,7 @@ import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
 import { normalizePhone } from '../../common/utils/phone';
 import type { RequestMeta } from '../../common/utils/request-context';
+import { isEmailUniqueViolation } from '../../infrastructure/prisma/prisma-errors';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 import { LockoutService } from '../../security/lockout';
@@ -27,6 +29,7 @@ import { opaqueToken } from '../../security/secure-random';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
 import type { AuthenticatedCustomer } from './customer-auth.types';
+import { CustomerAccountsService } from './customer-accounts.service';
 import { CustomerCredentialsService } from './customer-credentials.service';
 import { CustomerTokenService } from './customer-token.service';
 import type { UpdateCustomerDto } from './dto/customer-auth.dto';
@@ -46,10 +49,11 @@ const HOUR = 3600;
 const sha = (v: string) => createHash('sha256').update(v).digest('hex');
 
 /**
- * Customer authentication. Identity = ownership of a helmet:
- *  - login: any currently owned Helmet ID + password
- *  - recovery: Helmet ID + offline recovery code → single-use reset token → new password
- * All failures for unknown helmets, unowned helmets and wrong secrets are indistinguishable.
+ * Customer authentication (no OTP, no paid providers):
+ *  - login: account email (normal), Customer ID or a currently owned Helmet ID + password
+ *  - recovery: same identifiers + offline recovery code → single-use reset token → new password
+ * The email is a sign-in identifier only; the activation PIN is what proves possession.
+ * All failures for unknown identifiers, unowned helmets and wrong secrets are indistinguishable.
  */
 @Injectable()
 export class CustomerAuthService {
@@ -62,6 +66,7 @@ export class CustomerAuthService {
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
     private readonly recentAuth: RecentAuthService,
+    private readonly accounts: CustomerAccountsService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -74,6 +79,27 @@ export class CustomerAuthService {
     password: string,
     meta: RequestMeta,
   ): Promise<RecentAuthResponse> {
+    const user = await this.verifyCurrentPassword(customer, password, meta);
+    const issued = await this.recentAuth.issue('customer', user.id, customer.sessionId);
+    await this.audit.record({
+      action: AuditAction.CUSTOMER_RECENT_AUTH_CREATED,
+      entityType: 'user',
+      entityId: user.id,
+      userId: user.id,
+      ipHash: meta.ipHash,
+    });
+    return issued;
+  }
+
+  /**
+   * Re-checks the signed-in customer's password. Failures count towards a per-account
+   * escalating lockout; the password is never logged.
+   */
+  private async verifyCurrentPassword(
+    customer: AuthenticatedCustomer,
+    password: string,
+    meta: RequestMeta,
+  ): Promise<User> {
     const key = `customer-reauth:user:${customer.id}`;
     const state = await this.lockout.status(key);
     if (state.locked) throw this.locked(state.retryAfter);
@@ -100,20 +126,63 @@ export class CustomerAuthService {
       );
     }
     await this.lockout.reset(key);
-    const issued = await this.recentAuth.issue('customer', user.id, customer.sessionId);
-    await this.audit.record({
-      action: AuditAction.CUSTOMER_RECENT_AUTH_CREATED,
-      entityType: 'user',
-      entityId: user.id,
-      userId: user.id,
-      ipHash: meta.ipHash,
-    });
-    return issued;
+    return user;
   }
 
   /**
-   * Sign in with a Helmet ID the account currently owns OR its permanent Customer ID, plus the
-   * password. Unknown IDs, unowned helmets, wrong passwords and suspended accounts are
+   * Changes the sign-in email: current password + the new address typed twice. The address is
+   * unique among live accounts, stored unverified, and other sessions are revoked. No OTP.
+   */
+  async changeEmail(
+    customer: AuthenticatedCustomer,
+    dto: { currentPassword: string; newEmail: string; confirmEmail: string },
+    meta: RequestMeta,
+  ): Promise<CustomerProfile> {
+    const email = this.accounts.parseEmail(dto.newEmail);
+    const confirm = normalizeEmail(dto.confirmEmail);
+    if (!confirm || confirm.normalized !== email.normalized) {
+      throw new AppException(
+        ErrorCode.VALIDATION_ERROR,
+        'The two email addresses do not match.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const user = await this.verifyCurrentPassword(customer, dto.currentPassword, meta);
+    const changed = user.emailNormalized !== email.normalized;
+    let updated: User;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        await this.accounts.assertEmailAvailable(tx, email, user.id);
+        const next = await tx.user.update({
+          where: { id: user.id },
+          data: { email: email.email, emailNormalized: email.normalized, emailVerified: false },
+        });
+        await this.audit.record(
+          {
+            action: AuditAction.CUSTOMER_EMAIL_CHANGED,
+            entityType: 'user',
+            entityId: user.id,
+            userId: user.id,
+            ipHash: meta.ipHash,
+            // Never the addresses themselves.
+            metadata: { hadEmail: user.email !== null, addressChanged: changed },
+          },
+          tx,
+        );
+        return next;
+      });
+    } catch (err) {
+      if (isEmailUniqueViolation(err)) throw this.accounts.emailTaken();
+      throw err;
+    }
+    await this.tokens.revokeAllExcept(user.id, customer.sessionId);
+    await this.recentAuth.revokeAll('customer', user.id);
+    return toCustomerProfile(updated);
+  }
+
+  /**
+   * Sign in with the account email, its permanent Customer ID or a Helmet ID it currently owns, plus
+   * the password. Unknown IDs, unowned helmets, wrong passwords and suspended accounts are
    * indistinguishable; lockouts apply per identifier and per account.
    */
   async login(
@@ -167,7 +236,8 @@ export class CustomerAuthService {
   }
 
   /**
-   * Step 1 of recovery: Helmet ID + recovery code. Heavily rate-limited. On success returns a
+   * Step 1 of recovery: email / Customer ID / Helmet ID + recovery code (works without access to
+   * the mailbox). Heavily rate-limited. On success returns a
    * short-lived single-use reset token (stored hashed in Redis).
    */
   async recover(
@@ -191,7 +261,7 @@ export class CustomerAuthService {
       user?.status === 'ACTIVE';
     if (!ok || !user?.recoveryCodeHash) {
       await this.recordFailure(keys, meta, 'recovery', user?.id ?? null);
-      throw this.invalidCredentials('The ID or recovery code is incorrect.');
+      throw this.invalidCredentials('The email, ID or recovery code is incorrect.');
     }
     await Promise.all(keys.map((k) => this.lockout.reset(k)));
 
@@ -394,7 +464,7 @@ export class CustomerAuthService {
     return toCustomerProfile(user);
   }
 
-  /** Optional contact details; stored as unverified and never used for auth/recovery. */
+  /** Name and optional mobile (unverified, never used for auth). Email: see changeEmail. */
   async updateProfile(customerId: string, dto: UpdateCustomerDto): Promise<CustomerProfile> {
     let mobile: string | null | undefined = dto.mobile;
     if (typeof dto.mobile === 'string') {
@@ -410,9 +480,7 @@ export class CustomerAuthService {
       where: { id: customerId },
       data: {
         name: dto.name,
-        email: dto.email,
         mobile,
-        ...(dto.email !== undefined ? { emailVerified: false } : {}),
         ...(dto.mobile !== undefined ? { mobileVerified: false } : {}),
       },
     });
@@ -420,7 +488,8 @@ export class CustomerAuthService {
   }
 
   /**
-   * Resolves a Customer ID (the account itself) or a Helmet ID (its current owner's account).
+   * Resolves an email or Customer ID (the account itself) or a Helmet ID (its current owner's
+   * account).
    * Malformed input / bad check symbols are rejected before any lookup.
    */
   private async resolveIdentifier(
@@ -431,9 +500,15 @@ export class CustomerAuthService {
     if (!id) {
       throw new AppException(
         ErrorCode.VALIDATION_ERROR,
-        'That ID is not valid. Check the Helmet ID on your label or your Customer ID (CU-…).',
+        'Enter your email, Customer ID (CU-…) or the Helmet ID on your label.',
         HttpStatus.BAD_REQUEST,
       );
+    }
+    if (id.kind === 'email') {
+      const user = await this.prisma.user.findFirst({
+        where: { emailNormalized: id.code, status: { not: 'DELETED' } },
+      });
+      return { key: `email:${sha(id.code)}`, user };
     }
     if (id.kind === 'customer') {
       const user = await this.prisma.user.findUnique({ where: { customerCode: id.code } });
@@ -518,7 +593,7 @@ export class CustomerAuthService {
     }
   }
 
-  private invalidCredentials(message = 'The ID or password is incorrect.'): AppException {
+  private invalidCredentials(message = 'The email, ID or password is incorrect.'): AppException {
     return new AppException(ErrorCode.INVALID_CREDENTIALS, message, HttpStatus.UNAUTHORIZED);
   }
 
@@ -538,6 +613,7 @@ export function toCustomerProfile(u: User): CustomerProfile {
     customerId: u.customerCode,
     name: u.name,
     email: u.email,
+    emailVerified: u.emailVerified,
     mobile: u.mobile,
     createdAt: u.createdAt.toISOString(),
   };

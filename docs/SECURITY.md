@@ -184,15 +184,25 @@ Details: [`CUSTOMER-AUTH.md`](./CUSTOMER-AUTH.md), [`ACTIVATION.md`](./ACTIVATIO
   the authenticated user id. No endpoint accepts a user id from the client (extra properties are
   rejected by the global whitelist). Another customer's helmet/contact behaves exactly like a
   missing one (404). Integration tests cover helmets, profile, contacts, visibility and sessions.
-- **No OTP/SMS.** Customers authenticate with an owned Helmet ID + password. Passwords and recovery
-  codes are Argon2id-hashed with `CUSTOMER_CREDENTIAL_PEPPER` (separate from `PIN_HASH_PEPPER`,
-  refused in production if dev-only). Generic login/recovery errors, dummy verification for
-  unknown helmets, escalating temporary lockouts per Helmet ID and per-IP budgets.
+- **No OTP/SMS/email verification, no paid auth provider.** Customers authenticate with their
+  account email (or Customer ID / an owned Helmet ID) + password. Passwords and recovery codes are
+  Argon2id-hashed with `CUSTOMER_CREDENTIAL_PEPPER` (separate from `PIN_HASH_PEPPER`, refused in
+  production if dev-only). Generic login/recovery errors ("The email, ID or password is
+  incorrect."), dummy verification for unknown identifiers, escalating temporary lockouts per
+  typed identifier and per account, and per-IP budgets.
+- **Possession vs identity.** Only the one-time activation PIN (or a transfer code issued by the
+  current owner) can bind a helmet to an account. The email is an unverified sign-in identifier:
+  it is never accepted as proof of ownership, never shown publicly, and never written to audit
+  metadata. Email uniqueness is enforced by a partial unique index on the normalised address; an
+  email conflict is only revealed after a correct PIN and rolls the activation back without
+  consuming the PIN.
+- **Email change** requires the current password (counted towards the re-auth lockout) and the
+  new address typed twice; it revokes all other sessions and recent-auth tokens and is audited.
 - **Recovery code.** `RK-XXXX-XXXX-XXXX` (~59 bits), shown once, stored only as a hash, never
   logged or audited, single use: a reset rotates it and revokes all sessions. Reset tokens are
   256-bit, SHA-256-keyed in Redis, 10-minute TTL, consumed atomically (`GETDEL`).
-- **Unverified contact data.** Account email/mobile and emergency contacts are never verified and
-  never used for authentication or recovery; the public page says the information was provided by
+- **Unverified contact data.** Mobile and emergency contacts are never verified and never used for
+  authentication or recovery; the public page says the information was provided by
   the owner and is not verified.
 - **Public boundary.** Only `{ state, helmet{modelName, brand[, helmetCode]}, message[, profile,
 contacts] }`; profile and contacts only when the helmet is ACTIVE/DAMAGED/RECALLED, owned, and

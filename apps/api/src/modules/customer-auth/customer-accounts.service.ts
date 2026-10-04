@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { ErrorCode, normalizeEmail, type NormalizedEmail } from '@helmet/types';
+import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
 import type { PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import { generateCustomerCode } from '../../security/helmet-identity.generator';
@@ -12,8 +14,12 @@ export interface PreparedAccount {
   passwordHash: string;
   recoveryCodeHash: string;
   recoveryCode: string;
+  email: NormalizedEmail;
   name?: string;
 }
+
+const EMAIL_TAKEN_MESSAGE =
+  'An account already uses this email. Sign in to add this helmet, or use a different email.';
 
 /**
  * The single way a customer account is created (first activation, transfer claim by a new
@@ -26,12 +32,53 @@ export class CustomerAccountsService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Validates the password policy, then hashes it and a fresh recovery code. */
+  /** Validates and canonicalises an email; throws INVALID_EMAIL (400). */
+  parseEmail(raw: string): NormalizedEmail {
+    const email = normalizeEmail(raw);
+    if (!email) {
+      throw new AppException(
+        ErrorCode.INVALID_EMAIL,
+        'Enter a valid email address.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return email;
+  }
+
+  /**
+   * Throws EMAIL_ALREADY_REGISTERED (409) when a live account other than `exceptUserId` uses
+   * the address. The partial unique index remains the final guarantee under races.
+   */
+  async assertEmailAvailable(
+    tx: PrismaTx,
+    email: NormalizedEmail,
+    exceptUserId?: string,
+  ): Promise<void> {
+    const holder = await tx.user.findFirst({
+      where: { emailNormalized: email.normalized, status: { not: 'DELETED' } },
+      select: { id: true },
+    });
+    if (holder && holder.id !== exceptUserId) throw this.emailTaken();
+  }
+
+  emailTaken(): AppException {
+    return new AppException(
+      ErrorCode.EMAIL_ALREADY_REGISTERED,
+      EMAIL_TAKEN_MESSAGE,
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  /**
+   * Validates the email and password policy, then hashes the password and a fresh recovery
+   * code. Email is a sign-in identifier only — the activation PIN stays the possession proof.
+   */
   async prepare(
     password: string,
-    context: { helmetCode?: string; activationPin?: string; name?: string },
+    context: { email: string; helmetCode?: string; activationPin?: string; name?: string },
   ): Promise<PreparedAccount> {
-    this.credentials.assertAcceptablePassword(password, context);
+    const email = this.parseEmail(context.email);
+    this.credentials.assertAcceptablePassword(password, { ...context, email: email.email });
     const [passwordHash, recovery] = await Promise.all([
       this.credentials.hashPassword(password),
       this.credentials.newRecoveryCode(),
@@ -40,17 +87,23 @@ export class CustomerAccountsService {
       passwordHash,
       recoveryCodeHash: recovery.hash,
       recoveryCode: recovery.code,
+      email,
       name: context.name,
     };
   }
 
-  /** Inserts the account inside the caller's transaction and audits it. Returns the user id. */
+  /**
+   * Inserts the account inside the caller's transaction and audits it. Returns the user id.
+   * Throws EMAIL_ALREADY_REGISTERED before any write when the email is taken, so the caller's
+   * transaction (PIN consumption, ownership) rolls back cleanly.
+   */
   async create(
     tx: PrismaTx,
     account: PreparedAccount,
     meta: RequestMeta,
     via: 'activation' | 'transfer',
   ): Promise<string> {
+    await this.assertEmailAvailable(tx, account.email);
     const id = uuidv7();
     const now = new Date();
     const customerCode = await this.freeCustomerCode(tx);
@@ -59,6 +112,9 @@ export class CustomerAccountsService {
         id,
         customerCode,
         name: account.name,
+        email: account.email.email,
+        emailNormalized: account.email.normalized,
+        emailVerified: false,
         passwordHash: account.passwordHash,
         passwordChangedAt: now,
         recoveryCodeHash: account.recoveryCodeHash,

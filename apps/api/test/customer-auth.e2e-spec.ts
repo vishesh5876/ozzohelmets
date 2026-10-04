@@ -32,7 +32,8 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
     expect(JSON.stringify(user)).not.toContain(TEST_PASSWORD);
     expect(JSON.stringify(user)).not.toContain(c.recoveryCode);
     expect(user).toMatchObject({
-      email: null,
+      email: c.email,
+      emailNormalized: c.email.toLowerCase(),
       mobile: null,
       mobileVerified: false,
       emailVerified: false,
@@ -81,7 +82,7 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
       expect(r.res.body.error).toEqual(
         expect.objectContaining({
           code: 'INVALID_CREDENTIALS',
-          message: 'The ID or password is incorrect.',
+          message: 'The email, ID or password is incorrect.',
         }),
       );
     }
@@ -217,15 +218,23 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
 
   it('stores optional contact details as unverified and never uses them to sign in', async () => {
     const c = await newCustomer(ctx);
+    // The account email can't be changed through the profile endpoint.
+    await ctx
+      .http()
+      .patch('/api/v1/customer/auth/me')
+      .set(bearer(c.token))
+      .send({ email: 'other@example.com' })
+      .expect(400);
     const res = await ctx
       .http()
       .patch('/api/v1/customer/auth/me')
       .set(bearer(c.token))
-      .send({ name: 'Asha', email: 'Asha@Example.com', mobile: '98765 43210' })
+      .send({ name: 'Asha', mobile: '98765 43210' })
       .expect(200);
     expect(res.body.data).toMatchObject({
       name: 'Asha',
-      email: 'asha@example.com',
+      email: c.email,
+      emailVerified: false,
       mobile: '+919876543210',
     });
     expect(await ctx.prisma.user.findUniqueOrThrow({ where: { id: c.userId } })).toMatchObject({

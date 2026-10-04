@@ -129,6 +129,7 @@ export class TransferClaimController {
     const { result, session } = await this.transfers.claimAsNewCustomer(
       dto.helmetCode,
       dto.transferCode,
+      dto.email,
       dto.password,
       dto.name,
       meta,

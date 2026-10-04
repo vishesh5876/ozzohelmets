@@ -1,7 +1,9 @@
 # Product authenticity
 
 Phase 4 adds a public **product verification** page and anonymous **product reports**. This is a
-foundation for anti-counterfeit work, not a counterfeit detector.
+foundation for anti-counterfeit work, not a counterfeit detector. The page shows **manufacturer
+registry facts only** (Helmet ID, model, manufacture date, lifecycle label, warranty status) —
+never retailer, distributor, seller or supply-chain information, and never owner data.
 
 ## What a successful check means — and what it doesn't
 

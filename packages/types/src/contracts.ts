@@ -256,8 +256,14 @@ export interface CustomerProfile {
   /** Permanent public Customer ID (`CU-XXXX-XXXX`) — usable with the password to sign in. */
   customerId: string;
   name: string | null;
-  /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
+  /**
+   * Account email: the normal sign-in identifier (unique, bound at first activation). NOT
+   * verified and never proof of helmet possession — the Activation PIN is. Null only for
+   * accounts created before email sign-in existed.
+   */
   email: string | null;
+  /** Always false today: there is no email verification (no OTP, no links). */
+  emailVerified: boolean;
   /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
   mobile: string | null;
   createdAt: IsoDateString;

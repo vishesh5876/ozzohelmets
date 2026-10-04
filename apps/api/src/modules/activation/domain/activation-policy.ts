@@ -1,10 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import {
-  ACTIVATABLE_STATUSES,
-  CONDITIONALLY_ACTIVATABLE_STATUSES,
-  ErrorCode,
-  type HelmetStatus,
-} from '@helmet/types';
+import { ACTIVATABLE_STATUSES, ErrorCode, type HelmetStatus } from '@helmet/types';
 import { AppConfigService } from '../../../config/app-config.service';
 import { escalatingLockSeconds } from '../../../security/lockout';
 
@@ -52,7 +47,7 @@ export function evaluateActivation(
   if (!allowedStatuses.includes(s.status)) {
     return {
       code: ErrorCode.HELMET_NOT_ACTIVATABLE,
-      message: 'This helmet cannot be activated. Contact your retailer or support.',
+      message: 'This helmet cannot be activated. Contact support.',
       status: HttpStatus.CONFLICT,
     };
   }
@@ -79,15 +74,17 @@ export function lockoutAfterFailure(
   return seconds > 0 ? new Date(now.getTime() + seconds * 1000) : null;
 }
 
-/** Single source of truth for which statuses a customer may activate from. */
+/**
+ * Single source of truth for which statuses a customer may activate from (see
+ * ACTIVATABLE_STATUSES and docs/ADR-001-no-retail-inventory.md).
+ */
 @Injectable()
 export class ActivationPolicy {
   constructor(private readonly config: AppConfigService) {}
 
   allowedStatuses(): readonly HelmetStatus[] {
-    return this.config.get('ACTIVATION_ALLOW_IN_INVENTORY')
-      ? [...ACTIVATABLE_STATUSES, ...CONDITIONALLY_ACTIVATABLE_STATUSES]
-      : ACTIVATABLE_STATUSES;
+    // Possession of the one-time PIN is the proof of purchase; no sale record is required.
+    return ACTIVATABLE_STATUSES;
   }
 
   evaluate(snapshot: ActivationSnapshot, now: Date = new Date()): ActivationDenial | null {

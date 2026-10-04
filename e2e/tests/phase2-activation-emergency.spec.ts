@@ -9,6 +9,7 @@ const run = Date.now().toString(36).toUpperCase();
 const SKU = `E2E-${run}`;
 const OWNER = 'Asha Verma';
 const PASSWORD = 'river stones at dawn';
+const EMAIL = `asha.${run.toLowerCase()}@example.com`;
 const NEW_PASSWORD = 'quiet lanterns over hills';
 const RECOVERY_CODE = /^RK-[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}$/;
 
@@ -33,7 +34,7 @@ test.describe
 
   async function signIn(page: Page, password: string) {
     await page.goto(portal('/login'));
-    await page.fill('#login-helmet', helmet.helmetCode.toLowerCase());
+    await page.fill('#login-identifier', helmet.helmetCode.toLowerCase());
     await page.fill('#login-password', password);
     await page.getByRole('button', { name: 'Sign in' }).click();
   }
@@ -103,7 +104,9 @@ test.describe
     await scan.context().close();
   });
 
-  test('customer activates with the PIN and creates a password', async ({ browser }) => {
+  test('customer activates with the PIN and creates an email + password account', async ({
+    browser,
+  }) => {
     owner = await anonymousMobilePage(browser);
     await owner.goto(helmet.qrUrl);
     await owner.getByRole('link', { name: 'Activate helmet' }).click();
@@ -115,7 +118,8 @@ test.describe
     await expect(owner.getByText(/PIN accepted/)).toBeVisible();
     await expect(owner.getByText(helmet.helmetCode)).toBeVisible();
 
-    // Password + confirmation → atomic activation.
+    // Account email + password + confirmation → atomic activation.
+    await owner.fill('#reg-email', EMAIL);
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
     await owner.getByRole('button', { name: 'Activate helmet' }).click();
@@ -228,7 +232,7 @@ test.describe
     const device = await anonymousMobilePage(browser);
     await device.goto(portal('/login'));
     await device.getByRole('link', { name: 'Forgot password?' }).click();
-    await device.fill('#rec-helmet', helmet.helmetCode);
+    await device.fill('#rec-identifier', helmet.helmetCode);
     await device.fill('#rec-code', recoveryCode.toLowerCase().replaceAll('-', ' '));
     await device.getByRole('button', { name: 'Continue' }).click();
 
@@ -253,17 +257,17 @@ test.describe
 
   test('old password fails, new password works, old recovery code is dead', async ({ browser }) => {
     await signIn(owner, PASSWORD);
-    await expect(owner.getByText('The ID or password is incorrect.')).toBeVisible();
+    await expect(owner.getByText('The email, ID or password is incorrect.')).toBeVisible();
 
     await signIn(owner, NEW_PASSWORD);
     await expect(owner.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
 
     const device = await anonymousMobilePage(browser);
     await device.goto(portal('/recover'));
-    await device.fill('#rec-helmet', helmet.helmetCode);
+    await device.fill('#rec-identifier', helmet.helmetCode);
     await device.fill('#rec-code', recoveryCode);
     await device.getByRole('button', { name: 'Continue' }).click();
-    await expect(device.getByText('The ID or recovery code is incorrect.')).toBeVisible();
+    await expect(device.getByText('The email, ID or recovery code is incorrect.')).toBeVisible();
     await device.context().close();
   });
 

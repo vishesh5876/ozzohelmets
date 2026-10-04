@@ -8,6 +8,7 @@ import {
   resetState,
   TEST_PASSWORD,
   type TestContext,
+  uniqueEmail,
 } from './utils';
 
 describe('Helmet activation — PIN as proof of possession (e2e)', () => {
@@ -26,7 +27,10 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
   const validate = (body: Record<string, unknown>) =>
     ctx.http().post('/api/v1/customer/activation/validate').send(body);
   const register = (body: Record<string, unknown>) =>
-    ctx.http().post('/api/v1/customer/activation/register').send(body);
+    ctx
+      .http()
+      .post('/api/v1/customer/activation/register')
+      .send({ email: uniqueEmail(), ...body });
   const addHelmet = (token: string, body: Record<string, unknown>) =>
     ctx.http().post('/api/v1/customer/activation/add-helmet').set(bearer(token)).send(body);
 
@@ -51,12 +55,12 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
   });
 
   it('validate gives one answer for unknown, ineligible and already-owned helmets', async () => {
-    const printed = await createTestHelmet(ctx, 'PRINTED');
+    const recalled = await createTestHelmet(ctx, 'RECALLED');
     const owned = await newCustomer(ctx);
     const unknown = await validate({ publicToken: 'A'.repeat(22), pin: 'ABCD2345' }).expect(409);
     const ineligible = await validate({
-      publicToken: printed.publicToken,
-      pin: printed.pin,
+      publicToken: recalled.publicToken,
+      pin: recalled.pin,
     }).expect(409);
     const taken = await validate({
       publicToken: owned.helmet.publicToken,
@@ -270,8 +274,24 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
     expect(statuses.slice(10).every((s) => s === 429)).toBe(true);
   });
 
+  it('activates PRINTED, IN_INVENTORY and SOLD helmets — no sale or inventory record needed', async () => {
+    for (const status of ['PRINTED', 'IN_INVENTORY', 'SOLD'] as const) {
+      const h = await createTestHelmet(ctx, status);
+      const res = await register({
+        publicToken: h.publicToken,
+        pin: h.pin,
+        password: TEST_PASSWORD,
+      }).expect(200);
+      expect(res.body.data.helmet.status).toBe('ACTIVATED');
+      const history = await ctx.prisma.helmetStatusHistory.findFirstOrThrow({
+        where: { helmetId: h.id, toStatus: 'ACTIVATED' },
+      });
+      expect(history.fromStatus).toBe(status);
+    }
+  });
+
   it('refuses statuses that are not activatable', async () => {
-    for (const status of ['PRINTED', 'IN_INVENTORY', 'GENERATED', 'RECALLED'] as const) {
+    for (const status of ['GENERATED', 'RECALLED'] as const) {
       const h = await createTestHelmet(ctx, status);
       expect(
         (

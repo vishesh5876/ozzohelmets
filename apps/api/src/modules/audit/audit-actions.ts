@@ -31,6 +31,7 @@ export const AuditAction = {
   CUSTOMER_SESSIONS_REVOKED: 'customer.sessions.revoked',
   CUSTOMER_REFRESH_REUSE_DETECTED: 'customer.refresh.reuse_detected',
   CUSTOMER_PROFILE_UPDATED: 'customer.profile.updated',
+  CUSTOMER_EMAIL_CHANGED: 'customer.email.changed',
   HELMET_ACTIVATED: 'helmet.activated',
   ACTIVATION_PIN_CONSUMED: 'helmet.activation_pin.consumed',
   ACTIVATION_FAILED: 'helmet.activation.failed',

@@ -16,6 +16,8 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { EmailField } from '../auth/EmailField';
+import { emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
@@ -24,7 +26,7 @@ type Step = 'code' | 'confirm' | 'recovery';
 
 /**
  * Claim a helmet someone transferred to you: Helmet ID + one-time transfer code, then sign in
- * (existing customer) or create a password (new customer). The code stays in memory only.
+ * (existing customer) or create an account with email + password (new customer). The code stays in memory only.
  */
 export function ClaimPage() {
   const { status, signIn, restored } = useCustomerAuth();
@@ -38,6 +40,7 @@ export function ClaimPage() {
   const [loginHelmet, setLoginHelmet] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
   const [recoveryCode, setRecoveryCode] = useState('');
   const [claimedId, setClaimedId] = useState('');
@@ -76,6 +79,7 @@ export function ClaimPage() {
       await restored();
       return api.post<TransferClaimRegisterResponse>('/customer/transfers/claim/register', {
         ...body(),
+        email: email.trim(),
         password: pw.password,
         name: name.trim() || undefined,
       });
@@ -102,7 +106,7 @@ export function ClaimPage() {
   };
   const submitNew = (e: FormEvent) => {
     e.preventDefault();
-    const p = passwordClientProblem(pw);
+    const p = emailClientProblem(email) ?? passwordClientProblem(pw);
     setFormError(p);
     if (!p) register.mutate();
   };
@@ -199,12 +203,14 @@ export function ClaimPage() {
                         }}
                       >
                         <Field
-                          label="Your Customer ID or a Helmet ID you own"
+                          label="Email (or Customer ID / Helmet ID you own)"
                           htmlFor="claim-login-helmet"
                         >
                           <Input
                             id="claim-login-helmet"
-                            autoCapitalize="characters"
+                            autoCapitalize="none"
+                            autoComplete="username"
+                            spellCheck={false}
                             value={loginHelmet}
                             onChange={(e) => setLoginHelmet(e.target.value)}
                           />
@@ -239,6 +245,7 @@ export function ClaimPage() {
                             onChange={(e) => setName(e.target.value)}
                           />
                         </Field>
+                        <EmailField id="claim-email" value={email} onChange={setEmail} />
                         <PasswordFields value={pw} onChange={setPw} idPrefix="claim" />
                         {formError && <p className="text-sm text-danger">{formError}</p>}
                         <InlineError error={register.error} />

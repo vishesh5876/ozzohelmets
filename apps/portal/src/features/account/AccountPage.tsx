@@ -2,12 +2,19 @@ import { type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CustomerProfile, CustomerSessionDto, RecoveryCodeIssued } from '@helmet/types';
+import {
+  type CustomerProfile,
+  type CustomerSessionDto,
+  normalizeEmail,
+  type RecoveryCodeIssued,
+} from '@helmet/types';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
 import { PageTitle } from '../../components/AppLayout';
 import { InlineError, LoadingState, SavedNote } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
+import { EmailField } from '../auth/EmailField';
+import { EMAIL_WARNING, emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
@@ -44,6 +51,7 @@ export function AccountPage() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       <PageTitle title="Account" />
+      <AccountEmailCard />
       <CustomerIdCard />
       <DetailsCard />
       <ChangePasswordCard />
@@ -53,25 +61,23 @@ export function AccountPage() {
   );
 }
 
-/** Name, email and mobile are optional contact details. They are never verified and never used to sign in. */
+/** Name and mobile are optional details. Mobile is never verified and never used to sign in. */
 function DetailsCard() {
   const { customer, setCustomer } = useCustomerAuth();
-  const [form, setForm] = useState({ name: '', email: '', mobile: '' });
+  const [form, setForm] = useState({ name: '', mobile: '' });
   const [saved, setSaved] = useState(false);
   useEffect(
     () =>
       setForm({
         name: customer?.name ?? '',
-        email: customer?.email ?? '',
         mobile: customer?.mobile ?? '',
       }),
-    [customer?.name, customer?.email, customer?.mobile],
+    [customer?.name, customer?.mobile],
   );
   const save = useMutation({
     mutationFn: () =>
       api.patch<CustomerProfile>('/customer/auth/me', {
         name: form.name.trim() || null,
-        email: form.email.trim() || null,
         mobile: form.mobile.trim() || null,
       }),
     onSuccess: (c) => {
@@ -92,8 +98,7 @@ function DetailsCard() {
         >
           <p className="text-display-sm font-bold">Your details</p>
           <p className="text-sm text-body">
-            You sign in with any of your Helmet IDs and your password. Email and mobile are
-            optional, not verified, and never used to sign in or recover your account.
+            Optional. Your mobile number is not verified and is never used to sign in.
           </p>
           <Field label="Name" htmlFor="acc-name">
             <Input
@@ -101,15 +106,6 @@ function DetailsCard() {
               value={form.name}
               maxLength={120}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-          <Field label="Email (optional, not verified)" htmlFor="acc-email">
-            <Input
-              id="acc-email"
-              type="email"
-              value={form.email}
-              maxLength={254}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </Field>
           <Field label="Mobile (optional, not verified)" htmlFor="acc-mobile">
@@ -332,10 +328,145 @@ function CustomerIdCard() {
           </Button>
         </div>
         <p className="text-sm text-body">
-          Use your Customer ID to sign in even if you no longer own a helmet. You can share it with
-          support. Your password is still needed to sign in, and your recovery code remains the way
-          to reset it.
+          You can also sign in with your Customer ID, and share it with support. Your password is
+          still needed to sign in, and your recovery code remains the way to reset it.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+type EmailStep = 'view' | 'edit' | 'confirm';
+
+/**
+ * The account email is the normal sign-in identifier. Changing it needs the current password and
+ * the new address typed twice; there is no verification email (no OTP). Other devices are
+ * signed out after a change.
+ */
+function AccountEmailCard() {
+  const { customer, setCustomer } = useCustomerAuth();
+  const [step, setStep] = useState<EmailStep>('view');
+  const [email, setEmail] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [password, setPassword] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [changed, setChanged] = useState(false);
+  const change = useMutation({
+    mutationFn: () =>
+      api.post<CustomerProfile>('/customer/auth/email', {
+        currentPassword: password,
+        newEmail: email.trim(),
+        confirmEmail: confirm.trim(),
+      }),
+    onSuccess: (c) => {
+      setCustomer(c);
+      setEmail('');
+      setConfirm('');
+      setPassword('');
+      setChanged(true);
+      setStep('view');
+      void queryClient.invalidateQueries({ queryKey: keys.sessions });
+    },
+  });
+  if (!customer) return null;
+  const reset = () => {
+    setStep('view');
+    setProblem(null);
+    setPassword('');
+    change.reset();
+  };
+  const review = (e: FormEvent) => {
+    e.preventDefault();
+    const p =
+      emailClientProblem(email) ??
+      (normalizeEmail(email)?.normalized !== normalizeEmail(confirm)?.normalized
+        ? 'The two email addresses do not match.'
+        : null) ??
+      (password ? null : 'Enter your current password.');
+    setProblem(p);
+    if (!p) setStep('confirm');
+  };
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-display-sm font-bold">Account email</p>
+        {step === 'view' && (
+          <>
+            <p className="break-all text-lg font-medium" data-testid="account-email">
+              {customer.email ?? 'No email set'}
+            </p>
+            <p className="text-sm text-body">You sign in with this email and your password.</p>
+            {changed && (
+              <p className="text-sm font-medium">
+                Email updated. Your other devices were signed out.
+              </p>
+            )}
+            <div>
+              <Button
+                variant="subtle"
+                onClick={() => {
+                  setChanged(false);
+                  setStep('edit');
+                }}
+              >
+                {customer.email ? 'Change email' : 'Add email'}
+              </Button>
+            </div>
+          </>
+        )}
+        {step === 'edit' && (
+          <form className="flex flex-col gap-4" onSubmit={review} noValidate>
+            <EmailField
+              id="ce-email"
+              label="New email"
+              value={email}
+              onChange={setEmail}
+              autoFocus
+            />
+            <EmailField
+              id="ce-confirm"
+              label="Confirm new email"
+              value={confirm}
+              onChange={setConfirm}
+              hint=""
+            />
+            <Field label="Current password" htmlFor="ce-password">
+              <Input
+                id="ce-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </Field>
+            {problem && <p className="text-sm text-danger">{problem}</p>}
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="submit">Continue</Button>
+              <Button type="button" variant="ghost" onClick={reset}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+        {step === 'confirm' && (
+          <div className="flex flex-col gap-4">
+            <p className="text-body">You will sign in with:</p>
+            <p className="break-all text-lg font-bold" data-testid="confirm-new-email">
+              {normalizeEmail(email)?.email ?? email}
+            </p>
+            <p className="rounded-xl bg-canvas-soft p-3 text-sm font-medium">{EMAIL_WARNING}</p>
+            <p className="text-sm text-body">Your other signed-in devices will be signed out.</p>
+            <InlineError error={change.error} />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button loading={change.isPending} onClick={() => change.mutate()}>
+                Confirm email change
+              </Button>
+              <Button variant="ghost" onClick={() => setStep('edit')}>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

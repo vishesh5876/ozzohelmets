@@ -2,7 +2,12 @@
 
 Each phase ends with lint, typecheck, tests and build passing, docs updated, and a demoable flow.
 
-## Phase 1 — Foundation + manufacturing _(complete)_
+The product has exactly three surfaces: **Admin**, **Customer** and the **public QR** pages. It
+intentionally does not model retailers, distributors or inventory — physical possession is
+proven with the helmet's one-time activation PIN ([ADR-001](./ADR-001-no-retail-inventory.md)).
+A dealer/distributor/inventory phase was prototyped and **never merged**; it is not on the roadmap.
+
+## P1 — Foundation + Manufacturing _(complete)_
 
 Monorepo, NestJS API, PostgreSQL/Prisma migrations, Redis, Docker dev setup, env validation,
 admin authentication (JWT + rotating refresh), RBAC foundation, helmet models, manufacturing
@@ -14,12 +19,16 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 **Milestone:** login → create model → create batch → generate N helmets → view/search → export CSV
 → open QR URL → "This helmet has not yet been activated."
 
-## Phase 2 — Customer identity, activation & emergency profile _(complete — see [`PHASE-2.md`](./PHASE-2.md))_
+## P2 — Customer Activation + Emergency Profile _(complete — see [`PHASE-2.md`](./PHASE-2.md))_
 
-- Customer auth: owned Helmet ID + password (Argon2id + pepper), offline recovery code, escalating
-  lockouts. No OTP/SMS (removed by product decision).
+- Customer auth: password (Argon2id + pepper), offline recovery code, escalating lockouts. No
+  OTP/SMS/email verification (product decision).
+- **Scope correction (2026-10-04):** the first activation binds an **account email** (unique,
+  unverified, sign-in identifier only) — QR → PIN → email → password. Normal sign-in is email +
+  password; Customer ID and owned Helmet ID still work. Activation is allowed from `PRINTED`,
+  `IN_INVENTORY` and `SOLD`: no sale record is needed.
 - Customer JWT + rotating refresh tokens (reuse detection), logout/revocation.
-- Activation flow (helmetCode/QR + PIN → password) in one PostgreSQL transaction with
+- Activation flow (helmetCode/QR + PIN → email + password) in one PostgreSQL transaction with
   `SELECT … FOR UPDATE` on the helmet row; PIN escrow purge on success; audit.
 - Emergency profile with AES-256-GCM field encryption, emergency contacts, visibility settings
   (all default **off** except none), photo upload abstraction (S3-compatible later).
@@ -30,7 +39,7 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 - Tests: activation, double-activation race, ownership authorization, visibility filtering,
   login/recovery/PIN lockouts.
 
-## Phase 3 — Ownership & helmet lifecycle _(complete — see [`PHASE-3.md`](./PHASE-3.md))_
+## P3 — Ownership + Helmet Lifecycle _(complete — see [`PHASE-3.md`](./PHASE-3.md))_
 
 - Multiple helmets per account; per-helmet emergency exposure.
 - Secure ownership transfer: recent password check, one-time `TR-` code (HMAC at rest, 30 min),
@@ -41,35 +50,37 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 - Permission-gated support actions: history, cancel transfer, restore, forced deactivation,
   ownership revocation (SUPER_ADMIN), replacement linking.
 
-## Phase 4 — Warranty & product authenticity _(complete — see [`PHASE-4.md`](./PHASE-4.md))_
+## P4 — Warranty + Product Authenticity _(complete — see [`PHASE-4.md`](./PHASE-4.md))_
 
 - Permanent Customer ID (`CU-XXXX-XXXX`) as a second sign-in/recovery identifier; customers with
   zero helmets can sign in.
-- Per-helmet warranty: model policy, server-computed coverage, derived expiry, idempotent
+- Per-helmet warranty registered by the customer (free-text seller name): model policy, server-computed coverage, derived expiry, idempotent
   registration, private proof of purchase, transfer inheritance, replacement policy, admin
   corrections / void / restore with history and audit.
 - Public product verification (`/verify/:token`), VERIFY scan telemetry, anonymous product reports
   with admin review, recall-ready contract.
 - Revised public emergency rule for DAMAGED / RECALLED helmets.
 
-## Phase 5 — Dealers, printing & warranty claims
+## P5 — Customer Experience + Admin Operations + Security Hardening
 
-- Dealer/distributor organisations and users, inventory movement (IN_INVENTORY → SOLD via barcode
-  scan), dealer-assisted registration (warranty `source`/`purchase_channel` ready), regional
-  reporting.
-- Warranty claims / service centres on top of the Phase 4 warranty record.
-- Label PDFs: QR labels, barcode labels, combined print sheets; batch print workflow and reprint
-  controls.
+- Customer: portal navigation (Dashboard, My helmets, Add helmet, Emergency profile, Emergency
+  contacts, Warranty, Account), email change (password + confirmation, no OTP), accessibility and
+  copy review, optional email reset links (architecture allows them; not built).
+- Admin operations: label PDFs (QR/barcode labels, print sheets), batch print workflow and reprint
+  controls, customer lookup for support, warranty claims / service handling on the Phase 4 record.
+- Security hardening: dependency and secret scanning in CI, CSP review, session/device
+  management polish, abuse rate-limit tuning.
 
-## Phase 6 — Analytics & anti-counterfeit
+## P6 — Analytics + QR Abuse / Anti-Copy Detection
 
 - Scan analytics dashboards, activation funnel, regional views.
 - Clone detection signals over `helmet_scans`: scan velocity, impossible travel, device fan-out,
   cross-region scans; alerting and admin review queue.
 - Builds on the Phase 4 verification page, VERIFY scans and product reports; recall campaigns.
 
-## Phase 7 — Production hardening & AWS
+## P7 — Production Infrastructure + Monitoring + Launch Readiness
 
 - AWS infrastructure (IaC): ECS/Fargate or EKS, RDS PostgreSQL, ElastiCache Redis, S3, CloudFront/
   Cloudflare, KMS-backed keys (envelope encryption for medical data and PIN escrow), Secrets Manager.
-- Observability (OpenTelemetry, metrics, alerting), backups/PITR, DR runbooks, pen test, load tests.
+- Observability (OpenTelemetry, metrics, alerting), backups/PITR, DR runbooks, pen test, load tests,
+  launch checklist.

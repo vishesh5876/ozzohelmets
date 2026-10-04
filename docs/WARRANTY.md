@@ -2,7 +2,9 @@
 
 Phase 4. A warranty covers **one physical helmet**, not a person. It is registered by the owner,
 survives ownership transfers, and is computed entirely on the server from the helmet model's
-policy. There is no claims, dealer or service-centre workflow yet.
+policy. It is **customer-driven**: the owner declares how and where they bought the helmet. There
+is no retailer/dealer entity ([ADR-001](ADR-001-no-retail-inventory.md)) and no claims or
+service-centre workflow yet.
 
 ## Model policy
 
@@ -52,8 +54,9 @@ The admin list filter uses the same rule in SQL (status + date), so "Expired" li
   concurrent submissions can't create two warranties. A repeated submit **with the same purchase
   date** returns the existing record (idempotent); anything else → `409 WARRANTY_ALREADY_REGISTERED`.
 - Free text is trimmed, control characters stripped, lengths limited.
-- Purchase channel: `BRAND_WEBSITE`, `DEALER`, `MARKETPLACE`, `RETAIL_STORE`, `OTHER` (no dealer
-  entity yet).
+- Purchase channel: `BRAND_WEBSITE`, `DEALER`, `MARKETPLACE`, `RETAIL_STORE`, `OTHER` — a
+  customer-declared label only. The seller is free text (`sellerName`, `sellerCity`); there is no
+  seller/organisation link and none is planned.
 
 ## Proof of purchase
 

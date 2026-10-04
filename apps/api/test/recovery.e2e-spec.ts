@@ -100,7 +100,7 @@ describe('Account recovery — Helmet ID + offline recovery code (e2e)', () => {
       const res = await recover(c.helmet.helmetCode, 'RK-2222-2222-2222').expect(401);
       expect(res.body.error).toMatchObject({
         code: 'INVALID_CREDENTIALS',
-        message: 'The ID or recovery code is incorrect.',
+        message: 'The email, ID or recovery code is incorrect.',
       });
     }
     const locked = await recover(c.helmet.helmetCode, c.recoveryCode).expect(429);

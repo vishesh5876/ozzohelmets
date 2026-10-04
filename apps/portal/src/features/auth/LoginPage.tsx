@@ -9,13 +9,16 @@ import { useCustomerAuth } from '../../lib/auth-context';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { safeNext } from './safe-next';
 
-/** Sign in with your Customer ID or any Helmet ID you own, plus your password. */
+/**
+ * Sign in with your account email and password. The Customer ID or a currently owned Helmet ID
+ * also work in the same field.
+ */
 export function LoginPage() {
   const { status, signIn, restored } = useCustomerAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const next = safeNext(params.get('next'));
-  const [helmetCode, setHelmetCode] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
 
@@ -34,9 +37,13 @@ export function LoginPage() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const id = parseAccountIdentifier(helmetCode);
+    const id = parseAccountIdentifier(identifier);
     if (!id) {
-      setCodeError('That ID doesn’t look right. Check your helmet label or your Customer ID.');
+      setCodeError(
+        identifier.includes('@')
+          ? 'Enter a valid email address.'
+          : 'That doesn’t look right. Enter your email, Customer ID or Helmet ID.',
+      );
       return;
     }
     setCodeError(null);
@@ -47,27 +54,26 @@ export function LoginPage() {
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
         <h1 className="text-display-lg font-bold">Sign in</h1>
-        <p className="mt-2 text-body">
-          Use your Customer ID or the Helmet ID of any helmet you own, and your password.
-        </p>
+        <p className="mt-2 text-body">Use the email and password you chose at activation.</p>
         <Card className="mt-8">
           <CardContent>
             <form onSubmit={submit} noValidate className="flex flex-col gap-4">
               <Field
-                label="Helmet or Customer ID"
-                htmlFor="login-helmet"
+                label="Email"
+                htmlFor="login-identifier"
                 error={codeError ?? undefined}
-                hint="e.g. HM-A8F3-KL92 (on your helmet label) or CU-K7PX-92LM (in your account)."
+                hint="You can also use your Customer ID (CU-…) or the Helmet ID of a helmet you own."
               >
                 <Input
-                  id="login-helmet"
-                  autoCapitalize="characters"
+                  id="login-identifier"
+                  type="text"
+                  inputMode="email"
+                  autoCapitalize="none"
                   autoComplete="username"
                   spellCheck={false}
-                  className="font-mono uppercase"
-                  placeholder="HM-XXXX-XXXX or CU-XXXX-XXXX"
-                  value={helmetCode}
-                  onChange={(e) => setHelmetCode(e.target.value)}
+                  placeholder="you@example.com"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   aria-invalid={!!codeError}
                 />
               </Field>
@@ -85,7 +91,7 @@ export function LoginPage() {
                 type="submit"
                 size="lg"
                 loading={login.isPending}
-                disabled={!helmetCode || !password}
+                disabled={!identifier || !password}
               >
                 Sign in
               </Button>

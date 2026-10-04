@@ -40,7 +40,6 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
       the secret manager. **Never rotate the pepper casually** — it invalidates every customer
       password and recovery code.
 - [ ] Persistent photo storage (volume or S3 provider) and backups for it.
-- [ ] Decide `ACTIVATION_ALLOW_IN_INVENTORY` (default false: only SOLD helmets can be activated).
 - [ ] Phase 3: review `RECENT_AUTH_TTL_SECONDS` (300) and `TRANSFER_*` (code TTL, lockouts); apply
       migration `20261003162224_phase3_ownership_lifecycle` with `prisma migrate deploy`.
 - [ ] `CORS_ORIGINS` = exact admin/portal origins; `PUBLIC_EMERGENCY_BASE_URL` = final QR domain

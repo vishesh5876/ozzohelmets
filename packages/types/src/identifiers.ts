@@ -105,14 +105,43 @@ export function isValidCustomerCode(code: string): boolean {
 }
 
 export type AccountIdentifier =
-  { kind: 'helmet'; code: string } | { kind: 'customer'; code: string };
+  | { kind: 'email'; code: string }
+  | { kind: 'helmet'; code: string }
+  | { kind: 'customer'; code: string };
+
+export const EMAIL_MAX_LENGTH = 254;
+/** Pragmatic shape check (one `@`, non-empty local part, dotted domain, no spaces). */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export interface NormalizedEmail {
+  /** Stored/display form: trimmed, domain lowercased, local part as typed. */
+  email: string;
+  /** Canonical lookup key: the whole address lowercased (NFC). Unique among active accounts. */
+  normalized: string;
+}
 
 /**
- * Sign-in identifier: a Customer ID (`CU-…`, prefix required) or a Helmet ID (`HM-…`, or its 8
- * bare symbols). Returns null unless the shape AND check symbol are valid — typos are rejected
- * before any lookup.
+ * Email normalisation for sign-in. Deliberately conservative: no provider-specific rewriting
+ * (dots and `+tags` are kept), only trimming, Unicode NFC and case folding for the lookup key.
+ */
+export function normalizeEmail(input: string): NormalizedEmail | null {
+  const trimmed = input.trim().normalize('NFC');
+  if (trimmed.length > EMAIL_MAX_LENGTH || !EMAIL_SHAPE.test(trimmed)) return null;
+  const at = trimmed.lastIndexOf('@');
+  const email = `${trimmed.slice(0, at)}@${trimmed.slice(at + 1).toLowerCase()}`;
+  return { email, normalized: email.toLowerCase() };
+}
+
+/**
+ * Sign-in identifier: an email address (anything containing `@`), a Customer ID (`CU-…`, prefix
+ * required) or a Helmet ID (`HM-…`, or its 8 bare symbols). Returns null unless the shape (and,
+ * for IDs, the check symbol) is valid — typos are rejected before any lookup.
  */
 export function parseAccountIdentifier(input: string): AccountIdentifier | null {
+  if (input.includes('@')) {
+    const email = normalizeEmail(input);
+    return email ? { kind: 'email', code: email.normalized } : null;
+  }
   const customer = normalizeCustomerCode(input);
   if (customer) return isValidCustomerCode(customer) ? { kind: 'customer', code: customer } : null;
   const helmet = normalizeHelmetCode(input);

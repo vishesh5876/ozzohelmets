@@ -38,6 +38,7 @@ import {
 import { CurrentCustomer } from './decorators/current-customer.decorator';
 import { CustomerAuth } from './decorators/customer-auth.decorator';
 import {
+  ChangeEmailDto,
   ChangePasswordDto,
   ConfirmPasswordDto,
   CustomerLoginDto,
@@ -138,6 +139,22 @@ export class CustomerAuthController {
     @ReqMeta() meta: RequestMeta,
   ): Promise<RecoveryCodeIssued> {
     return this.auth.rotateRecoveryCode(customer, dto.password, meta);
+  }
+
+  @Post('email')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Change the sign-in email (current password + confirmation). Unique among accounts; other sessions are revoked. No OTP.',
+  })
+  changeEmail(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: ChangeEmailDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<CustomerProfile> {
+    return this.auth.changeEmail(customer, dto, meta);
   }
 
   @Post('reauthenticate')

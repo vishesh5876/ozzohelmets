@@ -50,7 +50,7 @@ export function RecoveryCodeNotice({
       <ul className="list-disc space-y-1 pl-5 text-sm text-body">
         <li>Write it down or store it in a password manager. Keep it with your helmet papers.</li>
         <li>It is shown only once. We can’t show it again.</li>
-        <li>Anyone with this code and your Helmet ID can reset your password.</li>
+        <li>Anyone with this code and your email (or Helmet ID) can reset your password.</li>
       </ul>
       <label className="flex items-start gap-3 rounded-md bg-canvas-soft p-4">
         <input

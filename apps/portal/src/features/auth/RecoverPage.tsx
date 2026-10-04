@@ -17,7 +17,10 @@ import { RecoveryCodeNotice } from './RecoveryCodeNotice';
 
 type Step = 'verify' | 'reset' | 'code';
 
-/** Forgot password: Helmet ID or Customer ID + recovery code → new password → new recovery code (shown once). */
+/**
+ * Forgot password: email, Customer ID or Helmet ID + recovery code → new password → new
+ * recovery code (shown once). Works without access to the mailbox.
+ */
 export function RecoverPage() {
   const navigate = useNavigate();
   const { signIn, restored } = useCustomerAuth();
@@ -61,7 +64,7 @@ export function RecoverPage() {
   const submitVerify = (e: FormEvent) => {
     e.preventDefault();
     const id = parseAccountIdentifier(helmetCode);
-    if (!id) return setCodeError('That ID doesn’t look right.');
+    if (!id) return setCodeError('Enter a valid email, Customer ID or Helmet ID.');
     const code = id.code;
     setCodeError(null);
     verify.mutate(code);
@@ -81,7 +84,7 @@ export function RecoverPage() {
         </h1>
         {step === 'verify' && (
           <p className="mt-2 text-body">
-            You need your Customer ID (or one of your Helmet IDs) and the recovery code you saved.
+            Enter your account email (or Customer ID / Helmet ID) and the recovery code you saved.
           </p>
         )}
         <Card className="mt-8">
@@ -89,16 +92,16 @@ export function RecoverPage() {
             {step === 'verify' && (
               <form onSubmit={submitVerify} noValidate className="flex flex-col gap-4">
                 <Field
-                  label="Helmet or Customer ID"
-                  htmlFor="rec-helmet"
+                  label="Email, Customer ID or Helmet ID"
+                  htmlFor="rec-identifier"
                   error={codeError ?? undefined}
                 >
                   <Input
-                    id="rec-helmet"
-                    autoCapitalize="characters"
+                    id="rec-identifier"
+                    autoCapitalize="none"
+                    autoComplete="username"
                     spellCheck={false}
-                    className="font-mono uppercase"
-                    placeholder="HM-XXXX-XXXX"
+                    placeholder="you@example.com"
                     value={helmetCode}
                     onChange={(e) => setHelmetCode(e.target.value)}
                   />

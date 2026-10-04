@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import { PASSWORD_MAX_LENGTH } from '@helmet/types';
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '@helmet/types';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -23,6 +23,11 @@ export class TransferClaimDto {
 }
 
 export class TransferClaimRegisterDto extends TransferClaimDto {
+  @ApiProperty({ example: 'rider@example.com', description: 'Account email (sign-in identifier)' })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  email: string;
+
   @ApiProperty({ format: 'password' })
   @IsString()
   @MaxLength(PASSWORD_MAX_LENGTH)

@@ -1,19 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
-import { PASSWORD_MAX_LENGTH } from '@helmet/types';
+import { IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '@helmet/types';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
-/** `identifier` = Helmet ID or Customer ID. `helmetCode` is the Phase 2/3 field name (still accepted). */
+/**
+ * `identifier` = account email (normal), Customer ID or a currently owned Helmet ID.
+ * `helmetCode` is the Phase 2/3 field name (still accepted).
+ */
 export class CustomerLoginDto {
   @ApiPropertyOptional({
-    example: 'CU-K7PX-92LM',
-    description: 'Customer ID, or any Helmet ID currently owned by the account',
+    example: 'rider@example.com',
+    description: 'Account email, Customer ID, or any Helmet ID currently owned by the account',
   })
   @ValidateIf((o: CustomerLoginDto) => o.helmetCode === undefined)
   @IsString()
-  @MaxLength(32)
+  @MaxLength(EMAIL_MAX_LENGTH)
   identifier?: string;
 
   @ApiPropertyOptional({ deprecated: true, description: 'Alias of `identifier`' })
@@ -30,10 +33,13 @@ export class CustomerLoginDto {
 }
 
 export class RecoverDto {
-  @ApiPropertyOptional({ example: 'CU-K7PX-92LM', description: 'Customer ID or owned Helmet ID' })
+  @ApiPropertyOptional({
+    example: 'CU-K7PX-92LM',
+    description: 'Account email, Customer ID or owned Helmet ID',
+  })
   @ValidateIf((o: RecoverDto) => o.helmetCode === undefined)
   @IsString()
-  @MaxLength(32)
+  @MaxLength(EMAIL_MAX_LENGTH)
   identifier?: string;
 
   @ApiPropertyOptional({ deprecated: true, description: 'Alias of `identifier`' })
@@ -80,7 +86,28 @@ export class ConfirmPasswordDto {
   password: string;
 }
 
-/** Optional, owner-provided contact details. They are NOT verified and never used for auth. */
+/** Email change: password + typed-twice confirmation. No OTP; the address stays unverified. */
+export class ChangeEmailDto {
+  @ApiProperty({ format: 'password' })
+  @IsString()
+  @MaxLength(PASSWORD_MAX_LENGTH)
+  currentPassword: string;
+
+  @ApiProperty({ example: 'new@example.com' })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  newEmail: string;
+
+  @ApiProperty({ example: 'new@example.com', description: 'Must match `newEmail`' })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  confirmEmail: string;
+}
+
+/**
+ * Optional, owner-provided details. The account email is changed only via
+ * POST /customer/auth/email. Mobile is NOT verified and never used for auth.
+ */
 export class UpdateCustomerDto {
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
@@ -89,16 +116,6 @@ export class UpdateCustomerDto {
   @MinLength(1)
   @MaxLength(120)
   name?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() || null : value,
-  )
-  @ValidateIf((_o, v) => v !== null)
-  @IsEmail()
-  @MaxLength(254)
-  email?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

@@ -13,7 +13,7 @@ purchase, transfer inheritance, replacement policy, admin corrections/void/resto
 verification and VERIFY telemetry; anonymous product reports with admin review; revised public
 emergency rule for damaged/recalled helmets; recall-ready contracts.
 
-Out of scope (later phases): dealers/distributors, warranty claims, service centres,
+Out of scope (later phases): warranty claims, service centres,
 anti-counterfeit scoring, analytics dashboards, recall campaigns, AWS changes.
 
 ## Design decisions
@@ -103,7 +103,7 @@ migrations untouched. Not yet applied to the external database — apply with
 
 ## Deferred (intentional)
 
-- Warranty claims, service centres, dealer-registered warranties, recall campaigns.
+- Warranty claims, service centres, recall campaigns. (Dealer-registered warranties dropped — see ADR-001.)
 - Clone-detection signals and dashboards over VERIFY/EMERGENCY scans.
 - S3 storage provider for proofs (local provider behind the same interface).
 - Malware scanning of uploaded PDFs (structural checks only today).

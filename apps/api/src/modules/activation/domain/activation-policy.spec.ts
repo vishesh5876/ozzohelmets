@@ -14,37 +14,26 @@ const fresh = (status: HelmetStatus): ActivationSnapshot => ({
   hasActiveOwner: false,
   activationLockedUntil: null,
 });
-const policy = (allowInventory: boolean) =>
+const policy = () =>
   new ActivationPolicy({
     get: (k: string) =>
       ({
-        ACTIVATION_ALLOW_IN_INVENTORY: allowInventory,
         ACTIVATION_FAILURES_BEFORE_LOCK: 5,
         ACTIVATION_LOCKOUT_BASE_SECONDS: 900,
       })[k],
   } as unknown as AppConfigService);
 
 describe('activation eligibility', () => {
-  it('allows only SOLD by default', () => {
-    const p = policy(false);
+  it('allows PRINTED, IN_INVENTORY and SOLD (PIN possession is the purchase proof)', () => {
+    const p = policy();
     const allowed = HELMET_STATUSES.filter((s) => p.evaluate(fresh(s), now) === null);
-    expect(allowed).toEqual(['SOLD']);
+    expect([...allowed].sort()).toEqual(['IN_INVENTORY', 'PRINTED', 'SOLD']);
   });
 
-  it('adds IN_INVENTORY only when the temporary allowance is enabled', () => {
-    const p = policy(true);
-    expect(HELMET_STATUSES.filter((s) => p.evaluate(fresh(s), now) === null).sort()).toEqual([
-      'IN_INVENTORY',
-      'SOLD',
-    ]);
-  });
-
-  it.each<HelmetStatus>(['GENERATED', 'PRINTED', 'DAMAGED', 'REPLACED', 'DEACTIVATED', 'RECALLED'])(
+  it.each<HelmetStatus>(['GENERATED', 'DAMAGED', 'REPLACED', 'DEACTIVATED', 'RECALLED'])(
     'rejects %s as not activatable',
     (status) => {
-      expect(policy(true).evaluate(fresh(status), now)?.code).toBe(
-        ErrorCode.HELMET_NOT_ACTIVATABLE,
-      );
+      expect(policy().evaluate(fresh(status), now)?.code).toBe(ErrorCode.HELMET_NOT_ACTIVATABLE);
     },
   );
 

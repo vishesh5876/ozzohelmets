@@ -13,7 +13,8 @@ const O = ActorType.OWNER;
 
 export const HELMET_STATUS_TRANSITIONS: TransitionTable = {
   GENERATED: { PRINTED: [A, S], DEACTIVATED: [A] },
-  PRINTED: { IN_INVENTORY: [A], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
+  // ACTIVATED (S): the label + PIN card ship with the helmet; the PIN alone proves possession.
+  PRINTED: { IN_INVENTORY: [A], ACTIVATED: [S], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   IN_INVENTORY: { SOLD: [A], ACTIVATED: [S], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   SOLD: { ACTIVATED: [S], IN_INVENTORY: [A], DAMAGED: [A], DEACTIVATED: [A], RECALLED: [A] },
   ACTIVATED: {
@@ -123,13 +124,16 @@ export function helmetListGroup(status: HelmetStatus): HelmetListGroup {
 }
 
 /**
- * Statuses from which a customer may always activate a helmet. The API's ActivationPolicy is
- * the single place that applies this (plus the configurable IN_INVENTORY allowance).
+ * Statuses in which a physically distributed helmet may be activated by whoever holds its
+ * one-time Activation PIN. Helmets are sold through any retail channel; the platform does not
+ * model dealers or inventory (see docs/ADR-001-no-retail-inventory.md). GENERATED helmets are
+ * excluded because their labels and PIN cards have not been printed yet. The API's
+ * ActivationPolicy is the single place that applies this.
  */
-export const ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [HelmetStatus.SOLD];
-/** Activatable only while the temporary `ACTIVATION_ALLOW_IN_INVENTORY` allowance is on. */
-export const CONDITIONALLY_ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [
+export const ACTIVATABLE_STATUSES: readonly HelmetStatus[] = [
+  HelmetStatus.PRINTED,
   HelmetStatus.IN_INVENTORY,
+  HelmetStatus.SOLD,
 ];
 
 export function allowedTransitions(from: HelmetStatus, actor: ActorType): HelmetStatus[] {

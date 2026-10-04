@@ -116,7 +116,6 @@ export const envSchema = z
       .regex(/^[A-Z]{2}$/)
       .default('IN'),
 
-    ACTIVATION_ALLOW_IN_INVENTORY: bool.default('false'),
     ACTIVATION_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(5),
     ACTIVATION_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR: z.coerce.number().int().min(1).default(10),

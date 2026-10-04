@@ -16,19 +16,22 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { EmailField } from '../auth/EmailField';
+import { emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
 
 type Target = { publicToken: string } | { helmetCode: string };
-type Step = 'identify' | 'pin' | 'password' | 'recovery' | 'done';
+type Step = 'identify' | 'pin' | 'account' | 'recovery' | 'done';
 
 /**
  * Activation with the concealed one-time PIN as proof of possession:
  *  QR (?t=token) or manual Helmet ID → PIN (validated) →
- *    new customer: create password → account + ownership → recovery code shown once
- *    signed-in customer: helmet added to the existing account
- * The PIN and password live only in component state.
+ *    new customer: email + password → account + ownership → recovery code shown once
+ *    signed-in customer: helmet added to the existing account (no email/password needed)
+ * The PIN is the proof of possession; the email is only the sign-in identifier. The PIN and
+ * password live only in component state.
  */
 export function ActivatePage() {
   const [params] = useSearchParams();
@@ -45,6 +48,8 @@ export function ActivatePage() {
   const [pin, setPin] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [activated, setActivated] = useState<CustomerHelmetDto | null>(null);
@@ -55,7 +60,7 @@ export function ActivatePage() {
     onSuccess: (res) => {
       setHelmet(res.helmet);
       if (signedIn) addHelmet.mutate();
-      else setStep('password');
+      else setStep('account');
     },
   });
   const register = useMutation({
@@ -64,6 +69,7 @@ export function ActivatePage() {
       return api.post<ActivationRegisterResponse>('/customer/activation/register', {
         ...target,
         pin,
+        email: email.trim(),
         password: pw.password,
         name: name.trim() || undefined,
       });
@@ -108,9 +114,11 @@ export function ActivatePage() {
 
   const submitPassword = (e: FormEvent) => {
     e.preventDefault();
+    const emailProblem = emailClientProblem(email);
     const problem = passwordClientProblem(pw);
+    setEmailError(emailProblem);
     setPwError(problem);
-    if (!problem) register.mutate();
+    if (!problem && !emailProblem) register.mutate();
   };
 
   const busy = validate.isPending || addHelmet.isPending;
@@ -125,11 +133,11 @@ export function ActivatePage() {
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-10 sm:py-14">
         <h1 className="text-display-lg font-bold">{title}</h1>
-        {['identify', 'pin', 'password'].includes(step) && (
+        {['identify', 'pin', 'account'].includes(step) && (
           <Stepper step={step} signedIn={signedIn} />
         )}
 
-        {(helmet || target) && ['pin', 'password'].includes(step) && (
+        {(helmet || target) && ['pin', 'account'].includes(step) && (
           <div className="mt-6 rounded-xl bg-canvas-soft p-4">
             {helmet ? (
               <>
@@ -227,12 +235,18 @@ export function ActivatePage() {
               </form>
             )}
 
-            {step === 'password' && (
+            {step === 'account' && (
               <form onSubmit={submitPassword} noValidate className="flex flex-col gap-4">
                 <p className="text-body">
-                  PIN accepted. Create a password — you’ll sign in with this Helmet ID and your
-                  password.
+                  PIN accepted. Create your account — you’ll sign in with your email and password.
                 </p>
+                <EmailField
+                  id="reg-email"
+                  value={email}
+                  onChange={setEmail}
+                  error={emailError}
+                  autoFocus
+                />
                 <Field label="Your name (optional)" htmlFor="reg-name">
                   <Input
                     id="reg-name"
@@ -285,7 +299,7 @@ function Stepper({ step, signedIn }: { step: Step; signedIn: boolean }) {
   const steps: { key: Step; label: string }[] = [
     { key: 'identify', label: 'Helmet' },
     { key: 'pin', label: 'PIN' },
-    ...(signedIn ? [] : [{ key: 'password' as Step, label: 'Password' }]),
+    ...(signedIn ? [] : [{ key: 'account' as Step, label: 'Account' }]),
   ];
   const index = steps.findIndex((s) => s.key === step);
   return (

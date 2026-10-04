@@ -13,13 +13,16 @@ export class CustomerCredentialsService {
   /** Throws WEAK_PASSWORD with a user-facing reason; never logs the password. */
   assertAcceptablePassword(
     password: string,
-    context: { helmetCode?: string; activationPin?: string } = {},
+    context: { helmetCode?: string; activationPin?: string; email?: string } = {},
   ): void {
     const problem =
       passwordProblem(password, { helmetCode: context.helmetCode }) ??
       (context.activationPin &&
       password.trim().toUpperCase().replace(/[\s-]/g, '') === context.activationPin
         ? 'Don’t reuse the activation PIN as your password.'
+        : null) ??
+      (context.email && password.trim().toLowerCase() === context.email.toLowerCase()
+        ? 'Don’t use your email address as your password.'
         : null);
     if (problem) throw new AppException(ErrorCode.WEAK_PASSWORD, problem, HttpStatus.BAD_REQUEST);
   }
