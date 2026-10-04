@@ -12,7 +12,7 @@ coverage/
 .idea/
 .vscode/*
 !.vscode/extensions.json
-exports/
+/exports/
 dump.rdb
 *.rdb
 .sandbox-ca.crt
