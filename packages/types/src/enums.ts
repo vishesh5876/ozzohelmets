@@ -344,3 +344,65 @@ export const ProductReportEventType = {
 } as const;
 export type ProductReportEventType =
   (typeof ProductReportEventType)[keyof typeof ProductReportEventType];
+
+// ─────────────── Phase 6: analytics & risk ───────────────
+
+export const DeviceCategory = {
+  MOBILE: 'MOBILE',
+  TABLET: 'TABLET',
+  DESKTOP: 'DESKTOP',
+  BOT: 'BOT',
+  OTHER: 'OTHER',
+} as const;
+export type DeviceCategory = (typeof DeviceCategory)[keyof typeof DeviceCategory];
+
+/** Human judgement about a printed QR. Separate from HelmetStatus; never set automatically. */
+export const QrIntegrityStatus = {
+  NORMAL: 'NORMAL',
+  UNDER_REVIEW: 'UNDER_REVIEW',
+  COMPROMISED: 'COMPROMISED',
+} as const;
+export type QrIntegrityStatus = (typeof QrIntegrityStatus)[keyof typeof QrIntegrityStatus];
+
+export const RiskLevel = {
+  NONE: 'NONE',
+  LOW: 'LOW',
+  MEDIUM: 'MEDIUM',
+  HIGH: 'HIGH',
+  CRITICAL: 'CRITICAL',
+} as const;
+export type RiskLevel = (typeof RiskLevel)[keyof typeof RiskLevel];
+export const RISK_LEVELS: readonly RiskLevel[] = ['NONE', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+export const RiskSignalType = {
+  HIGH_SCAN_VOLUME: 'HIGH_SCAN_VOLUME',
+  HIGH_UNIQUE_VISITOR_COUNT: 'HIGH_UNIQUE_VISITOR_COUNT',
+  RAPID_IP_CHURN: 'RAPID_IP_CHURN',
+  ABNORMAL_VERIFY_ACTIVITY: 'ABNORMAL_VERIFY_ACTIVITY',
+  PRODUCT_REPORT_CORRELATION: 'PRODUCT_REPORT_CORRELATION',
+  QR_SHARED_OR_COPIED_POSSIBLE: 'QR_SHARED_OR_COPIED_POSSIBLE',
+} as const;
+export type RiskSignalType = (typeof RiskSignalType)[keyof typeof RiskSignalType];
+
+export const RiskAlertType = {
+  HELMET_SCAN_ANOMALY: 'HELMET_SCAN_ANOMALY',
+  HIGH_PUBLIC_SCAN_VOLUME: 'HIGH_PUBLIC_SCAN_VOLUME',
+  TOKEN_ENUMERATION: 'TOKEN_ENUMERATION',
+  VALID_TOKEN_SCRAPING: 'VALID_TOKEN_SCRAPING',
+  SYSTEM_RATE_LIMIT_SPIKE: 'SYSTEM_RATE_LIMIT_SPIKE',
+} as const;
+export type RiskAlertType = (typeof RiskAlertType)[keyof typeof RiskAlertType];
+
+export const RiskAlertStatus = {
+  OPEN: 'OPEN',
+  ACKNOWLEDGED: 'ACKNOWLEDGED',
+  INVESTIGATING: 'INVESTIGATING',
+  RESOLVED: 'RESOLVED',
+  DISMISSED: 'DISMISSED',
+} as const;
+export type RiskAlertStatus = (typeof RiskAlertStatus)[keyof typeof RiskAlertStatus];
+export const OPEN_RISK_ALERT_STATUSES: readonly RiskAlertStatus[] = [
+  'OPEN',
+  'ACKNOWLEDGED',
+  'INVESTIGATING',
+];

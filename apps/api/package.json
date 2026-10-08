@@ -9,6 +9,8 @@
     "predev": "pnpm --filter @helmet/types build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
+    "worker:once": "node dist/worker.js --once",
     "lint": "eslint \"{src,test,prisma}/**/*.ts\"",
     "typecheck": "pnpm --filter @helmet/types build && tsc --noEmit -p tsconfig.json",
     "test": "jest",

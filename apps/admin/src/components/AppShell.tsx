@@ -150,7 +150,12 @@ const NAV: NavSection[] = [
         icon: <LifeBuoy className={ICON} />,
         permission: Permission.PRIVACY_REQUESTS_VIEW,
       },
-      { label: 'Analytics', icon: <BarChart3 className={ICON} />, soon: true },
+      {
+        label: 'Analytics',
+        to: '/analytics',
+        icon: <BarChart3 className={ICON} />,
+        permission: Permission.ANALYTICS_VIEW,
+      },
     ],
   },
   {

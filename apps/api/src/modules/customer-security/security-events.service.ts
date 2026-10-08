@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   type AdminSecurityEventDto,
   type CustomerSecurityEventDto,
@@ -20,27 +20,17 @@ const DAY_MS = 86_400_000;
 /**
  * Customer-facing security activity. Stores no raw IP (keyed HMAC only), a coarse device summary
  * and never any secret. Writes are best-effort: a failure to record activity must never break
- * sign-in, recovery or activation. Old events are purged after SECURITY_EVENT_RETENTION_DAYS.
+ * sign-in, recovery or activation. Old events are purged after SECURITY_EVENT_RETENTION_DAYS by
+ * the worker's `retention.cleanup` job (Phase 6) — the API process schedules nothing.
  */
 @Injectable()
-export class SecurityEventsService implements OnModuleInit, OnModuleDestroy {
+export class SecurityEventsService {
   private readonly logger = new Logger(SecurityEventsService.name);
-  private timer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
   ) {}
-
-  onModuleInit(): void {
-    if (this.config.get('NODE_ENV') === 'test') return;
-    this.timer = setInterval(() => void this.purgeExpired(), DAY_MS);
-    this.timer.unref();
-  }
-
-  onModuleDestroy(): void {
-    if (this.timer) clearInterval(this.timer);
-  }
 
   /** Best-effort when outside a transaction; inside one, failures propagate (atomic with it). */
   async record(

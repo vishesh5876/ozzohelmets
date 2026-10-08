@@ -100,6 +100,32 @@ export const envSchema = z
     PUBLIC_UNCACHED_LIMIT_WHEN_FLAGGED: z.coerce.number().int().min(1).max(1000).default(10),
     PUBLIC_GLOBAL_MISS_LIMIT_PER_MINUTE: z.coerce.number().int().min(10).default(3000),
     HELMET_HIGH_SCAN_THRESHOLD_24H: z.coerce.number().int().min(1).default(50),
+
+    // Phase 6: scan recording, retention, risk thresholds, detection, worker intervals.
+    SCAN_RECORDING_ENABLED: bool.default('true'),
+    SCAN_DETAIL_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(180),
+    /** 0 = keep daily aggregates forever. */
+    ANALYTICS_AGGREGATE_RETENTION_DAYS: z.coerce.number().int().min(0).default(0),
+    WORKER_JOB_RUN_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+    RISK_HIGH_SCAN_HOURLY: z.coerce.number().int().min(1).default(50),
+    RISK_HIGH_SCAN_DAILY: z.coerce.number().int().min(1).default(200),
+    RISK_UNIQUE_IP_HOURLY: z.coerce.number().int().min(1).default(20),
+    RISK_IP_CHURN_15MIN: z.coerce.number().int().min(1).default(10),
+    RISK_IP_CHURN_MIN_RATIO: z.coerce.number().min(0).max(1).default(0.8),
+    RISK_VERIFY_DAILY: z.coerce.number().int().min(1).default(30),
+    RISK_VERIFY_BASELINE_MULTIPLIER: z.coerce.number().min(1).default(5),
+    RISK_MIN_SCANS_FOR_EVALUATION: z.coerce.number().int().min(1).default(10),
+    RISK_SIGNAL_CLEAR_AFTER_HOURS: z.coerce.number().int().min(1).default(24),
+    RISK_ALERT_SUPPRESS_HOURS: z.coerce.number().int().min(0).default(24),
+    ENUMERATION_INVALID_TOKEN_LIMIT: z.coerce.number().int().min(2).default(50),
+    VALID_TOKEN_SCRAPE_LIMIT: z.coerce.number().int().min(2).default(100),
+    VALID_TOKEN_SCRAPE_WINDOW_SECONDS: z.coerce.number().int().min(60).default(3600),
+    VALID_TOKEN_SCRAPE_BLOCK_MULTIPLIER: z.coerce.number().int().min(2).default(5),
+    RISK_EVALUATION_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(5),
+    ANALYTICS_AGGREGATION_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(10),
+    RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(60),
+    /** In production, refuse to start when no proxy is trusted (set false only for direct exposure). */
+    REQUIRE_TRUSTED_PROXY_IN_PRODUCTION: bool.default('true'),
     /** Sensitive actions (transfer, stolen, retire, …) require a password re-check this recent. */
     RECENT_AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(300),
     TRANSFER_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
@@ -190,6 +216,30 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['COOKIE_SECURE'],
         message: 'must be true in production',
+      });
+    }
+    // Client-IP identity (Phase 6): behind a reverse proxy, an untrusted proxy makes every visitor
+    // share one IP (one rate-limit budget, one "visitor" in analytics); trusting every hop lets
+    // clients spoof X-Forwarded-For. Require an explicit hop count / CIDR list, or Cloudflare.
+    const trustProxy = env.TRUST_PROXY.trim().toLowerCase();
+    if (trustProxy === 'true') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TRUST_PROXY'],
+        message:
+          '"true" trusts any X-Forwarded-For (spoofable); use the number of proxy hops or the proxy CIDR list',
+      });
+    }
+    if (
+      env.REQUIRE_TRUSTED_PROXY_IN_PRODUCTION &&
+      (trustProxy === 'false' || trustProxy === '' || trustProxy === '0') &&
+      !env.TRUST_CLOUDFLARE
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TRUST_PROXY'],
+        message:
+          'no trusted proxy: behind a load balancer all clients would share one IP. Set TRUST_PROXY (hops or CIDR) or TRUST_CLOUDFLARE, or REQUIRE_TRUSTED_PROXY_IN_PRODUCTION=false if the API is exposed directly',
       });
     }
   });

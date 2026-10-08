@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { CustomerHelmetDetailDto } from '@helmet/types';
+import type { CustomerHelmetDetailDto, CustomerScanSummaryDto } from '@helmet/types';
 import { Badge, Button, buttonVariants, Card, CardContent, HelmetStatusBadge } from '@helmet/ui';
 import { ErrorState, InlineError, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
@@ -209,10 +209,30 @@ export function HelmetDetailPage() {
             <p className="text-center text-xs text-body">
               This is the code printed on your helmet.
             </p>
+            <ScanSummary helmetId={helmet.id} />
           </CardContent>
         </Card>
       </div>
     </>
+  );
+}
+
+/** Neutral counts only: no visitor, device, location or risk details. */
+function ScanSummary({ helmetId }: { helmetId: string }) {
+  const { data } = useQuery({
+    queryKey: ['helmets', helmetId, 'scan-summary'],
+    queryFn: () => api.get<CustomerScanSummaryDto>(`/customer/helmets/${helmetId}/scan-summary`),
+  });
+  if (!data) return null;
+  return (
+    <div className="w-full border-t border-hairline pt-3 text-sm" data-testid="scan-summary">
+      <p>{data.message}</p>
+      {data.lastEmergencyScanAt && (
+        <p className="mt-1 text-xs text-body">
+          Emergency page last opened {dateTimeFmt.format(new Date(data.lastEmergencyScanAt))}
+        </p>
+      )}
+    </div>
   );
 }
 

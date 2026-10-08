@@ -421,8 +421,10 @@ describe('Emergency profile & public boundary (e2e)', () => {
         .set('User-Agent', 'Dedup/1.0')
         .expect(200);
     await new Promise((r) => setTimeout(r, 300));
-    expect(
-      await ctx.prisma.helmetScan.count({ where: { helmetId: helmet.id, userAgent: 'Dedup/1.0' } }),
-    ).toBe(1);
+    const scans = await ctx.prisma.helmetScan.findMany({ where: { helmetId: helmet.id } });
+    expect(scans).toHaveLength(1);
+    // Phase 6: only a coarse summary and device class are stored, never the raw User-Agent.
+    expect(scans[0]!.userAgent).not.toBe('Dedup/1.0');
+    expect(scans[0]!.deviceCategory).toBe('OTHER');
   });
 });

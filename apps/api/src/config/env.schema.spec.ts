@@ -47,7 +47,7 @@ describe('validateEnv', () => {
         COOKIE_SECURE: 'false',
       }),
     ).toThrow(/JWT_ACCESS_SECRET[\s\S]*PIN_ESCROW_KEYS[\s\S]*COOKIE_SECURE/);
-    expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).not.toThrow();
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production', TRUST_PROXY: '1' })).not.toThrow();
     expect(() =>
       validateEnv({
         ...base,
@@ -55,5 +55,18 @@ describe('validateEnv', () => {
         JWT_CUSTOMER_ACCESS_SECRET: base.JWT_ACCESS_SECRET,
       }),
     ).toThrow(/must differ/);
+  });
+
+  it('requires an explicit, non-spoofable proxy setting in production', () => {
+    const prod = { ...base, NODE_ENV: 'production' };
+    expect(() => validateEnv(prod)).toThrow(/TRUST_PROXY: no trusted proxy/);
+    expect(() => validateEnv({ ...prod, TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/);
+    expect(() => validateEnv({ ...prod, TRUST_PROXY: '10.0.0.0/8' })).not.toThrow();
+    expect(() => validateEnv({ ...prod, TRUST_CLOUDFLARE: 'true' })).not.toThrow();
+    expect(() =>
+      validateEnv({ ...prod, REQUIRE_TRUSTED_PROXY_IN_PRODUCTION: 'false' }),
+    ).not.toThrow();
+    // Development keeps working without a proxy.
+    expect(() => validateEnv(base)).not.toThrow();
   });
 });

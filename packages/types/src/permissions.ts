@@ -42,6 +42,14 @@ export const Permission = {
   PRIVACY_REQUESTS_MANAGE: 'privacy-requests:manage',
   /** View customer security events (login failures, recoveries, grants). */
   SECURITY_EVENTS_VIEW: 'security-events:view',
+  // Phase 6 — analytics and QR abuse detection.
+  /** Aggregate operational analytics (never medical data, never visitor identities). */
+  ANALYTICS_VIEW: 'analytics:view',
+  RISK_ALERT_VIEW: 'risk-alert:view',
+  /** Acknowledge / investigate / resolve / dismiss / assign risk alerts. */
+  RISK_ALERT_MANAGE: 'risk-alert:manage',
+  /** Mark a printed QR under review / compromised (human decision; no lifecycle effect). */
+  QR_INTEGRITY_MANAGE: 'qr-integrity:manage',
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -94,12 +102,17 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.CUSTOMERS_READ,
     Permission.CUSTOMERS_MANAGE,
     Permission.PRIVACY_REQUESTS_VIEW,
+    // Analytics + alert investigation, but not QR integrity decisions.
+    Permission.ANALYTICS_VIEW,
+    Permission.RISK_ALERT_VIEW,
+    Permission.RISK_ALERT_MANAGE,
   ],
   ANALYTICS_VIEWER: [
     Permission.DASHBOARD_READ,
     Permission.MODELS_READ,
     Permission.BATCHES_READ,
     Permission.HELMETS_READ,
+    Permission.ANALYTICS_VIEW,
   ],
 };
 

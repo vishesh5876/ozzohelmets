@@ -49,4 +49,29 @@ describe('RBAC matrix', () => {
     ])
       expect(ROLE_PERMISSIONS.ADMIN).not.toContain(p);
   });
+
+  it('Phase 6: analytics viewers read aggregates only; QR integrity is ADMIN+; MANUFACTURING sees none', () => {
+    expect(ROLE_PERMISSIONS.ANALYTICS_VIEWER).toContain(Permission.ANALYTICS_VIEW);
+    for (const p of [Permission.RISK_ALERT_MANAGE, Permission.QR_INTEGRITY_MANAGE])
+      expect(ROLE_PERMISSIONS.ANALYTICS_VIEWER).not.toContain(p);
+    expect(ROLE_PERMISSIONS.SUPPORT).toEqual(
+      expect.arrayContaining([Permission.RISK_ALERT_VIEW, Permission.RISK_ALERT_MANAGE]),
+    );
+    expect(ROLE_PERMISSIONS.SUPPORT).not.toContain(Permission.QR_INTEGRITY_MANAGE);
+    expect(ROLE_PERMISSIONS.ADMIN).toEqual(
+      expect.arrayContaining([
+        Permission.ANALYTICS_VIEW,
+        Permission.RISK_ALERT_VIEW,
+        Permission.RISK_ALERT_MANAGE,
+        Permission.QR_INTEGRITY_MANAGE,
+      ]),
+    );
+    for (const p of [
+      Permission.ANALYTICS_VIEW,
+      Permission.RISK_ALERT_VIEW,
+      Permission.RISK_ALERT_MANAGE,
+      Permission.QR_INTEGRITY_MANAGE,
+    ])
+      expect(ROLE_PERMISSIONS.MANUFACTURING).not.toContain(p);
+  });
 });

@@ -35,6 +35,10 @@ const LABELS: Record<Permission, string> = {
   'privacy-requests:view': 'View customer privacy requests',
   'privacy-requests:manage': 'Approve, reject and complete privacy requests',
   'security-events:view': 'View customer security events',
+  'analytics:view': 'View aggregate analytics and helmet QR activity (no visitor identities)',
+  'risk-alert:view': 'View risk alerts',
+  'risk-alert:manage': 'Acknowledge, assign, resolve and dismiss risk alerts',
+  'qr-integrity:manage': 'Mark a helmet QR normal, under review or compromised',
 };
 
 export function RolesPage() {

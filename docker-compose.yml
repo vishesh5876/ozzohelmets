@@ -61,6 +61,37 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  # Scheduled jobs (aggregation, risk evaluation, retention). Same image as the API, different
+  # command; no HTTP port. Safe to scale: every job takes a PostgreSQL advisory lock.
+  worker:
+    profiles: ['full']
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: ${API_CONTAINER_NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-helmet}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-helmet_platform}?schema=public
+      REDIS_URL: redis://redis:6379/0
+      TRUST_PROXY: '1'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # The API container applies migrations; the worker starts once it is healthy.
+    command: ['node', 'dist/worker.js']
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const s=require('fs').statSync('/tmp/helmet-worker-heartbeat');process.exit(Date.now()-s.mtimeMs<120000?0:1)"
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      api: { condition: service_healthy }
+
   admin:
     profiles: ['full']
     build:

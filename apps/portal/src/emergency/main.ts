@@ -531,6 +531,8 @@ function renderVerify(token: string, d: PublicProductVerificationDto | null | 'l
         ),
       );
       if (d.recallWarning) main.append(messageCard('Recall notice', d.recallWarning, 'danger'));
+      // Set by an admin decision only (QR integrity); neutral wording, never "counterfeit".
+      if (d.integrityNotice) main.append(messageCard('Please contact support', d.integrityNotice));
       if (d.lifecycle?.warning)
         main.append(messageCard(d.lifecycle.label, d.lifecycle.warning, 'danger'));
       main.append(

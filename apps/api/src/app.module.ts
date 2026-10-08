@@ -13,6 +13,7 @@ import { AdminUsersModule } from './modules/admin-users/admin-users.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { CustomerSecurityModule } from './modules/customer-security/customer-security.module';
 import { CustomerAccountModule } from './modules/customer-account/customer-account.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminCustomersModule } from './modules/admin-customers/admin-customers.module';
 import { CustomerAuthModule } from './modules/customer-auth/customer-auth.module';
 import { BatchesModule } from './modules/batches/batches.module';
@@ -66,6 +67,7 @@ import { SecurityModule } from './security/security.module';
     WarrantyModule,
     ProductReportsModule,
     AdminCustomersModule,
+    AnalyticsModule,
   ],
   providers: [{ provide: APP_INTERCEPTOR, useClass: ApiResponseInterceptor }],
 })

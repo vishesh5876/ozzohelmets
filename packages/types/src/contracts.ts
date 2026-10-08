@@ -594,6 +594,11 @@ export interface PublicProductVerificationDto {
   activated?: boolean;
   warranty?: { status: WarrantyStatus; endsOn: string | null };
   recallWarning?: string;
+  /**
+   * Phase 6: present only when an admin marked this QR as compromised — a neutral prompt to check
+   * the Helmet ID on the inner label (never "counterfeit").
+   */
+  integrityNotice?: string;
 }
 
 export interface CreateProductReportRequest {

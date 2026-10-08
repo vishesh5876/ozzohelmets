@@ -60,6 +60,25 @@ const PrivacyRequestsPage = lazy(() =>
     default: m.PrivacyRequestsPage,
   })),
 );
+const AnalyticsOverviewPage = lazy(() =>
+  import('./features/analytics/AnalyticsOverviewPage').then((m) => ({
+    default: m.AnalyticsOverviewPage,
+  })),
+);
+const ScanAnalyticsPage = lazy(() =>
+  import('./features/analytics/ScanAnalyticsPage').then((m) => ({ default: m.ScanAnalyticsPage })),
+);
+const HelmetActivityPage = lazy(() =>
+  import('./features/analytics/HelmetActivityPage').then((m) => ({ default: m.HelmetActivityPage })),
+);
+const HelmetAnalyticsPage = lazy(() =>
+  import('./features/analytics/HelmetAnalyticsPage').then((m) => ({
+    default: m.HelmetAnalyticsPage,
+  })),
+);
+const RiskAlertsPage = lazy(() =>
+  import('./features/analytics/RiskAlertsPage').then((m) => ({ default: m.RiskAlertsPage })),
+);
 const RolesPage = lazy(() =>
   import('./features/roles/RolesPage').then((m) => ({ default: m.RolesPage })),
 );
@@ -200,6 +219,46 @@ export function App() {
           element={
             <Guard permission={Permission.PRODUCT_REPORT_VIEW}>
               <ProductReportsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <AnalyticsOverviewPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/scans"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <ScanAnalyticsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/helmets"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <HelmetActivityPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/helmets/:helmetCode"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <HelmetAnalyticsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/alerts"
+          element={
+            <Guard permission={Permission.RISK_ALERT_VIEW}>
+              <RiskAlertsPage />
             </Guard>
           }
         />

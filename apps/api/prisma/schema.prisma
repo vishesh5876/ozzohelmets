@@ -229,6 +229,59 @@ enum ScanType {
   ACTIVATION
 }
 
+enum DeviceCategory {
+  MOBILE
+  TABLET
+  DESKTOP
+  BOT
+  OTHER
+}
+
+/// Separate from HelmetStatus: a human judgement about the printed QR, never automatic.
+enum QrIntegrityStatus {
+  NORMAL
+  UNDER_REVIEW
+  COMPROMISED
+}
+
+enum RiskLevel {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskSignalType {
+  HIGH_SCAN_VOLUME
+  HIGH_UNIQUE_VISITOR_COUNT
+  RAPID_IP_CHURN
+  ABNORMAL_VERIFY_ACTIVITY
+  PRODUCT_REPORT_CORRELATION
+  QR_SHARED_OR_COPIED_POSSIBLE
+}
+
+enum RiskSignalStatus {
+  ACTIVE
+  CLEARED
+}
+
+enum RiskAlertType {
+  HELMET_SCAN_ANOMALY
+  HIGH_PUBLIC_SCAN_VOLUME
+  TOKEN_ENUMERATION
+  VALID_TOKEN_SCRAPING
+  SYSTEM_RATE_LIMIT_SPIKE
+}
+
+enum RiskAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
 // ─────────────────────────────── Admin ───────────────────────────────
 
 model AdminUser {
@@ -251,6 +304,8 @@ model AdminUser {
   productReportEvents      ProductReportEvent[]
   recoveryGrantsIssued     AccountRecoveryGrant[]
   deletionRequestsReviewed AccountDeletionRequest[]
+  riskAlertsAssigned       RiskAlert[]              @relation("RiskAlertAssignee")
+  riskAlertsResolved       RiskAlert[]              @relation("RiskAlertResolver")
 
   @@map("admin_users")
 }
@@ -477,24 +532,28 @@ model HelmetBatch {
 
 /// One physical helmet. `id` is the internal helmet UUID and never appears in public URLs.
 model Helmet {
-  id                        String        @id @default(uuid(7)) @db.Uuid
-  helmetCode                String        @unique @map("helmet_code") @db.VarChar(16)
-  publicToken               String        @unique @map("public_token") @db.VarChar(32)
-  activationPinHash         String        @map("activation_pin_hash")
-  activationPinUsed         Boolean       @default(false) @map("activation_pin_used")
-  activationAttempts        Int           @default(0) @map("activation_attempts")
+  id                        String            @id @default(uuid(7)) @db.Uuid
+  helmetCode                String            @unique @map("helmet_code") @db.VarChar(16)
+  publicToken               String            @unique @map("public_token") @db.VarChar(32)
+  activationPinHash         String            @map("activation_pin_hash")
+  activationPinUsed         Boolean           @default(false) @map("activation_pin_used")
+  activationAttempts        Int               @default(0) @map("activation_attempts")
   /// Progressive lockout after repeated wrong PINs.
-  activationLockedUntil     DateTime?     @map("activation_locked_until") @db.Timestamptz(3)
-  serialNumber              String        @unique @map("serial_number") @db.VarChar(40)
-  helmetModelId             String        @map("helmet_model_id") @db.Uuid
-  batchId                   String        @map("batch_id") @db.Uuid
-  status                    HelmetStatus  @default(GENERATED)
+  activationLockedUntil     DateTime?         @map("activation_locked_until") @db.Timestamptz(3)
+  serialNumber              String            @unique @map("serial_number") @db.VarChar(40)
+  helmetModelId             String            @map("helmet_model_id") @db.Uuid
+  batchId                   String            @map("batch_id") @db.Uuid
+  status                    HelmetStatus      @default(GENERATED)
   /// Operational status (ACTIVATED/ACTIVE) held before entering LOST/STOLEN/DAMAGED, so a
   /// restore returns to the right place. Maintained only by HelmetStatusService.apply.
-  previousOperationalStatus HelmetStatus? @map("previous_operational_status")
-  activatedAt               DateTime?     @map("activated_at") @db.Timestamptz(3)
-  createdAt                 DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                 DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  previousOperationalStatus HelmetStatus?     @map("previous_operational_status")
+  /// Phase 6: admin judgement about the printed QR. Independent of `status`; never automatic.
+  qrIntegrityStatus         QrIntegrityStatus @default(NORMAL) @map("qr_integrity_status")
+  qrIntegrityNote           String?           @map("qr_integrity_note") @db.VarChar(500)
+  qrIntegrityChangedAt      DateTime?         @map("qr_integrity_changed_at") @db.Timestamptz(3)
+  activatedAt               DateTime?         @map("activated_at") @db.Timestamptz(3)
+  createdAt                 DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   helmetModel       HelmetModel              @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
   batch             HelmetBatch              @relation(fields: [batchId], references: [id], onDelete: Restrict)
@@ -503,6 +562,10 @@ model Helmet {
   emergencyProfiles EmergencyProfile[]
   statusHistory     HelmetStatusHistory[]
   scans             HelmetScan[]
+  scanDaily         HelmetScanDaily[]
+  riskAssessment    HelmetRiskAssessment?
+  riskSignals       HelmetRiskSignal[]
+  riskAlerts        RiskAlert[]
   emergencySettings HelmetEmergencySetting[]
   transfers         HelmetTransfer[]
   replacedBy        HelmetReplacement?       @relation("ReplacementOriginal")
@@ -818,20 +881,169 @@ model AccountDeletionRequest {
 
 /// Append-only QR scan log. IPs are stored only as keyed HMAC-SHA256 hashes.
 model HelmetScan {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  helmetId    String   @map("helmet_id") @db.Uuid
-  scannedAt   DateTime @default(now()) @map("scanned_at") @db.Timestamptz(3)
-  ipHash      String?  @map("ip_hash") @db.Char(64)
-  userAgent   String?  @map("user_agent") @db.VarChar(255)
-  countryCode String?  @map("country_code") @db.Char(2)
-  scanType    ScanType @map("scan_type")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id             String          @id @default(uuid(7)) @db.Uuid
+  helmetId       String          @map("helmet_id") @db.Uuid
+  scannedAt      DateTime        @default(now()) @map("scanned_at") @db.Timestamptz(3)
+  ipHash         String?         @map("ip_hash") @db.Char(64)
+  userAgent      String?         @map("user_agent") @db.VarChar(255)
+  countryCode    String?         @map("country_code") @db.Char(2)
+  scanType       ScanType        @map("scan_type")
+  /// Phase 6: coarse device class (user_agent now holds only a "Browser on OS" summary).
+  deviceCategory DeviceCategory? @map("device_category")
+  /// Phase 6: served from the public cache (operational, not identifying).
+  cacheHit       Boolean?        @map("cache_hit")
+  /// Phase 6: generated test/synthetic data — excluded from analytics and risk evaluation.
+  synthetic      Boolean         @default(false)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
 
   @@index([helmetId, scannedAt])
   @@index([scannedAt])
   @@map("helmet_scans")
+}
+
+// ─────────────────────────────── Phase 6: analytics & risk ───────────────────────────────
+
+/// Daily per-helmet scan aggregate (UTC date). Analytics snapshot, not a source of truth.
+model HelmetScanDaily {
+  id                       String    @id @default(uuid(7)) @db.Uuid
+  date                     DateTime  @db.Date
+  helmetId                 String    @map("helmet_id") @db.Uuid
+  totalScans               Int       @default(0) @map("total_scans")
+  emergencyScans           Int       @default(0) @map("emergency_scans")
+  verificationScans        Int       @default(0) @map("verification_scans")
+  activationScans          Int       @default(0) @map("activation_scans")
+  botScans                 Int       @default(0) @map("bot_scans")
+  /// Exact distinct IP hashes that day (summing days over-counts → "approximate" visitors).
+  uniqueIpHashes           Int       @default(0) @map("unique_ip_hashes")
+  distinctDeviceCategories Int       @default(0) @map("distinct_device_categories")
+  lastScanAt               DateTime? @map("last_scan_at") @db.Timestamptz(3)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@unique([helmetId, date])
+  @@index([date, totalScans])
+  @@map("helmet_scan_daily")
+}
+
+/// Daily platform counters (UTC date). Analytics snapshot only.
+model PlatformDailyStats {
+  date                    DateTime @id @db.Date
+  helmetsGenerated        Int      @default(0) @map("helmets_generated")
+  helmetsActivated        Int      @default(0) @map("helmets_activated")
+  newCustomers            Int      @default(0) @map("new_customers")
+  activeEmergencyProfiles Int      @default(0) @map("active_emergency_profiles")
+  emergencyScans          Int      @default(0) @map("emergency_scans")
+  verificationScans       Int      @default(0) @map("verification_scans")
+  uniqueHelmetsScanned    Int      @default(0) @map("unique_helmets_scanned")
+  warrantiesRegistered    Int      @default(0) @map("warranties_registered")
+  lostHelmets             Int      @default(0) @map("lost_helmets")
+  stolenHelmets           Int      @default(0) @map("stolen_helmets")
+  damagedHelmets          Int      @default(0) @map("damaged_helmets")
+  productReportsCreated   Int      @default(0) @map("product_reports_created")
+  recoveryGrantsIssued    Int      @default(0) @map("recovery_grants_issued")
+  invalidTokenRequests    Int      @default(0) @map("invalid_token_requests")
+  riskAlertsOpened        Int      @default(0) @map("risk_alerts_opened")
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("platform_daily_stats")
+}
+
+/// Current explainable risk assessment of a helmet's QR usage. Never changes HelmetStatus.
+model HelmetRiskAssessment {
+  helmetId         String    @id @map("helmet_id") @db.Uuid
+  riskLevel        RiskLevel @default(NONE) @map("risk_level")
+  riskScore        Int       @default(0) @map("risk_score")
+  /// [{ type, label, observed, threshold, weight }] — no IPs, no visitor data.
+  reasons          Json      @default("[]")
+  evaluatedAt      DateTime  @map("evaluated_at") @db.Timestamptz(3)
+  firstDetectedAt  DateTime? @map("first_detected_at") @db.Timestamptz(3)
+  lastDetectedAt   DateTime? @map("last_detected_at") @db.Timestamptz(3)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolutionReason String?   @map("resolution_reason") @db.VarChar(500)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@index([riskLevel, riskScore])
+  @@map("helmet_risk_assessments")
+}
+
+/// One explainable observation. At most one ACTIVE row per helmet + type (partial unique index).
+model HelmetRiskSignal {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  helmetId        String           @map("helmet_id") @db.Uuid
+  type            RiskSignalType
+  severity        RiskLevel
+  status          RiskSignalStatus @default(ACTIVE)
+  windowStart     DateTime         @map("window_start") @db.Timestamptz(3)
+  windowEnd       DateTime         @map("window_end") @db.Timestamptz(3)
+  observedValue   Float            @map("observed_value")
+  thresholdValue  Float            @map("threshold_value")
+  firstDetectedAt DateTime         @map("first_detected_at") @db.Timestamptz(3)
+  lastDetectedAt  DateTime         @map("last_detected_at") @db.Timestamptz(3)
+  clearedAt       DateTime?        @map("cleared_at") @db.Timestamptz(3)
+  /// Safe context only (counts, ratios). Never IP hashes or user agents.
+  metadata        Json?
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+
+  @@index([helmetId, status])
+  @@index([status, lastDetectedAt])
+  @@map("helmet_risk_signals")
+}
+
+/// Operational alert for admins. Deduplicated by `dedupKey` while open.
+model RiskAlert {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  type              RiskAlertType
+  status            RiskAlertStatus @default(OPEN)
+  priority          RiskLevel
+  helmetId          String?         @map("helmet_id") @db.Uuid
+  /// Opaque source reference (truncated hash of the IP hash) for source-level alerts.
+  sourceRef         String?         @map("source_ref") @db.VarChar(16)
+  dedupKey          String          @map("dedup_key") @db.VarChar(120)
+  summary           String          @db.VarChar(300)
+  reasons           Json            @default("[]")
+  observedValue     Float?          @map("observed_value")
+  thresholdValue    Float?          @map("threshold_value")
+  occurrences       Int             @default(1)
+  firstSeenAt       DateTime        @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime        @map("last_seen_at") @db.Timestamptz(3)
+  assignedAdminId   String?         @map("assigned_admin_id") @db.Uuid
+  resolutionReason  String?         @map("resolution_reason") @db.VarChar(500)
+  resolvedAt        DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  resolvedByAdminId String?         @map("resolved_by_admin_id") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  helmet     Helmet?    @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+  assignee   AdminUser? @relation("RiskAlertAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  resolvedBy AdminUser? @relation("RiskAlertResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([helmetId, createdAt])
+  @@index([dedupKey, resolvedAt])
+  @@map("risk_alerts")
+}
+
+/// Worker job history (observability; pruned by retention).
+model WorkerJobRun {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  job        String    @db.VarChar(60)
+  status     String    @db.VarChar(20)
+  startedAt  DateTime  @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  durationMs Int?      @map("duration_ms")
+  detail     Json?
+  worker     String?   @db.VarChar(80)
+
+  @@index([job, startedAt])
+  @@map("worker_job_runs")
 }
 
 /// Append-only audit trail for security-relevant operations.

@@ -72,11 +72,15 @@ describe('Public emergency endpoint (e2e)', () => {
       .set('User-Agent', 'EmergencyTest/1.0')
       .expect(200);
     const scan = await waitFor(
-      () =>
-        ctx.prisma.helmetScan.findFirst({ where: { helmetId, userAgent: 'EmergencyTest/1.0' } }),
+      () => ctx.prisma.helmetScan.findFirst({
+          where: { helmetId, scanType: 'EMERGENCY_PAGE', deviceCategory: { not: null } },
+        }),
       (s) => s !== null,
     );
     expect(scan!.scanType).toBe('EMERGENCY_PAGE');
+    // Only a coarse summary and device class are kept, never the raw User-Agent string.
+    expect(scan!.userAgent).not.toBe('EmergencyTest/1.0');
+    expect(scan!.deviceCategory).toBe('OTHER');
     expect(scan!.ipHash).toMatch(/^[0-9a-f]{64}$/);
     expect(scan!.ipHash).not.toContain('127.0.0.1');
   });

@@ -9,6 +9,7 @@ import {
   type PublicProductVerificationDto,
   PublicProductVerificationState,
   ScanType,
+  summarizeUserAgent,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
@@ -32,6 +33,7 @@ import {
   toPublicState,
 } from './public-state';
 import { PublicAbuseService } from './public-abuse.service';
+import { deviceCategory } from '../analytics/domain/device';
 
 /** Public lifecycle summary for the verification page (no personal data). */
 const VERIFY_LIFECYCLE: Record<
@@ -95,8 +97,9 @@ export class PublicEmergencyService {
   ) {}
 
   async resolve(token: string, scan: ScanContext): Promise<PublicEmergencyDto> {
-    const entry = await this.entry(token, scan.ipHash);
-    this.logScan(entry.helmetId, scan, ScanType.EMERGENCY_PAGE);
+    const { entry, cacheHit } = await this.entry(token, scan.ipHash);
+    this.logScan(entry.helmetId, scan, ScanType.EMERGENCY_PAGE, cacheHit);
+    void this.abuse.recordValidAccess(scan.ipHash, entry.helmetId).catch(() => undefined);
     return entry.dto;
   }
 
@@ -115,6 +118,7 @@ export class PublicEmergencyService {
       return notVerified;
     }
     let dto = await this.cache.getVerification(token);
+    const cacheHit = dto !== null;
     let helmetId: string | null = null;
     if (!dto) {
       await this.assertUncachedAllowed(scan.ipHash);
@@ -124,6 +128,7 @@ export class PublicEmergencyService {
           id: true,
           helmetCode: true,
           status: true,
+          qrIntegrityStatus: true,
           helmetModel: { select: { name: true, brand: true, sku: true } },
           batch: { select: { batchCode: true, manufacturingDate: true } },
         },
@@ -151,11 +156,18 @@ export class PublicEmergencyService {
         warranty: await this.warranties.publicSummary(helmet.id),
       };
       if (helmet.status === 'RECALLED') dto.recallWarning = LIFECYCLE_WARNINGS.RECALLED;
+      // Phase 6: set only by an admin decision — a neutral prompt, never "counterfeit".
+      if (helmet.qrIntegrityStatus === 'COMPROMISED')
+        dto.integrityNotice =
+          'This QR code has been reported as possibly copied. Check that the Helmet ID printed inside the helmet matches the one shown here, and contact support if it does not.';
       await this.cache.setVerification(token, { ...dto, helmetId } as PublicProductVerificationDto);
     } else {
       helmetId = (dto as PublicProductVerificationDto & { helmetId?: string }).helmetId ?? null;
     }
-    if (helmetId) this.logScan(helmetId, scan, ScanType.VERIFY);
+    if (helmetId) {
+      this.logScan(helmetId, scan, ScanType.VERIFY, cacheHit);
+      void this.abuse.recordValidAccess(scan.ipHash, helmetId).catch(() => undefined);
+    }
     const { helmetId: _omit, ...publicDto } = dto as PublicProductVerificationDto & {
       helmetId?: string;
     };
@@ -164,19 +176,23 @@ export class PublicEmergencyService {
 
   /** Photo is served only while the cached public view says it is visible. */
   async photo(token: string, ipHash: string | null): Promise<StoredFile> {
-    const entry = await this.entry(token, ipHash);
+    const { entry } = await this.entry(token, ipHash);
     const file = entry.photo ? await this.storage.get(entry.photo.key) : null;
     if (!file) throw AppException.notFound(ErrorCode.NOT_FOUND, 'No photo available.');
     return file;
   }
 
-  private async entry(token: string, ipHash: string | null): Promise<CachedPublicHelmet> {
+  private async entry(
+    token: string,
+    ipHash: string | null,
+  ): Promise<{ entry: CachedPublicHelmet; cacheHit: boolean }> {
     // Cheap rejection before touching cache/DB; same error as unknown tokens (no oracle).
     if (!isValidPublicToken(token)) {
       await this.abuse.recordMiss(ipHash);
       throw this.notFound();
     }
     let entry = await this.cache.get(token);
+    const cacheHit = entry !== null;
     if (!entry) {
       await this.assertUncachedAllowed(ipHash);
       entry = await this.load(token);
@@ -186,7 +202,7 @@ export class PublicEmergencyService {
       }
       await this.cache.set(token, entry);
     }
-    return entry;
+    return { entry, cacheHit };
   }
 
   /** Cached helmets are always served; a flagged IP gets only a small uncached allowance. */
@@ -255,7 +271,14 @@ export class PublicEmergencyService {
    * Fire-and-forget scan log. Repeated loads from the same device (IP hash + user agent) within
    * SCAN_DEDUP_SECONDS are counted once, so refreshes don't drown real scans.
    */
-  private logScan(helmetId: string, scan: ScanContext, scanType: ScanType): void {
+  /**
+   * Fire-and-forget scan log. Repeated loads from the same device (IP hash + user agent) within
+   * SCAN_DEDUP_SECONDS are counted once, so refreshes don't drown real scans. Phase 6: only a
+   * device category and "Browser on OS" summary are stored (no raw user agent), plus the cache
+   * flag. `SCAN_RECORDING_ENABLED=false` keeps dev/test traffic out of analytics.
+   */
+  private logScan(helmetId: string, scan: ScanContext, scanType: ScanType, cacheHit: boolean): void {
+    if (!this.config.get('SCAN_RECORDING_ENABLED')) return;
     const dedupSeconds = this.config.get('SCAN_DEDUP_SECONDS');
     const device = createHash('sha256')
       .update(`${scan.ipHash ?? '-'}|${scan.userAgent ?? '-'}`)
@@ -275,7 +298,9 @@ export class PublicEmergencyService {
             helmetId,
             scanType,
             ipHash: scan.ipHash,
-            userAgent: scan.userAgent,
+            userAgent: summarizeUserAgent(scan.userAgent),
+            deviceCategory: deviceCategory(scan.userAgent),
+            cacheHit,
             countryCode: scan.countryCode,
           },
         });
