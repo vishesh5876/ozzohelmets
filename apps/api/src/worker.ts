@@ -13,7 +13,8 @@ import { WorkerModule } from './worker/worker.module';
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(WorkerModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
-  app.enableShutdownHooks();
+  // No enableShutdownHooks(): it re-raises SIGTERM after closing (exit 143). The handler below
+  // stops the scheduler, waits for in-flight jobs, closes the app and exits 0.
   const scheduler = app.get(WorkerScheduler);
   const onceIdx = process.argv.indexOf('--once');
   if (onceIdx !== -1) {
