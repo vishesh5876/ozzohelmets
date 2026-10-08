@@ -69,7 +69,9 @@ const ScanAnalyticsPage = lazy(() =>
   import('./features/analytics/ScanAnalyticsPage').then((m) => ({ default: m.ScanAnalyticsPage })),
 );
 const HelmetActivityPage = lazy(() =>
-  import('./features/analytics/HelmetActivityPage').then((m) => ({ default: m.HelmetActivityPage })),
+  import('./features/analytics/HelmetActivityPage').then((m) => ({
+    default: m.HelmetActivityPage,
+  })),
 );
 const HelmetAnalyticsPage = lazy(() =>
   import('./features/analytics/HelmetAnalyticsPage').then((m) => ({

@@ -101,7 +101,11 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const days = await ctx.prisma.platformDailyStats.findMany({ orderBy: { date: 'desc' } });
       expect(days).toHaveLength(2);
       expect(days[1]).toMatchObject({ emergencyScans: 0, verificationScans: 0 });
-      expect(days[0]).toMatchObject({ emergencyScans: 6, verificationScans: 3, uniqueHelmetsScanned: 1 });
+      expect(days[0]).toMatchObject({
+        emergencyScans: 6,
+        verificationScans: 3,
+        uniqueHelmetsScanned: 1,
+      });
     });
 
     it('serves scan analytics and overview from aggregates + today', async () => {
@@ -146,7 +150,9 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       await risk.evaluate();
       await risk.evaluate();
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({ where: { helmetId: h.id } });
+      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
+        where: { helmetId: h.id },
+      });
       expect(['LOW', 'MEDIUM']).toContain(a.riskLevel);
       const alerts = await ctx.prisma.riskAlert.findMany();
       expect(alerts).toHaveLength(1);
@@ -155,27 +161,45 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       expect(alerts[0]!.summary).not.toMatch(/counterfeit|fake|fraud/i);
       expect(await ctx.prisma.helmetRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(1);
       // Lifecycle status is never changed by analytics.
-      expect((await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).status).toBe('SOLD');
+      expect((await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).status).toBe(
+        'SOLD',
+      );
     });
 
     it('false-positive safety: crash scene with many scans from few phones stays below HIGH', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
       await insertScans(h.id, 60, { ip: (i) => ipHash(i % 4) });
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({ where: { helmetId: h.id } });
+      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
+        where: { helmetId: h.id },
+      });
       expect(['LOW', 'MEDIUM']).toContain(a.riskLevel);
     });
 
     it('many distinct visitors + unusual verification → possible copied QR, HIGH or above, explained', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 30, { ip: (i) => ipHash(`v${i}`), at: (i) => new Date(Date.now() - i * 20_000) });
+      await insertScans(h.id, 30, {
+        ip: (i) => ipHash(`v${i}`),
+        at: (i) => new Date(Date.now() - i * 20_000),
+      });
       await insertScans(h.id, 15, { type: 'VERIFY', ip: (i) => ipHash(`w${i}`) });
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({ where: { helmetId: h.id } });
+      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
+        where: { helmetId: h.id },
+      });
       expect(['HIGH', 'CRITICAL']).toContain(a.riskLevel);
-      const reasons = a.reasons as { type: string; observed: number; threshold: number; detail: string }[];
+      const reasons = a.reasons as {
+        type: string;
+        observed: number;
+        threshold: number;
+        detail: string;
+      }[];
       expect(reasons.map((r) => r.type)).toEqual(
-        expect.arrayContaining(['HIGH_UNIQUE_VISITOR_COUNT', 'ABNORMAL_VERIFY_ACTIVITY', 'QR_SHARED_OR_COPIED_POSSIBLE']),
+        expect.arrayContaining([
+          'HIGH_UNIQUE_VISITOR_COUNT',
+          'ABNORMAL_VERIFY_ACTIVITY',
+          'QR_SHARED_OR_COPIED_POSSIBLE',
+        ]),
       );
       for (const r of reasons) expect(r.detail.length).toBeGreaterThan(0);
       const alert = await ctx.prisma.riskAlert.findFirstOrThrow({ where: { helmetId: h.id } });
@@ -192,7 +216,9 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       await ctx.prisma.helmetScan.deleteMany({});
       await risk.evaluate(new Date(Date.now() + 25 * 3600_000));
       expect(await ctx.prisma.helmetRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(0);
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({ where: { helmetId: h.id } });
+      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
+        where: { helmetId: h.id },
+      });
       expect(a).toMatchObject({ riskLevel: 'NONE', riskScore: 0 });
     });
   });
@@ -215,14 +241,19 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const view = await publicView(ctx, c.helmet.publicToken);
       expect(view.profile?.name).toBe('Still Reachable');
       expect(JSON.stringify(view)).not.toMatch(/risk|compromis|suspicious/i);
-      const verify = await ctx.http().get(`/api/v1/public/verify/${c.helmet.publicToken}`).expect(200);
+      const verify = await ctx
+        .http()
+        .get(`/api/v1/public/verify/${c.helmet.publicToken}`)
+        .expect(200);
       expect(verify.body.data.state).toBe('VERIFIED');
       expect(verify.body.data.integrityNotice).toMatch(/possibly copied/);
       expect(verify.body.data.integrityNotice).not.toMatch(/counterfeit|fake|fraud/i);
       const helmet = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: c.helmet.id } });
       expect(helmet.status).toBe('ACTIVE');
       expect(
-        await ctx.prisma.auditLog.count({ where: { action: 'helmet.qr_integrity.changed', entityId: c.helmet.id } }),
+        await ctx.prisma.auditLog.count({
+          where: { action: 'helmet.qr_integrity.changed', entityId: c.helmet.id },
+        }),
       ).toBe(1);
       // Back to NORMAL removes the notice (cache invalidated).
       await ctx
@@ -231,7 +262,10 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
         .set(bearer(admin.token))
         .send({ status: 'NORMAL', note: 'Checked with the owner' })
         .expect(200);
-      const again = await ctx.http().get(`/api/v1/public/verify/${c.helmet.publicToken}`).expect(200);
+      const again = await ctx
+        .http()
+        .get(`/api/v1/public/verify/${c.helmet.publicToken}`)
+        .expect(200);
       expect(again.body.data.integrityNotice).toBeUndefined();
     });
   });
@@ -258,7 +292,9 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       await completeProfile(ctx, c.token, 'Cached Rider');
       await enableOnHelmet(ctx, c.token, c.helmet.id);
       await publicView(ctx, c.helmet.publicToken); // genuinely scanned → cached
-      const helmets = await Promise.all(Array.from({ length: 9 }, () => createTestHelmet(ctx, 'SOLD')));
+      const helmets = await Promise.all(
+        Array.from({ length: 9 }, () => createTestHelmet(ctx, 'SOLD')),
+      );
       const statuses: number[] = [];
       for (const h of helmets)
         statuses.push((await ctx.http().get(`/api/v1/public/emergency/${h.publicToken}`)).status);
@@ -286,11 +322,18 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const { h, alert } = await setupAlert();
       const support = await asAdmin('SUPPORT');
       const patch = (body: object) =>
-        ctx.http().patch(`/api/v1/admin/risk-alerts/${alert.id}`).set(bearer(support.token)).send(body);
+        ctx
+          .http()
+          .patch(`/api/v1/admin/risk-alerts/${alert.id}`)
+          .set(bearer(support.token))
+          .send(body);
       expect((await patch({ status: 'ACKNOWLEDGED' })).status).toBe(200);
       expect((await patch({ assignedAdminId: support.id })).body.data.assignee.id).toBe(support.id);
       expect((await patch({ status: 'RESOLVED' })).status).toBe(400);
-      const resolved = await patch({ status: 'RESOLVED', resolutionReason: 'Owner shared QR at a group ride' });
+      const resolved = await patch({
+        status: 'RESOLVED',
+        resolutionReason: 'Owner shared QR at a group ride',
+      });
       expect(resolved.status).toBe(200);
       expect(resolved.body.data.status).toBe('RESOLVED');
       expect((await patch({ status: 'OPEN' })).status).toBe(409);
@@ -400,9 +443,17 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
         .get(`/api/v1/customer/helmets/${c.helmet.id}/scan-summary`)
         .set(bearer(c.token))
         .expect(200);
-      expect(res.body.data.message).toBe('Your helmet QR was accessed 3 times in the last 30 days.');
+      expect(res.body.data.message).toBe(
+        'Your helmet QR was accessed 3 times in the last 30 days.',
+      );
       expect(Object.keys(res.body.data).sort()).toEqual(
-        ['emergencyScans30d', 'lastEmergencyScanAt', 'message', 'since', 'verificationScans30d'].sort(),
+        [
+          'emergencyScans30d',
+          'lastEmergencyScanAt',
+          'message',
+          'since',
+          'verificationScans30d',
+        ].sort(),
       );
       await ctx
         .http()
@@ -425,14 +476,37 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const result = await retention.run(now);
       expect(result.scansDeleted).toBe(6);
       expect(await ctx.prisma.helmetScan.count()).toBe(2);
-      const agg = await ctx.prisma.helmetScanDaily.findFirstOrThrow({ where: { helmetId: c.helmet.id } });
+      const agg = await ctx.prisma.helmetScanDaily.findFirstOrThrow({
+        where: { helmetId: c.helmet.id },
+      });
       expect(agg.totalScans).toBe(6);
       // Re-aggregating a purged day never zeroes it.
       await aggregation.aggregateDay('2026-03-01', '2026-10-04');
-      expect((await ctx.prisma.helmetScanDaily.findFirstOrThrow({ where: { id: agg.id } })).totalScans).toBe(6);
+      expect(
+        (await ctx.prisma.helmetScanDaily.findFirstOrThrow({ where: { id: agg.id } })).totalScans,
+      ).toBe(6);
       expect(await ctx.prisma.auditLog.count()).toBe(auditBefore);
       expect(await ctx.prisma.helmetOwnership.count()).toBe(ownershipBefore);
       expect(await ctx.prisma.helmet.count({ where: { id: c.helmet.id } })).toBe(1);
+    });
+
+    it('minimises pre-Phase 6 scans: raw user agents become a summary and device category', async () => {
+      const h = await createTestHelmet(ctx, 'SOLD');
+      const raw =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148';
+      await ctx.prisma.helmetScan.createMany({
+        data: [
+          { helmetId: h.id, scanType: 'EMERGENCY_PAGE', userAgent: raw },
+          { helmetId: h.id, scanType: 'VERIFY', userAgent: 'curl/8.4.0' },
+          { helmetId: h.id, scanType: 'VERIFY', userAgent: null },
+        ],
+      });
+      const first = await retention.run();
+      expect(first.legacyScansMinimised).toBe(2);
+      const rows = await ctx.prisma.helmetScan.findMany({ where: { helmetId: h.id } });
+      expect(rows.map((r) => r.userAgent)).not.toContain(raw);
+      expect(rows.map((r) => r.deviceCategory).sort()).toEqual(['BOT', 'MOBILE', null]);
+      expect((await retention.run()).legacyScansMinimised).toBe(0);
     });
 
     it('advisory lock: a concurrent run of the same job is SKIPPED, runs are recorded', async () => {
@@ -450,7 +524,11 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       expect(failed.status).toBe('FAILED');
       const runs = await ctx.prisma.workerJobRun.findMany({ orderBy: { startedAt: 'asc' } });
       expect(runs.map((r) => `${r.job}:${r.status}`).sort()).toEqual(
-        ['analytics.aggregate:SUCCEEDED', 'retention.cleanup:SUCCEEDED', 'risk.evaluate:FAILED'].sort(),
+        [
+          'analytics.aggregate:SUCCEEDED',
+          'retention.cleanup:SUCCEEDED',
+          'risk.evaluate:FAILED',
+        ].sort(),
       );
     });
   });

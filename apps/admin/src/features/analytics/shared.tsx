@@ -44,7 +44,10 @@ export function QrIntegrityBadge({ status }: { status: QrIntegrityStatus }) {
 
 export function Disclaimer() {
   return (
-    <p className="mb-4 rounded-lg bg-canvas-softer px-4 py-3 text-sm text-body" data-testid="risk-disclaimer">
+    <p
+      className="mb-4 rounded-lg bg-canvas-softer px-4 py-3 text-sm text-body"
+      data-testid="risk-disclaimer"
+    >
       {RISK_DISCLAIMER} Signals are deterministic rules over scan counts; each one lists its
       observed value and threshold.
     </p>
@@ -81,7 +84,13 @@ export function AnalyticsTabs() {
 }
 
 /** Date range filter: presets plus a custom from/to (UTC days). One row above the content. */
-export function RangePicker({ value, onChange }: { value: RangeState; onChange: (v: RangeState) => void }) {
+export function RangePicker({
+  value,
+  onChange,
+}: {
+  value: RangeState;
+  onChange: (v: RangeState) => void;
+}) {
   return (
     <div className="mb-6 flex flex-wrap items-end gap-2">
       <Select
@@ -116,5 +125,3 @@ export function RangePicker({ value, onChange }: { value: RangeState; onChange: 
     </div>
   );
 }
-
-export const pct = (v: number) => `${Math.round(v * 100)}%`;

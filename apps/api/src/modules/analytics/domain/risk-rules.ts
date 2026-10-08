@@ -121,7 +121,8 @@ export function evaluateHelmetSignals(m: HelmetScanMetrics, t: RiskThresholds): 
       threshold: 1,
       weight: 20,
       window: '24h',
-      detail: 'Many distinct visitors together with unusual verification activity or product reports',
+      detail:
+        'Many distinct visitors together with unusual verification activity or product reports',
     });
   return out;
 }
@@ -148,7 +149,15 @@ export function scoreSignals(signals: Omit<ObservedSignal, 'window' | 'severity'
     list.reduce((n, s) => n + s.weight, 0),
   );
   let level: RiskLevel =
-    score === 0 ? 'NONE' : score < 25 ? 'LOW' : score < 50 ? 'MEDIUM' : score < 75 ? 'HIGH' : 'CRITICAL';
+    score === 0
+      ? 'NONE'
+      : score < 25
+        ? 'LOW'
+        : score < 50
+          ? 'MEDIUM'
+          : score < 75
+            ? 'HIGH'
+            : 'CRITICAL';
   if (list.length <= 1 && (level === 'HIGH' || level === 'CRITICAL')) level = 'MEDIUM';
   if (level === 'CRITICAL' && list.length < 3) level = 'HIGH';
   return {

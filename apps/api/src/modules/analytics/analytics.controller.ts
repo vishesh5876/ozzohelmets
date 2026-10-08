@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   type AnalyticsOverviewDto,
@@ -67,7 +59,9 @@ export class AdminAnalyticsController {
 
   @Get('helmets/:helmetCode')
   @AdminAuth(Permission.ANALYTICS_VIEW)
-  @ApiOperation({ summary: 'One helmet: scan trend, explainable risk, alerts (if permitted), reports.' })
+  @ApiOperation({
+    summary: 'One helmet: scan trend, explainable risk, alerts (if permitted), reports.',
+  })
   helmet(
     @Param('helmetCode') helmetCode: string,
     @CurrentAdmin() admin: AuthenticatedAdmin,
@@ -80,7 +74,9 @@ export class AdminAnalyticsController {
 
   @Get('helmets/:helmetCode/scans')
   @AdminAuth(Permission.ANALYTICS_VIEW)
-  @ApiOperation({ summary: 'Scan events (type, time, device class, cache) — no IPs. Cursor-paginated.' })
+  @ApiOperation({
+    summary: 'Scan events (type, time, device class, cache) — no IPs. Cursor-paginated.',
+  })
   helmetScans(
     @Param('helmetCode') helmetCode: string,
     @Query() q: CursorQueryDto,
@@ -124,7 +120,9 @@ export class AdminRiskAlertsController {
 
   @Patch(':id')
   @AdminAuth(Permission.RISK_ALERT_MANAGE)
-  @ApiOperation({ summary: 'Acknowledge / investigate / resolve / dismiss (reason) / assign. Audited.' })
+  @ApiOperation({
+    summary: 'Acknowledge / investigate / resolve / dismiss (reason) / assign. Audited.',
+  })
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateRiskAlertDto,

@@ -39,7 +39,9 @@ export class AnalyticsAggregationService {
         select: { scannedAt: true },
       });
       if (first) {
-        const start = utcDay(new Date(Math.max(first.scannedAt.getTime(), now.getTime() - backfillDays * DAY_MS)));
+        const start = utcDay(
+          new Date(Math.max(first.scannedAt.getTime(), now.getTime() - backfillDays * DAY_MS)),
+        );
         days.length = 0;
         for (let d = start; d <= today; d = addDays(d, 1)) days.push(d);
       }

@@ -176,7 +176,9 @@ export class RiskAlertsService {
     return {
       items: page.map(toAlertDto),
       nextCursor:
-        rows.length > limit && last ? encodeCursor({ t: last.lastSeenAt.toISOString(), id: last.id }) : null,
+        rows.length > limit && last
+          ? encodeCursor({ t: last.lastSeenAt.toISOString(), id: last.id })
+          : null,
     };
   }
 
@@ -227,7 +229,11 @@ export class RiskAlertsService {
         ...(input.status ? { status: input.status } : {}),
         ...(input.assignedAdminId !== undefined ? { assignedAdminId: input.assignedAdminId } : {}),
         ...(closing
-          ? { resolutionReason: input.resolutionReason!.trim(), resolvedAt: now, resolvedByAdminId: admin.id }
+          ? {
+              resolutionReason: input.resolutionReason!.trim(),
+              resolvedAt: now,
+              resolvedByAdminId: admin.id,
+            }
           : {}),
       },
     });

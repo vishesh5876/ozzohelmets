@@ -5,14 +5,16 @@ human-readable Helmet ID (`HM-A8F3-KL92`), ≥128-bit QR token, Code128 barcode,
 activation PIN, serial number — bound to a model/SKU and a manufacturing batch. Customers activate
 and own helmets; first responders scan the QR code to see only what the owner chose to share.
 
-**Status: P1–P5 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
+**Status: P1–P6 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
 → email + password account) + emergency profile, ownership + lifecycle, warranty + product
-authenticity, and customer experience + admin support + security hardening. Three surfaces only: Admin, Customer, public QR. See
+authenticity, customer experience + admin support + security hardening, and analytics + QR abuse
+detection (with a scheduled worker process). Three surfaces only: Admin, Customer, public QR. See
 [`docs/PHASES.md`](docs/PHASES.md).
 
 ```
 apps/
   api/      NestJS 11 + Prisma 6 (PostgreSQL) + Redis — modular monolith, /api/v1, Swagger
+            + worker entrypoint (dist/worker.js: aggregation, risk evaluation, retention)
   admin/    React 19 + Vite admin portal (manufacturing, helmets, audit, admin users)
   portal/   React 19 + Vite customer portal + standalone lightweight emergency page (/e/:token)
 packages/
@@ -129,6 +131,20 @@ add more helmets from **Add helmet** (PIN only, no new account). Change the acco
    copy / print the approved information; repeated unknown-token lookups are rate-limited while
    real scans keep working.
 
+## Phase 6 walkthrough (analytics & QR abuse detection)
+
+1. Run the worker next to the API: `pnpm --filter @helmet/api worker` (or `--once all` for a
+   single pass). It builds daily aggregates, evaluates review signals and applies retention.
+2. **Admin → Analytics**: Overview (activation, emergency sharing, warranty and proof rates,
+   incomplete profiles, daily charts), QR scans (today / 7 d / 30 d, top helmets, unknown-code
+   requests), Helmet activity (helmets with review signals) and Risk alerts.
+3. **Helmet analytics page**: 30-day scan chart, signals with observed value vs threshold, alerts
+   (acknowledge / investigate / assign / resolve or dismiss with a reason), product reports and
+   the admin-only **QR integrity** marker (normal / under review / compromised).
+4. **Customer helmet page**: a neutral "Your helmet QR was accessed N times in the last 30 days."
+5. Emergency pages are never disabled by analytics. Suspicious scan activity does **not** prove a
+   physical helmet is counterfeit — everything is "review recommended".
+
 ## Quality gates
 
 ```bash
@@ -167,10 +183,18 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 - **No retail/distributor/inventory model** by design — [ADR-001](docs/ADR-001-no-retail-inventory.md)
 - **Product verification** that never claims more than "registered identity verified"; anonymous
   rate-limited product reports — [PRODUCT-AUTHENTICITY](docs/PRODUCT-AUTHENTICITY.md)
+- **Analytics from daily aggregates** built by an idempotent, advisory-locked **worker**;
+  **deterministic, explainable risk signals** (no ML) that never change lifecycle status or
+  emergency access; enumeration and valid-token scraping detection without storing tokens or IPs —
+  [ANALYTICS](docs/ANALYTICS.md), [RISK-ENGINE](docs/RISK-ENGINE.md),
+  [QR-ABUSE-DETECTION](docs/QR-ABUSE-DETECTION.md), [WORKER](docs/WORKER.md),
+  [DATA-RETENTION](docs/DATA-RETENTION.md)
 
 ## Flagged for product decisions
 
-Open items are listed in [`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-still-open)
+Open items are listed in [`docs/PHASE-6.md`](docs/PHASE-6.md#open-decisions) (risk thresholds,
+retention period, owner notifications, QR replacement process),
+[`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-still-open)
 (replacement warranty policy, warranty start date, proof retention, report triage),
 [`docs/PHASE-3.md`](docs/PHASE-3.md#business-decisions-still-open)
 ("if found" contact, revoked helmet re-assignment — the other two were decided in Phase 4), [`docs/PHASE-2.md`](docs/PHASE-2.md#business-decisions-still-open)
@@ -180,7 +204,8 @@ Open items are listed in [`docs/PHASE-4.md`](docs/PHASE-4.md#business-decisions-
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) · [Phase 4](docs/PHASE-4.md) · [Phase 5](docs/PHASE-5.md) ·
+[Architecture](docs/ARCHITECTURE.md) · [Phases](docs/PHASES.md) · [Phase 1](docs/PHASE-1.md) · [Phase 2](docs/PHASE-2.md) · [Phase 3](docs/PHASE-3.md) · [Phase 4](docs/PHASE-4.md) · [Phase 5](docs/PHASE-5.md) · [Phase 6](docs/PHASE-6.md) ·
+[Analytics](docs/ANALYTICS.md) · [Risk engine](docs/RISK-ENGINE.md) · [QR abuse detection](docs/QR-ABUSE-DETECTION.md) · [Worker](docs/WORKER.md) · [Data retention](docs/DATA-RETENTION.md) ·
 [Customer support](docs/CUSTOMER-SUPPORT.md) · [Account recovery](docs/ACCOUNT-RECOVERY.md) · [Privacy requests](docs/PRIVACY-REQUESTS.md) · [RBAC matrix](docs/RBAC-MATRIX.md) · [Security hardening](docs/SECURITY-HARDENING.md) · [ADR-001](docs/ADR-001-no-retail-inventory.md) ·
 [Ownership](docs/OWNERSHIP.md) · [Transfer](docs/TRANSFER.md) · [Replacement](docs/REPLACEMENT.md) ·
 [Customer auth](docs/CUSTOMER-AUTH.md) · [Warranty](docs/WARRANTY.md) · [Product authenticity](docs/PRODUCT-AUTHENTICITY.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·

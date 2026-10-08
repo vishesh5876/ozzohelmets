@@ -59,7 +59,10 @@ export function HelmetActivityPage() {
       {q.isLoading && <LoadingState />}
       {q.error && <ErrorState error={q.error} onRetry={() => void q.refetch()} />}
       {q.data && items.length === 0 && (
-        <EmptyState title="No unusual activity" description="No helmet currently has review signals." />
+        <EmptyState
+          title="No unusual activity"
+          description="No helmet currently has review signals."
+        />
       )}
       {items.length > 0 && (
         <Table>
@@ -78,7 +81,10 @@ export function HelmetActivityPage() {
             {items.map((h) => (
               <Tr key={h.helmetId} data-testid="activity-row">
                 <Td>
-                  <Link to={`/analytics/helmets/${h.helmetCode}`} className="font-mono text-xs hover:underline">
+                  <Link
+                    to={`/analytics/helmets/${h.helmetCode}`}
+                    className="font-mono text-xs hover:underline"
+                  >
                     {h.helmetCode}
                   </Link>
                   <p className="text-xs text-body">{h.model}</p>
@@ -101,7 +107,11 @@ export function HelmetActivityPage() {
       )}
       {q.hasNextPage && (
         <div className="mt-4">
-          <Button variant="secondary" loading={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+          <Button
+            variant="secondary"
+            loading={q.isFetchingNextPage}
+            onClick={() => void q.fetchNextPage()}
+          >
             Load more
           </Button>
         </div>

@@ -23,3 +23,4 @@ export function filenameFromDisposition(header: string | null, fallback: string)
   const match = header?.match(/filename="([^"]+)"/);
   return match?.[1] ?? fallback;
 }
+export const pct = (v: number) => `${Math.round(v * 100)}%`;

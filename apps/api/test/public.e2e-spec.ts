@@ -72,7 +72,8 @@ describe('Public emergency endpoint (e2e)', () => {
       .set('User-Agent', 'EmergencyTest/1.0')
       .expect(200);
     const scan = await waitFor(
-      () => ctx.prisma.helmetScan.findFirst({
+      () =>
+        ctx.prisma.helmetScan.findFirst({
           where: { helmetId, scanType: 'EMERGENCY_PAGE', deviceCategory: { not: null } },
         }),
       (s) => s !== null,

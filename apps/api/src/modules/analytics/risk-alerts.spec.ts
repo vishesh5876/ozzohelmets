@@ -21,7 +21,11 @@ function fakePrisma() {
   return {
     rows,
     riskAlert: {
-      findFirst: async ({ where }: { where: { dedupKey: string; status: { in: string[] }; resolvedAt?: { gt: Date } } }) =>
+      findFirst: async ({
+        where,
+      }: {
+        where: { dedupKey: string; status: { in: string[] }; resolvedAt?: { gt: Date } };
+      }) =>
         rows
           .filter(
             (r) =>
@@ -29,7 +33,8 @@ function fakePrisma() {
               where.status.in.includes(r.status) &&
               (!where.resolvedAt || (r.resolvedAt && r.resolvedAt > where.resolvedAt.gt)),
           )
-          .sort((a, b) => (b.resolvedAt?.getTime() ?? 0) - (a.resolvedAt?.getTime() ?? 0))[0] ?? null,
+          .sort((a, b) => (b.resolvedAt?.getTime() ?? 0) - (a.resolvedAt?.getTime() ?? 0))[0] ??
+        null,
       update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const r = rows.find((x) => x.id === where.id)!;
         r.occurrences += 1;
@@ -40,7 +45,13 @@ function fakePrisma() {
       create: async ({ data }: { data: Row }) => {
         if (rows.some((r) => r.dedupKey === data.dedupKey && open.includes(r.status)))
           throw Object.assign(new Error('unique'), { code: 'P2002' });
-        const r = { ...data, id: `a${rows.length + 1}`, status: 'OPEN', occurrences: 1, resolvedAt: null };
+        const r = {
+          ...data,
+          id: `a${rows.length + 1}`,
+          status: 'OPEN',
+          occurrences: 1,
+          resolvedAt: null,
+        };
         rows.push(r);
         return r;
       },
@@ -77,7 +88,11 @@ describe('risk alert lifecycle', () => {
 
   it('deduplicates repeated observations into one open alert, keeping the highest priority', async () => {
     const prisma = fakePrisma();
-    const svc = new RiskAlertsService(prisma as unknown as PrismaService, config, {} as AuditService);
+    const svc = new RiskAlertsService(
+      prisma as unknown as PrismaService,
+      config,
+      {} as AuditService,
+    );
     await svc.raise(input(60));
     await svc.raise({ ...input(80), priority: 'MEDIUM' });
     await svc.raise(input(70));
@@ -87,7 +102,11 @@ describe('risk alert lifecycle', () => {
 
   it('after a resolution the same pattern stays quiet unless it at least doubles', async () => {
     const prisma = fakePrisma();
-    const svc = new RiskAlertsService(prisma as unknown as PrismaService, config, {} as AuditService);
+    const svc = new RiskAlertsService(
+      prisma as unknown as PrismaService,
+      config,
+      {} as AuditService,
+    );
     const now = new Date('2026-10-04T12:00:00Z');
     await svc.raise(input(60), now);
     Object.assign(prisma.rows[0]!, { status: 'RESOLVED', resolvedAt: now });

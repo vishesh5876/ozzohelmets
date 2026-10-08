@@ -83,7 +83,11 @@ export function RiskAlertsPage() {
       </ul>
       {q.hasNextPage && (
         <div className="mt-4">
-          <Button variant="secondary" loading={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+          <Button
+            variant="secondary"
+            loading={q.isFetchingNextPage}
+            onClick={() => void q.fetchNextPage()}
+          >
             Load more
           </Button>
         </div>
@@ -99,8 +103,11 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
   const { admin } = useAuth();
   const [reason, setReason] = useState('');
   const update = useMutation({
-    mutationFn: (body: { status?: RiskAlertStatus; assignedAdminId?: string | null; resolutionReason?: string }) =>
-      api.patch<RiskAlertDto>(`/admin/risk-alerts/${alert.id}`, body),
+    mutationFn: (body: {
+      status?: RiskAlertStatus;
+      assignedAdminId?: string | null;
+      resolutionReason?: string;
+    }) => api.patch<RiskAlertDto>(`/admin/risk-alerts/${alert.id}`, body),
     onSuccess: () => {
       setReason('');
       void qc.invalidateQueries({ queryKey: ['risk-alerts'] });
@@ -127,7 +134,10 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
           <dt className="inline">Subject: </dt>
           <dd className="inline font-mono">
             {alert.helmet ? (
-              <Link to={`/analytics/helmets/${alert.helmet.helmetCode}`} className="hover:underline">
+              <Link
+                to={`/analytics/helmets/${alert.helmet.helmetCode}`}
+                className="hover:underline"
+              >
                 {alert.helmet.helmetCode}
               </Link>
             ) : alert.sourceRef ? (
@@ -166,8 +176,8 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
       )}
       {!open && alert.resolutionReason && (
         <p className="mt-3 text-sm text-body">
-          {humanizeEnum(alert.status)} by {alert.resolvedByName ?? 'admin'} {formatDateTime(alert.resolvedAt)}:{' '}
-          {alert.resolutionReason}
+          {humanizeEnum(alert.status)} by {alert.resolvedByName ?? 'admin'}{' '}
+          {formatDateTime(alert.resolvedAt)}: {alert.resolutionReason}
         </p>
       )}
       {open && (
@@ -175,17 +185,32 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
           <div className="mt-4 flex flex-col gap-2 border-t border-hairline pt-3">
             <div className="flex flex-wrap gap-2">
               {alert.status === 'OPEN' && (
-                <Button size="sm" variant="secondary" loading={update.isPending} onClick={() => update.mutate({ status: 'ACKNOWLEDGED' })}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={update.isPending}
+                  onClick={() => update.mutate({ status: 'ACKNOWLEDGED' })}
+                >
                   Acknowledge
                 </Button>
               )}
               {alert.status !== 'INVESTIGATING' && (
-                <Button size="sm" variant="secondary" loading={update.isPending} onClick={() => update.mutate({ status: 'INVESTIGATING' })}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={update.isPending}
+                  onClick={() => update.mutate({ status: 'INVESTIGATING' })}
+                >
                   Investigate
                 </Button>
               )}
               {alert.assignee?.id !== admin?.id && (
-                <Button size="sm" variant="ghost" loading={update.isPending} onClick={() => update.mutate({ assignedAdminId: admin?.id ?? null })}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={update.isPending}
+                  onClick={() => update.mutate({ assignedAdminId: admin?.id ?? null })}
+                >
                   Assign to me
                 </Button>
               )}
@@ -199,10 +224,21 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
-              <Button size="sm" disabled={!reason.trim()} loading={update.isPending} onClick={() => update.mutate({ status: 'RESOLVED', resolutionReason: reason })}>
+              <Button
+                size="sm"
+                disabled={!reason.trim()}
+                loading={update.isPending}
+                onClick={() => update.mutate({ status: 'RESOLVED', resolutionReason: reason })}
+              >
                 Resolve
               </Button>
-              <Button size="sm" variant="ghost" disabled={!reason.trim()} loading={update.isPending} onClick={() => update.mutate({ status: 'DISMISSED', resolutionReason: reason })}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!reason.trim()}
+                loading={update.isPending}
+                onClick={() => update.mutate({ status: 'DISMISSED', resolutionReason: reason })}
+              >
                 Dismiss
               </Button>
             </div>

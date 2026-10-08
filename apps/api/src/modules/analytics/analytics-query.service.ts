@@ -40,9 +40,20 @@ export interface DateRange {
 }
 
 /** Resolves `today | 7d | 30d | custom(from,to)` into inclusive UTC dates (max 366 days). */
-export function resolveRange(key: string | undefined, from?: string, to?: string, now = new Date()): DateRange {
+export function resolveRange(
+  key: string | undefined,
+  from?: string,
+  to?: string,
+  now = new Date(),
+): DateRange {
   const today = utcDay(now);
-  if (key === 'custom' && from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
+  if (
+    key === 'custom' &&
+    from &&
+    to &&
+    /^\d{4}-\d{2}-\d{2}$/.test(from) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(to)
+  ) {
     const f = from <= to ? from : to;
     const t = from <= to ? to : from;
     const clampedTo = t > today ? today : t;
@@ -103,7 +114,15 @@ export class AnalyticsQueryService {
                AND NOT EXISTS (SELECT 1 FROM emergency_contacts c WHERE c.user_id = o.user_id AND c.is_active)) AS no_contacts,
             (SELECT count(*) FROM product_reports WHERE status IN ('OPEN', 'REVIEWING')) AS reports,
             (SELECT count(*) FROM risk_alerts WHERE status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING')) AS alerts`,
-        this.prisma.$queryRaw<{ active: bigint; expired: bigint; registered: bigint; on_activated: bigint; with_proof: bigint }[]>`
+        this.prisma.$queryRaw<
+          {
+            active: bigint;
+            expired: bigint;
+            registered: bigint;
+            on_activated: bigint;
+            with_proof: bigint;
+          }[]
+        >`
           SELECT
             count(*) FILTER (WHERE status IN ('ACTIVE', 'EXPIRED') AND warranty_end_date >= ${today}::date) AS active,
             count(*) FILTER (WHERE status IN ('ACTIVE', 'EXPIRED') AND warranty_end_date < ${today}::date) AS expired,
@@ -111,7 +130,9 @@ export class AnalyticsQueryService {
             count(*) FILTER (WHERE EXISTS (SELECT 1 FROM helmets h WHERE h.id = w.helmet_id AND h.activated_at IS NOT NULL)) AS on_activated,
             count(*) FILTER (WHERE proof_key IS NOT NULL) AS with_proof
           FROM helmet_warranties w`,
-        this.prisma.$queryRaw<{ model: string; sku: string; activated: bigint; registered: bigint; active: bigint }[]>`
+        this.prisma.$queryRaw<
+          { model: string; sku: string; activated: bigint; registered: bigint; active: bigint }[]
+        >`
           SELECT m.name AS model, m.sku,
             count(h.id) FILTER (WHERE h.activated_at IS NOT NULL) AS activated,
             count(w.id) AS registered,
@@ -125,7 +146,12 @@ export class AnalyticsQueryService {
           FROM helmets h JOIN helmet_batches b ON b.id = h.batch_id
           WHERE h.activated_at IS NOT NULL AND b.printed_at IS NOT NULL AND h.activated_at >= b.printed_at`,
         this.prisma.platformDailyStats.findMany({
-          where: { date: { gte: new Date(`${range.from}T00:00:00Z`), lte: new Date(`${range.to}T00:00:00Z`) } },
+          where: {
+            date: {
+              gte: new Date(`${range.from}T00:00:00Z`),
+              lte: new Date(`${range.to}T00:00:00Z`),
+            },
+          },
           orderBy: { date: 'asc' },
         }),
         this.prisma.helmet.findMany({
@@ -228,7 +254,12 @@ export class AnalyticsQueryService {
   }
 
   /** Aggregates for [from, today) + raw for today (if in range). */
-  private async scanCounts(from: string, to: string, today: string, now: Date): Promise<ScanCountsDto> {
+  private async scanCounts(
+    from: string,
+    to: string,
+    today: string,
+    now: Date,
+  ): Promise<ScanCountsDto> {
     const lastAggregated = to < today ? to : addDays(today, -1);
     const [agg] =
       from <= lastAggregated
@@ -238,7 +269,9 @@ export class AnalyticsQueryService {
             FROM helmet_scan_daily WHERE date >= ${from}::date AND date <= ${lastAggregated}::date`
         : [{ e: 0n, v: 0n, t: 0n }];
     const live =
-      to >= today ? await this.rawScanCounts(new Date(`${today}T00:00:00Z`), now) : { total: 0, emergency: 0, verify: 0 };
+      to >= today
+        ? await this.rawScanCounts(new Date(`${today}T00:00:00Z`), now)
+        : { total: 0, emergency: 0, verify: 0 };
     return {
       total: n(agg?.t) + live.total,
       emergency: n(agg?.e) + live.emergency,
@@ -267,11 +300,24 @@ export class AnalyticsQueryService {
         where: { riskLevel: { not: 'NONE' }, resolvedAt: null },
       }),
       this.prisma.platformDailyStats.findMany({
-        where: { date: { gte: new Date(`${range.from}T00:00:00Z`), lte: new Date(`${range.to}T00:00:00Z`) } },
+        where: {
+          date: {
+            gte: new Date(`${range.from}T00:00:00Z`),
+            lte: new Date(`${range.to}T00:00:00Z`),
+          },
+        },
         orderBy: { date: 'asc' },
       }),
       this.prisma.$queryRaw<
-        { helmet_id: string; code: string; model: string; t: bigint; e: bigint; v: bigint; level: RiskLevel | null }[]
+        {
+          helmet_id: string;
+          code: string;
+          model: string;
+          t: bigint;
+          e: bigint;
+          v: bigint;
+          level: RiskLevel | null;
+        }[]
       >`
         SELECT d.helmet_id, h.helmet_code AS code, m.name AS model,
                sum(d.total_scans) AS t, sum(d.emergency_scans) AS e, sum(d.verification_scans) AS v,
@@ -315,15 +361,20 @@ export class AnalyticsQueryService {
 
   // ─────────────── Helmet activity (risk list) ───────────────
 
-  async helmetActivity(input: {
-    minLevel?: RiskLevel;
-    includeResolved?: boolean;
-    cursor?: string;
-    limit?: number;
-  }, now = new Date()): Promise<CursorPage<HelmetActivityItemDto>> {
+  async helmetActivity(
+    input: {
+      minLevel?: RiskLevel;
+      includeResolved?: boolean;
+      cursor?: string;
+      limit?: number;
+    },
+    now = new Date(),
+  ): Promise<CursorPage<HelmetActivityItemDto>> {
     const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
     const levels: RiskLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-    const allowed = input.minLevel ? levels.slice(Math.max(levels.indexOf(input.minLevel), 0)) : levels;
+    const allowed = input.minLevel
+      ? levels.slice(Math.max(levels.indexOf(input.minLevel), 0))
+      : levels;
     const after = decodeAnyCursor(input.cursor);
     const rows = await this.prisma.helmetRiskAssessment.findMany({
       where: {
@@ -397,19 +448,27 @@ export class AnalyticsQueryService {
           openAlerts: open.get(r.helmetId) ?? 0,
         };
       }),
-      nextCursor: rows.length > limit && last ? encodeCursor({ s: last.riskScore, id: last.helmetId }) : null,
+      nextCursor:
+        rows.length > limit && last ? encodeCursor({ s: last.riskScore, id: last.helmetId }) : null,
     };
   }
 
   // ─────────────── Helmet detail ───────────────
 
-  async helmetDetail(rawCode: string, canViewAlerts: boolean, now = new Date()): Promise<HelmetAnalyticsDetailDto> {
+  async helmetDetail(
+    rawCode: string,
+    canViewAlerts: boolean,
+    now = new Date(),
+  ): Promise<HelmetAnalyticsDetailDto> {
     const helmet = await this.findHelmet(rawCode);
     const today = utcDay(now);
     const from30 = addDays(today, -29);
     const [daily, last24, risk, signals, alerts, reports, ownership, todayAgg] = await Promise.all([
       this.prisma.helmetScanDaily.findMany({
-        where: { helmetId: helmet.id, date: { gte: new Date(`${from30}T00:00:00Z`), lt: new Date(`${today}T00:00:00Z`) } },
+        where: {
+          helmetId: helmet.id,
+          date: { gte: new Date(`${from30}T00:00:00Z`), lt: new Date(`${today}T00:00:00Z`) },
+        },
         orderBy: { date: 'asc' },
       }),
       this.rawScanCounts(new Date(now.getTime() - DAY_MS), now, helmet.id),
@@ -453,7 +512,13 @@ export class AnalyticsQueryService {
       const r = byDate.get(d);
       series.push(
         d === today
-          ? { date: d, total: n(t?.t), emergency: n(t?.e), verify: n(t?.v), uniqueVisitors: n(t?.u) }
+          ? {
+              date: d,
+              total: n(t?.t),
+              emergency: n(t?.e),
+              verify: n(t?.v),
+              uniqueVisitors: n(t?.u),
+            }
           : {
               date: d,
               total: r?.totalScans ?? 0,
@@ -464,9 +529,13 @@ export class AnalyticsQueryService {
       );
     }
     const reasons = (risk?.reasons as unknown as RiskReasonDto[]) ?? [];
-    const reports30d = reports.filter((r) => r.createdAt.getTime() >= now.getTime() - 30 * DAY_MS).length;
+    const reports30d = reports.filter(
+      (r) => r.createdAt.getTime() >= now.getTime() - 30 * DAY_MS,
+    ).length;
     const suspicious = reasons.some((r) => r.type !== 'HIGH_SCAN_VOLUME');
-    const lastScan = [t?.last, daily.at(-1)?.lastScanAt].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0];
+    const lastScan = [t?.last, daily.at(-1)?.lastScanAt]
+      .filter((d): d is Date => !!d)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
     return {
       helmet: {
         id: helmet.id,
@@ -533,7 +602,11 @@ export class AnalyticsQueryService {
   }
 
   /** Scan events for forensic drill-down: type, time, device class, cache flag. No IPs. */
-  async helmetScans(rawCode: string, cursor?: string, limit = 50): Promise<CursorPage<HelmetScanEventDto>> {
+  async helmetScans(
+    rawCode: string,
+    cursor?: string,
+    limit = 50,
+  ): Promise<CursorPage<HelmetScanEventDto>> {
     const helmet = await this.findHelmet(rawCode);
     const take = Math.min(Math.max(limit, 1), 200);
     const after = decodeCursor(cursor);
@@ -558,7 +631,10 @@ export class AnalyticsQueryService {
     const last = page.at(-1);
     return {
       items: page.map((r) => ({ ...r, scannedAt: r.scannedAt.toISOString() })),
-      nextCursor: rows.length > take && last ? encodeCursor({ t: last.scannedAt.toISOString(), id: last.id }) : null,
+      nextCursor:
+        rows.length > take && last
+          ? encodeCursor({ t: last.scannedAt.toISOString(), id: last.id })
+          : null,
     };
   }
 
@@ -591,7 +667,11 @@ export class AnalyticsQueryService {
 
   // ─────────────── Customer (owner) summary ───────────────
 
-  async customerSummary(userId: string, helmetId: string, now = new Date()): Promise<CustomerScanSummaryDto> {
+  async customerSummary(
+    userId: string,
+    helmetId: string,
+    now = new Date(),
+  ): Promise<CustomerScanSummaryDto> {
     const ownership = await this.prisma.helmetOwnership.findFirst({
       where: { userId, helmetId, status: 'ACTIVE' },
       select: { activatedAt: true },

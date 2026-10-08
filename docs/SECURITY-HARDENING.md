@@ -86,3 +86,17 @@ filter never returns stack traces outside development.
 Profile, contacts, visibility, per-helmet enable/disable, transfer, lost/found, stolen/recovered,
 damage, replacement, deactivation, support restore and account deletion all invalidate the cached
 public view; `phase5-support` › public cache invalidation checks the next scan reflects each change.
+
+## Phase 6 additions
+
+- **Trusted proxy enforcement** (`env.schema.ts`): in production `TRUST_PROXY=true` is rejected
+  and a missing proxy configuration fails startup unless `REQUIRE_TRUSTED_PROXY_IN_PRODUCTION=false`
+  (direct exposure). `request-meta.middleware.ts` logs `ClientIp` errors (rate-limited) when
+  `X-Forwarded-For` / `CF-Connecting-IP` arrive while untrusted. Unit-tested in `env.schema.spec.ts`.
+- **Raw user agents no longer stored** on new scan rows (summary + device category only).
+- **Token enumeration** and **valid-token scraping** raise deduplicated alerts; scraping sources are
+  rationed and, far above the limit, refused for uncached lookups — cached emergency pages stay
+  available ([QR-ABUSE-DETECTION](QR-ABUSE-DETECTION.md)).
+- **Background work moved out of the API**: the security-event purge now runs in the worker.
+- Tests: no IP hashes in analytics responses, no raw IP in `helmet_scans`, viewer cannot mutate,
+  MANUFACTURING has no analytics, emergency page available under HIGH risk and COMPROMISED QR.

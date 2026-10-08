@@ -103,3 +103,17 @@ helmets are probably not on the owner's head; replaced/retired ones are out of s
   apply to `/public/verify/:token` too (unknown tokens count as misses).
 - Admin helmet view adds scan aggregates and a `HIGH_SCAN_ACTIVITY` flag — informational only, not a
   counterfeit score (Phase 6).
+
+## Phase 6 notes
+
+- Verification scans feed the deterministic risk engine (`ABNORMAL_VERIFY_ACTIVITY` compares a
+  helmet's verify scans with its own 7-day baseline) and product reports add
+  `PRODUCT_REPORT_CORRELATION` — only alongside a scan-pattern signal ([RISK-ENGINE](RISK-ENGINE.md)).
+- **QR integrity** (`NORMAL · UNDER_REVIEW · COMPROMISED`) is an admin decision. When
+  `COMPROMISED`, `GET /public/verify/:token` adds `integrityNotice` and the verification page shows
+  "This QR code has been reported as possibly copied…". The verified identity, lifecycle status and
+  emergency page are unchanged.
+- **What it still doesn't mean:** neither a clean result nor a review signal says anything certain
+  about the physical helmet. Suspicious scan activity does not prove a helmet is counterfeit.
+- The helmet analytics page shows product reports next to scan signals with a correlation note
+  ("Review recommended"), never a verdict.

@@ -46,7 +46,9 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
       (**printed into labels — choose it once**; changing it later breaks printed QR codes unless
       the old domain redirects).
 - [ ] `TRUST_PROXY` matching the load balancer hops; `TRUST_CLOUDFLARE=true` only if the origin
-      accepts traffic exclusively from Cloudflare.
+      accepts traffic exclusively from Cloudflare. Enforced at startup in production (Phase 6, see
+      below).
+- [ ] Run at least one **worker** (`node dist/worker.js`, same image as the API).
 - [ ] Managed PostgreSQL with PITR backups; Redis with persistence or acceptance that rate-limit/
       cache state is ephemeral.
 - [ ] Run migrations as a one-off job before rolling out new API versions (the image also runs
@@ -80,3 +82,43 @@ envelope encryption for keyrings, Secrets Manager, ALB + Cloudflare, CloudWatch/
 - `HELMET_HIGH_SCAN_THRESHOLD_24H` (50) for the informational admin flag.
 - The Phase 5 migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`; the database role needs
   permission to create it (or pre-create it as a superuser on managed PostgreSQL).
+
+## Phase 6 configuration
+
+### Worker
+
+Run `node dist/worker.js` from the API image (compose service `worker`). It needs the same
+`DATABASE_URL`, `REDIS_URL` and secrets as the API, no ports, and an init process. Several replicas
+are safe (advisory locks). Healthcheck: mtime of `/tmp/helmet-worker-heartbeat` < 2 min. See
+[WORKER](WORKER.md). Without a worker the API keeps serving, but dashboards stop updating, risk
+signals aren't evaluated and retention doesn't run.
+
+### Client IP behind proxies (required for abuse detection)
+
+Per-source limits and alerts are only as good as the client IP the API sees.
+
+| Setup                                 | Settings                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Load balancer / reverse proxy (1 hop) | `TRUST_PROXY=1` (or the proxy CIDRs, e.g. `10.0.0.0/8`)                                                           |
+| Cloudflare → LB → API                 | `TRUST_CLOUDFLARE=true` **and** origin firewall allowing only Cloudflare IP ranges; `TRUST_PROXY` for the LB hops |
+| API exposed directly (no proxy)       | `TRUST_PROXY=false`, `REQUIRE_TRUSTED_PROXY_IN_PRODUCTION=false`                                                  |
+
+- `TRUST_PROXY=true` is **rejected in production**: Express would trust any `X-Forwarded-For`
+  value, letting a client pick its own IP and dodge every per-source limit.
+- With `NODE_ENV=production` and no trusted proxy, startup fails unless
+  `REQUIRE_TRUSTED_PROXY_IN_PRODUCTION=false` — behind a load balancer every visitor would
+  otherwise share the balancer's IP.
+- At runtime, if `X-Forwarded-For` or `CF-Connecting-IP` arrive while nothing is trusted, the API
+  logs `ClientIp` errors (at most every 10 minutes): fix the configuration.
+- `CF-Connecting-IP` is honoured only with `TRUST_CLOUDFLARE=true`; never enable it on an origin
+  reachable without Cloudflare.
+
+### Variables
+
+Scan recording and retention (`SCAN_RECORDING_ENABLED`, `SCAN_DETAIL_RETENTION_DAYS` 180,
+`ANALYTICS_AGGREGATE_RETENTION_DAYS` 0 = keep, `WORKER_JOB_RUN_RETENTION_DAYS` 30), risk thresholds
+(`RISK_*`, see [RISK-ENGINE](RISK-ENGINE.md)), source detection (`ENUMERATION_INVALID_TOKEN_LIMIT`
+50, `VALID_TOKEN_SCRAPE_LIMIT` 100, `VALID_TOKEN_SCRAPE_WINDOW_SECONDS` 3600,
+`VALID_TOKEN_SCRAPE_BLOCK_MULTIPLIER` 5) and job intervals (`RISK_EVALUATION_INTERVAL_MINUTES` 5,
+`ANALYTICS_AGGREGATION_INTERVAL_MINUTES` 10, `RETENTION_INTERVAL_MINUTES` 60). All in
+`.env.example`.

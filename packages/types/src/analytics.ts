@@ -79,7 +79,13 @@ export interface AnalyticsOverviewDto {
     riskAlertsOpened: number;
   };
   series: PlatformDailyPointDto[];
-  warrantyByModel: { model: string; sku: string; activated: number; registered: number; active: number }[];
+  warrantyByModel: {
+    model: string;
+    sku: string;
+    activated: number;
+    registered: number;
+    active: number;
+  }[];
   recentActivations: { helmetId: string; helmetCode: string; activatedAt: IsoDateString }[];
 }
 
@@ -206,7 +212,13 @@ export interface HelmetAnalyticsDetailDto {
     approxUniqueVisitors7d: number;
     lastScanAt: IsoDateString | null;
   };
-  series: { date: DateOnly; total: number; emergency: number; verify: number; uniqueVisitors: number }[];
+  series: {
+    date: DateOnly;
+    total: number;
+    emergency: number;
+    verify: number;
+    uniqueVisitors: number;
+  }[];
   risk: HelmetRiskDto | null;
   signals: RiskSignalDto[];
   /** Only for admins with `risk-alert:view`. */
@@ -214,7 +226,12 @@ export interface HelmetAnalyticsDetailDto {
   productReports: {
     total: number;
     last30d: number;
-    recent: { id: string; reason: ProductReportReason; status: ProductReportStatus; createdAt: IsoDateString }[];
+    recent: {
+      id: string;
+      reason: ProductReportReason;
+      status: ProductReportStatus;
+      createdAt: IsoDateString;
+    }[];
   };
   /** Human-readable correlation note, e.g. reports + suspicious scans → "Review recommended". */
   correlation: string | null;

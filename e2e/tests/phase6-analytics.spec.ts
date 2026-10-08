@@ -68,11 +68,15 @@ async function manufactureOne(api: APIRequestContext) {
 /** Runs the scheduled jobs once, exactly as ops would (`node dist/worker.js --once all`). */
 function runWorkerOnce(): string {
   const apiDir = resolve(__dirname, '../../apps/api');
-  return execFileSync('npx', ['dotenv', '-e', '../../.env', '--', 'node', 'dist/worker.js', '--once', 'all'], {
-    cwd: apiDir,
-    encoding: 'utf8',
-    timeout: 90_000,
-  });
+  return execFileSync(
+    'npx',
+    ['dotenv', '-e', '../../.env', '--', 'node', 'dist/worker.js', '--once', 'all'],
+    {
+      cwd: apiDir,
+      encoding: 'utf8',
+      timeout: 90_000,
+    },
+  );
 }
 
 test.describe.serial('Phase 6: QR analytics, review signals and alert workflow', () => {
@@ -111,12 +115,15 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
         showEmergencyContacts: true,
       },
     });
-    helmetId = (await (await api.get(`${API}/customer/helmets`, { headers: auth })).json()).data[0].id;
+    helmetId = (await (await api.get(`${API}/customer/helmets`, { headers: auth })).json()).data[0]
+      .id;
     await api.post(`${API}/customer/helmets/${helmetId}/emergency/enable`, { headers: auth });
     // A burst of public scans (distinct browsers on one network, e.g. a group ride).
     for (let i = 0; i < SCANS; i++) {
       const res = await api.get(`${API}/public/emergency/${helmet.token}`, {
-        headers: { 'User-Agent': `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) Mobile Safari/537.36` },
+        headers: {
+          'User-Agent': `Mozilla/5.0 (Linux; Android 14; Pixel ${i}) Mobile Safari/537.36`,
+        },
       });
       expect(res.status()).toBe(200);
     }
@@ -148,10 +155,16 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
     await expect(detail.getByTestId('risk-signal').first()).toContainText('High scan volume');
     await expect(detail.getByTestId('risk-reasons')).toContainText(`public scans in 1 hour`);
     // Only the disclaimer mentions counterfeits ("does not prove…"); signals and alerts never accuse.
-    for (const part of [detail.getByTestId('risk-reasons'), detail.getByTestId('risk-alert').first()])
+    for (const part of [
+      detail.getByTestId('risk-reasons'),
+      detail.getByTestId('risk-alert').first(),
+    ])
       await expect(part).not.toContainText(/counterfeit|fake|fraud/i);
     await expect(page.getByTestId('chart-helmet-scans')).toBeVisible();
-    await page.getByTestId('chart-helmet-scans').getByRole('button', { name: 'Show table' }).click();
+    await page
+      .getByTestId('chart-helmet-scans')
+      .getByRole('button', { name: 'Show table' })
+      .click();
     await expect(page.getByTestId('chart-helmet-scans').getByRole('table')).toBeVisible();
 
     const alert = detail.getByTestId('risk-alert').first();
@@ -173,9 +186,9 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
 
     await page.goto(`${ADMIN_URL}/analytics/alerts`);
     await page.getByLabel('Alert status').selectOption('RESOLVED');
-    await expect(page.getByTestId('risk-alert').filter({ hasText: helmet.helmetCode })).toContainText(
-      'Group ride',
-    );
+    await expect(
+      page.getByTestId('risk-alert').filter({ hasText: helmet.helmetCode }),
+    ).toContainText('Group ride');
   });
 
   test('owner sees a neutral scan summary; public pages stay available', async ({ browser }) => {
@@ -186,7 +199,9 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
     await phone.getByRole('button', { name: 'Sign in' }).click();
     await phone.getByTestId('helmet-card').filter({ hasText: helmet.helmetCode }).click();
     const summary = phone.getByTestId('scan-summary');
-    await expect(summary).toContainText(/Your helmet QR was accessed \d+ times in the last 30 days\./);
+    await expect(summary).toContainText(
+      /Your helmet QR was accessed \d+ times in the last 30 days\./,
+    );
     await expect(summary).not.toContainText(/IP|device|location|risk|suspicious/i);
 
     // Emergency page works even with a review signal and the QR under review.

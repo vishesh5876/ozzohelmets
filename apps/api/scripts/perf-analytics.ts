@@ -14,7 +14,10 @@ import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { AnalyticsAggregationService } from '../src/modules/analytics/analytics-aggregation.service';
-import { AnalyticsQueryService, resolveRange } from '../src/modules/analytics/analytics-query.service';
+import {
+  AnalyticsQueryService,
+  resolveRange,
+} from '../src/modules/analytics/analytics-query.service';
 import { RetentionService } from '../src/modules/analytics/retention.service';
 import { RiskAlertsService } from '../src/modules/analytics/risk-alerts.service';
 import { RiskEvaluationService } from '../src/modules/analytics/risk-evaluation.service';
@@ -44,7 +47,12 @@ async function main(): Promise<void> {
     const q0 = queries;
     const t0 = performance.now();
     const r = await fn();
-    results.push({ step, ms: Math.round(performance.now() - t0), queries: queries - q0, note: note?.(r) });
+    results.push({
+      step,
+      ms: Math.round(performance.now() - t0),
+      queries: queries - q0,
+      note: note?.(r),
+    });
     return r;
   };
 
@@ -52,7 +60,9 @@ async function main(): Promise<void> {
     'TRUNCATE risk_alerts, platform_daily_stats, worker_job_runs, helmet_scans, helmets, helmet_batches, helmet_models CASCADE',
   );
   await time('seed helmets', async () => {
-    const model = await prisma.helmetModel.create({ data: { name: 'Perf X', sku: 'PERF-1', brand: 'Ozzo' } });
+    const model = await prisma.helmetModel.create({
+      data: { name: 'Perf X', sku: 'PERF-1', brand: 'Ozzo' },
+    });
     const batch = await prisma.helmetBatch.create({
       data: {
         batchCode: 'BAT-PERF',
@@ -79,13 +89,11 @@ async function main(): Promise<void> {
       })),
     });
   });
-  await time(
-    'seed scans',
-    async () => {
-      // Background: 30 days of ordinary scans spread over all helmets and ~5k sources.
-      const hot = 10;
-      const background = SCANS - hot * 120;
-      await prisma.$executeRaw`
+  await time('seed scans', async () => {
+    // Background: 30 days of ordinary scans spread over all helmets and ~5k sources.
+    const hot = 10;
+    const background = SCANS - hot * 120;
+    await prisma.$executeRaw`
         INSERT INTO helmet_scans (id, helmet_id, scan_type, scanned_at, ip_hash, user_agent, device_category)
         WITH ids AS (SELECT array_agg(id) AS a, count(*)::int AS n FROM helmets)
         SELECT gen_random_uuid(), ids.a[1 + floor(random() * ids.n)::int],
@@ -95,8 +103,8 @@ async function main(): Promise<void> {
           'Mobile Safari on iOS',
           (CASE WHEN random() < 0.03 THEN 'BOT' ELSE 'MOBILE' END)::"DeviceCategory"
         FROM generate_series(1, ${background}) g, ids`;
-      // Hot helmets: 120 scans in the last hour from 100 distinct sources, a third of them verify.
-      await prisma.$executeRaw`
+    // Hot helmets: 120 scans in the last hour from 100 distinct sources, a third of them verify.
+    await prisma.$executeRaw`
         INSERT INTO helmet_scans (id, helmet_id, scan_type, scanned_at, ip_hash, user_agent, device_category)
         SELECT gen_random_uuid(), h.id,
           (CASE WHEN g % 3 = 0 THEN 'VERIFY' ELSE 'EMERGENCY_PAGE' END)::"ScanType",
@@ -104,8 +112,7 @@ async function main(): Promise<void> {
           md5(h.id::text || (g % 100)) || md5('pad'),
           'Chrome on Android', 'MOBILE'::"DeviceCategory"
         FROM (SELECT id FROM helmets ORDER BY helmet_code LIMIT ${hot}) h, generate_series(1, 120) g`;
-    },
-  );
+  });
   await prisma.$executeRawUnsafe('ANALYZE helmet_scans');
   const count = await prisma.helmetScan.count();
 
@@ -116,18 +123,38 @@ async function main(): Promise<void> {
   const alerts = app.get(RiskAlertsService);
   const range = resolveRange('30d');
 
-  await time('aggregate: 30-day backfill', () => aggregation.aggregateRecent(), (r) => `${r.days.length} days`);
+  await time(
+    'aggregate: 30-day backfill',
+    () => aggregation.aggregateRecent(),
+    (r) => `${r.days.length} days`,
+  );
   await time('aggregate: steady state (today+yesterday)', () => aggregation.aggregateRecent());
-  await time('risk.evaluate (first run)', () => risk.evaluate(), (r) => JSON.stringify(r));
-  await time('risk.evaluate (repeat, dedup)', () => risk.evaluate(), (r) => `alerts touched ${r.alertsRaised}`);
+  await time(
+    'risk.evaluate (first run)',
+    () => risk.evaluate(),
+    (r) => JSON.stringify(r),
+  );
+  await time(
+    'risk.evaluate (repeat, dedup)',
+    () => risk.evaluate(),
+    (r) => `alerts touched ${r.alertsRaised}`,
+  );
   await time('retention.cleanup', () => retention.run());
   await time('GET overview 30d', () => query.overview(range));
   await time('GET scans 30d', () => query.scans(range));
-  const page = await time('GET helmet activity (25)', () => query.helmetActivity({ limit: 25 }), (r) => `${r.items.length} rows`);
+  const page = await time(
+    'GET helmet activity (25)',
+    () => query.helmetActivity({ limit: 25 }),
+    (r) => `${r.items.length} rows`,
+  );
   const code = page.items[0]?.helmetCode ?? (await prisma.helmet.findFirstOrThrow()).helmetCode;
   await time('GET helmet detail', () => query.helmetDetail(code, true));
   await time('GET helmet scans (50)', () => query.helmetScans(code, undefined, 50));
-  await time('GET risk alerts (25)', () => alerts.list({ limit: 25 }), (r) => `${r.items.length} rows`);
+  await time(
+    'GET risk alerts (25)',
+    () => alerts.list({ limit: 25 }),
+    (r) => `${r.items.length} rows`,
+  );
 
   const alertCount = await prisma.riskAlert.count();
   console.log(`\nDataset: ${HELMETS} helmets, ${count} scans, ${alertCount} alerts\n`);

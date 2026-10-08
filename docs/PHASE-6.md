@@ -1,7 +1,7 @@
 # Phase 6 — Analytics + QR Abuse / Copied-Code Detection
 
 > **Suspicious scan activity does not prove a physical helmet is counterfeit.** A QR scan only
-> proves that someone requested a registered token. Every signal here is *review guidance* for a
+> proves that someone requested a registered token. Every signal here is _review guidance_ for a
 > human; nothing in this phase labels a helmet counterfeit, fake or fraudulent, and nothing in it
 > can switch off emergency access.
 
@@ -11,14 +11,14 @@ distributor, inventory, partner, OTP or SMS concepts. No machine learning.
 
 ## Review of the existing scan model (start of phase)
 
-| Area | Finding | Decision |
-| ---- | ------- | -------- |
+| Area           | Finding                                                                                                                                                                                                                                       | Decision                                                                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `helmet_scans` | `helmet_id, scanned_at, ip_hash (HMAC), user_agent (≤255 raw), country_code, scan_type (EMERGENCY_PAGE/VERIFY/ACTIVATION)`; indexes (helmet, time), (time). Fire-and-forget insert; same device + type deduplicated for `SCAN_DEDUP_SECONDS`. | Keep the table (no duplicate logging). New rows store a **device summary + category** instead of the raw UA, a cache flag and a `synthetic` flag. |
-| Unknown tokens | Not stored (no helmet to reference); Phase 5 counts them in Redis per IP. | Keep it that way — no table of attacker-supplied strings. Add daily counters and enumeration alerts. |
-| Abuse controls | Per-IP miss budget, global burst mode, cached helmets always served. | Extend with valid-token scraping detection (distinct helmets per IP, HyperLogLog) and alerting. |
-| Cleanup | Security-event purge ran on a timer inside every API process. | Moved to the worker; API no longer schedules anything. |
-| Client IP | `trust proxy` from `TRUST_PROXY`; `CF-Connecting-IP` only with `TRUST_CLOUDFLARE`. | Keep. Add production startup checks and a runtime warning when forwarded headers arrive while no proxy is trusted. |
-| Volume | Dev data: hundreds of scans. Synthetic test: 100k scans perform fine with existing indexes. | **No partitioning yet**; documented plan and threshold (see DATA-RETENTION.md). |
+| Unknown tokens | Not stored (no helmet to reference); Phase 5 counts them in Redis per IP.                                                                                                                                                                     | Keep it that way — no table of attacker-supplied strings. Add daily counters and enumeration alerts.                                              |
+| Abuse controls | Per-IP miss budget, global burst mode, cached helmets always served.                                                                                                                                                                          | Extend with valid-token scraping detection (distinct helmets per IP, HyperLogLog) and alerting.                                                   |
+| Cleanup        | Security-event purge ran on a timer inside every API process.                                                                                                                                                                                 | Moved to the worker; API no longer schedules anything.                                                                                            |
+| Client IP      | `trust proxy` from `TRUST_PROXY`; `CF-Connecting-IP` only with `TRUST_CLOUDFLARE`.                                                                                                                                                            | Keep. Add production startup checks and a runtime warning when forwarded headers arrive while no proxy is trusted.                                |
+| Volume         | Dev data: hundreds of scans. Synthetic test: 100k scans perform fine with existing indexes.                                                                                                                                                   | **No partitioning yet**; documented plan and threshold (see DATA-RETENTION.md).                                                                   |
 
 ## Design
 
@@ -31,20 +31,20 @@ distributor, inventory, partner, OTP or SMS concepts. No machine learning.
   emergency profiles (snapshot), emergency/verify scans, unique helmets scanned, warranties
   registered, lost/stolen/damaged transitions, product reports, recovery grants, invalid-token
   requests (daily Redis counter snapshotted into the row), risk alerts opened.
-- Dashboards read aggregates for past days and the raw table (indexed by time) for *today* only.
+- Dashboards read aggregates for past days and the raw table (indexed by time) for _today_ only.
 
 ### Risk engine (deterministic, explainable — `RISK-ENGINE.md`)
 
 Per helmet with recent scans, evaluated every `RISK_EVALUATION_INTERVAL_MINUTES`:
 
-| Signal | Rule (configurable defaults) | Weight |
-| ------ | ---------------------------- | ------ |
-| `HIGH_SCAN_VOLUME` | > 50 public scans / 1 h or > 200 / 24 h | 15 (25 if ≥ 2×) |
-| `HIGH_UNIQUE_VISITOR_COUNT` | > 20 distinct IP hashes / 1 h | 25 |
-| `RAPID_IP_CHURN` | > 10 distinct IP hashes / 15 min with ≥ 80 % of scans from different hashes | 20 |
-| `ABNORMAL_VERIFY_ACTIVITY` | > 30 verify scans / 24 h **and** > 5× the 7-day daily baseline | 20 |
-| `PRODUCT_REPORT_CORRELATION` | ≥ 1 product report in 30 days, only alongside another signal | 10 per report (max 20) |
-| `QR_SHARED_OR_COPIED_POSSIBLE` | (unique-visitor or churn) **and** (abnormal verify or product report) | 20 |
+| Signal                         | Rule (configurable defaults)                                                | Weight                 |
+| ------------------------------ | --------------------------------------------------------------------------- | ---------------------- |
+| `HIGH_SCAN_VOLUME`             | > 50 public scans / 1 h or > 200 / 24 h                                     | 15 (25 if ≥ 2×)        |
+| `HIGH_UNIQUE_VISITOR_COUNT`    | > 20 distinct IP hashes / 1 h                                               | 25                     |
+| `RAPID_IP_CHURN`               | > 10 distinct IP hashes / 15 min with ≥ 80 % of scans from different hashes | 20                     |
+| `ABNORMAL_VERIFY_ACTIVITY`     | > 30 verify scans / 24 h **and** > 5× the 7-day daily baseline              | 20                     |
+| `PRODUCT_REPORT_CORRELATION`   | ≥ 1 product report in 30 days, only alongside another signal                | 10 per report (max 20) |
+| `QR_SHARED_OR_COPIED_POSSIBLE` | (unique-visitor or churn) **and** (abnormal verify or product report)       | 20                     |
 
 Score = sum (cap 100) → level `NONE (0) · LOW (1–24) · MEDIUM (25–49) · HIGH (50–74) ·
 CRITICAL (75+)`. A single signal can never exceed MEDIUM; CRITICAL needs ≥ 3 distinct signals.
@@ -89,11 +89,11 @@ same image as the API with a different command. Three job groups, each guarded b
 advisory lock so any number of workers can run safely, each idempotent, each recorded in
 `worker_job_runs`:
 
-| Job | Default interval | Work |
-| --- | ---------------- | ---- |
-| `analytics.aggregate` | 10 min | helmet + platform daily aggregates for today and yesterday (+ backfill) |
-| `risk.evaluate` | 5 min | signals → assessments → alerts |
-| `retention.cleanup` | 60 min | expired scan details, security events, job runs (batched) |
+| Job                   | Default interval | Work                                                                    |
+| --------------------- | ---------------- | ----------------------------------------------------------------------- |
+| `analytics.aggregate` | 10 min           | helmet + platform daily aggregates for today and yesterday (+ backfill) |
+| `risk.evaluate`       | 5 min            | signals → assessments → alerts                                          |
+| `retention.cleanup`   | 60 min           | expired scan details, security events, job runs (batched)               |
 
 `node dist/worker.js --once <job>` runs a single job (ops, tests, CI smoke).
 
@@ -110,6 +110,60 @@ counts for their own helmet since their ownership began. Risk alerts are admin-o
 `risk-alert:manage` (SUPER_ADMIN, ADMIN, SUPPORT), `qr-integrity:manage` (SUPER_ADMIN, ADMIN).
 MANUFACTURING gets none of them.
 
-## Delivered / verification
+## Delivered
 
-Filled in at the end of the phase.
+| Area             | What                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Schema           | Migration `20261006090000_phase6_analytics_risk` (additive): aggregates, assessments, signals, alerts, job runs, QR integrity, scan device/cache/synthetic columns                                         |
+| Worker           | `dist/worker.js` (+ `--once`), advisory-locked idempotent jobs, run history, heartbeat, compose service; security-event purge moved out of the API                                                         |
+| Aggregation      | `helmet_scan_daily`, `platform_daily_stats`; today + yesterday + first-run backfill; never zeroes purged days                                                                                              |
+| Risk engine      | 6 deterministic signals, weighted score with guards, stored reasons, auto-clear; never touches lifecycle/QR integrity                                                                                      |
+| Source detection | enumeration alerts + daily invalid-token counter; valid-token scraping (HyperLogLog) with flag → ration → refuse-uncached; burst alert                                                                     |
+| Alerts           | 5 types, 5 statuses, priority, assignee, resolution reason, dedup (partial unique index), suppression, audit                                                                                               |
+| QR integrity     | admin-only `NORMAL / UNDER_REVIEW / COMPROMISED`, audited, cache-invalidating, neutral verify notice                                                                                                       |
+| Admin UI         | Analytics nav + Overview · QR scans · Helmet activity · Risk alerts tabs; helmet analytics page; dependency-free SVG charts with table view                                                                |
+| Customer         | neutral scan summary on the helmet page; verification page shows the integrity notice                                                                                                                      |
+| Privacy          | UA summary + device category instead of raw UA (legacy rows minimised by the worker); no IP data in any analytics response; no medical data used                                                           |
+| Trust proxy      | production rejects `TRUST_PROXY=true` and a missing proxy config; runtime warning on forwarded headers while untrusted                                                                                     |
+| RBAC             | `analytics:view`, `risk-alert:view`, `risk-alert:manage`, `qr-integrity:manage`; matrix regenerated                                                                                                        |
+| Docs             | ANALYTICS, RISK-ENGINE, QR-ABUSE-DETECTION, DATA-RETENTION, WORKER (new); README, ARCHITECTURE, DATABASE, SECURITY, API, PHASES, SECURITY-HARDENING, RBAC-MATRIX, PRODUCT-AUTHENTICITY, DEPLOYMENT updated |
+
+## Verification
+
+| Gate                                | Result                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `format:check`, `lint`, `typecheck` | clean                                                                                                                                                                                                                                                                                                                                      |
+| Unit tests (`pnpm test`)            | 242 passed (36 suites) — risk rules & guards, false-positive scenarios, device category, cursor, ranges, alert transitions/dedup/suppression, abuse controls, env/trust-proxy, RBAC matrix                                                                                                                                                 |
+| Integration (`pnpm test:e2e`)       | 178 passed (17 suites), incl. `phase6-analytics` (17): aggregation idempotency, risk scenarios, public availability under HIGH risk + COMPROMISED, enumeration/scraping over HTTP, alert workflow + audit, cursor pagination, RBAC, no IP data, customer summary isolation, retention with fixed clock, legacy minimisation, advisory lock |
+| Playwright                          | 49 passed — all earlier journeys + Phase 6 journey (scans → worker `--once all` → admin analytics/alert/QR integrity → owner summary → public pages)                                                                                                                                                                                       |
+| `pnpm build`                        | api (+ worker), admin, portal                                                                                                                                                                                                                                                                                                              |
+| Migrations                          | fresh deploy ✓; upgrade Phase 4 data → Phase 5 → Phase 6 with legacy scans ✓ (row counts unchanged, worker runs on it); `migrate diff` no drift ✓                                                                                                                                                                                          |
+| Performance                         | 1,000 helmets / 100,000 scans: reads ≤ 20 ms, constant query counts; backfill 0.7 s; see ANALYTICS.md                                                                                                                                                                                                                                      |
+| Docker / smoke                      | see below                                                                                                                                                                                                                                                                                                                                  |
+
+## Open decisions
+
+1. **Thresholds** — defaults are conservative guesses; tune on real traffic (all env vars).
+2. **Scan detail retention** — 180 days by default; confirm against the privacy policy.
+3. **Owner notifications** — none today by requirement. Possible later: opt-in "your QR was
+   scanned" for LOST/STOLEN helmets only.
+4. **QR replacement process** — COMPROMISED needs an operations path (ship a new secure label,
+   link via the Phase 3 replacement flow). No remote "rotation" exists by design.
+5. **Who may set COMPROMISED** — currently ADMIN and SUPER_ADMIN; SUPPORT can only work alerts.
+
+## False positives (summary)
+
+Crash scenes, group rides, shared networks/CGNAT, link-preview bots and resale checks are handled
+by design (volume-only caps at MEDIUM, bots excluded, verify needs a baseline multiple, copied-QR
+needs corroboration). Details and tests: [RISK-ENGINE](RISK-ENGINE.md#false-positives-and-why-the-rules-look-like-this).
+
+## Technical debt
+
+- Risk evaluation issues ≈ 20 small statements per _flagged_ helmet; fine for tens–hundreds of
+  flagged helmets per run, batch it if that grows.
+- Distinct visitors over several days are summed daily distincts (approximate); exact multi-day
+  distincts would need HLL sketches in the aggregate.
+- Source-level detection state lives in Redis; a Redis flush resets windows (alerts already
+  written are kept).
+- `helmet_scans` partitioning deferred with a documented threshold.
+- Charts are a minimal in-house SVG component (no zoom/brush); fine for 30-day daily series.

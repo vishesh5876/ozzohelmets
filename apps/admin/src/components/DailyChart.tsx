@@ -154,7 +154,9 @@ export function DailyChart<T extends { date: string }>({
                 const y0 = y(base);
                 base += v;
                 const y1 = y(base);
-                const top = si === series.length - 1 || series.slice(si + 1).every((n) => value(row, n.key) === 0);
+                const top =
+                  si === series.length - 1 ||
+                  series.slice(si + 1).every((n) => value(row, n.key) === 0);
                 // 2px surface gap between stacked segments; 4px rounded data-end on the top segment.
                 const h = Math.max(0, y0 - y1 - (si > 0 && v > 0 ? 2 : 0));
                 if (v <= 0 || h <= 0) return null;
@@ -212,7 +214,11 @@ export function DailyChart<T extends { date: string }>({
               <p className="text-mute">{shortDate(active.date)}</p>
               {series.map((s, i) => (
                 <p key={s.key} className="flex items-center gap-2">
-                  <span aria-hidden className="inline-block h-0.5 w-3" style={{ background: SERIES_COLORS[i] }} />
+                  <span
+                    aria-hidden
+                    className="inline-block h-0.5 w-3"
+                    style={{ background: SERIES_COLORS[i] }}
+                  />
                   <strong className="tabular-nums">{formatNumber(value(active, s.key))}</strong>
                   <span className="text-mute">{s.label}</span>
                 </p>

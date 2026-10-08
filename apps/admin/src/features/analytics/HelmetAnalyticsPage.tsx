@@ -25,7 +25,9 @@ export function HelmetAnalyticsPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['helmet-analytics', helmetCode],
     queryFn: () =>
-      api.get<HelmetAnalyticsDetailDto>(`/admin/analytics/helmets/${encodeURIComponent(helmetCode)}`),
+      api.get<HelmetAnalyticsDetailDto>(
+        `/admin/analytics/helmets/${encodeURIComponent(helmetCode)}`,
+      ),
   });
   return (
     <>
@@ -36,7 +38,10 @@ export function HelmetAnalyticsPage() {
         actions={
           data && (
             <RequirePermission permission={Permission.HELMETS_READ}>
-              <Link to={`/helmets/${data.helmet.id}`} className="text-sm font-medium underline-offset-2 hover:underline">
+              <Link
+                to={`/helmets/${data.helmet.id}`}
+                className="text-sm font-medium underline-offset-2 hover:underline"
+              >
                 Open helmet record
               </Link>
             </RequirePermission>
@@ -60,7 +65,9 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
         <RiskLevelBadge level={risk?.level ?? 'NONE'} score={risk?.score} />
         <Badge tone="muted">{helmet.model}</Badge>
         <Badge tone="muted">Warranty {humanizeEnum(helmet.warrantyStatus).toLowerCase()}</Badge>
-        {helmet.activatedAt && <Badge tone="muted">Activated {formatDate(helmet.activatedAt)}</Badge>}
+        {helmet.activatedAt && (
+          <Badge tone="muted">Activated {formatDate(helmet.activatedAt)}</Badge>
+        )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard inverted label="Scans, last 24 h" value={formatNumber(totals.scans24h)} />
@@ -74,7 +81,10 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
           value={formatNumber(totals.approxUniqueVisitors7d)}
           hint="approximate (daily distinct sources summed)"
         />
-        <StatCard label="Last scan" value={<span className="text-display-sm">{formatDateTime(totals.lastScanAt)}</span>} />
+        <StatCard
+          label="Last scan"
+          value={<span className="text-display-sm">{formatDateTime(totals.lastScanAt)}</span>}
+        />
       </div>
       <DailyChart
         title="Scans per day, last 30 days"
@@ -90,7 +100,10 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
         <h2 className="mb-3 text-lg font-bold">Review signals</h2>
         <Disclaimer />
         {data.correlation && (
-          <p className="mb-3 rounded-lg border border-hairline px-4 py-3 text-sm" data-testid="correlation">
+          <p
+            className="mb-3 rounded-lg border border-hairline px-4 py-3 text-sm"
+            data-testid="correlation"
+          >
             {data.correlation}
           </p>
         )}
@@ -116,9 +129,13 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
                   <Td className="text-right tabular-nums">{formatNumber(s.observedValue)}</Td>
                   <Td className="text-right tabular-nums">{formatNumber(s.thresholdValue)}</Td>
                   <Td>
-                    <Badge tone={s.status === 'ACTIVE' ? 'solid' : 'muted'}>{humanizeEnum(s.status)}</Badge>
+                    <Badge tone={s.status === 'ACTIVE' ? 'solid' : 'muted'}>
+                      {humanizeEnum(s.status)}
+                    </Badge>
                   </Td>
-                  <Td className="whitespace-nowrap text-body">{formatDateTime(s.lastDetectedAt)}</Td>
+                  <Td className="whitespace-nowrap text-body">
+                    {formatDateTime(s.lastDetectedAt)}
+                  </Td>
                 </Tr>
               ))}
             </tbody>
@@ -161,8 +178,8 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
       <section>
         <h2 className="mb-3 text-lg font-bold">Product reports</h2>
         <p className="mb-2 text-sm text-body">
-          {formatNumber(data.productReports.total)} total · {formatNumber(data.productReports.last30d)} in the last
-          30 days
+          {formatNumber(data.productReports.total)} total ·{' '}
+          {formatNumber(data.productReports.last30d)} in the last 30 days
         </p>
         {data.productReports.recent.length > 0 && (
           <ul className="divide-y divide-hairline rounded-xl border border-hairline bg-canvas">
@@ -204,20 +221,28 @@ function QrIntegrityPanel({ data }: { data: HelmetAnalyticsDetailDto }) {
     },
   });
   return (
-    <section className="rounded-xl border border-hairline bg-canvas p-4" data-testid="qr-integrity-panel">
+    <section
+      className="rounded-xl border border-hairline bg-canvas p-4"
+      data-testid="qr-integrity-panel"
+    >
       <h2 className="text-lg font-bold">QR integrity</h2>
       <p className="mt-1 text-sm text-body">
         A separate, admin-only marker for this QR code. It never changes the helmet&apos;s lifecycle
-        status and never disables the emergency page. &ldquo;Compromised&rdquo; adds a neutral notice to
-        the public verification page asking the owner to contact support.
+        status and never disables the emergency page. &ldquo;Compromised&rdquo; adds a neutral
+        notice to the public verification page asking the owner to contact support.
       </p>
       {data.helmet.qrIntegrityNote && (
         <p className="mt-2 text-sm">
-          Current note ({formatDateTime(data.helmet.qrIntegrityChangedAt)}): {data.helmet.qrIntegrityNote}
+          Current note ({formatDateTime(data.helmet.qrIntegrityChangedAt)}):{' '}
+          {data.helmet.qrIntegrityNote}
         </p>
       )}
       <div className="mt-3 flex flex-col gap-2 sm:max-w-lg">
-        <Select aria-label="QR integrity status" value={status} onChange={(e) => setStatus(e.target.value as QrIntegrityStatus)}>
+        <Select
+          aria-label="QR integrity status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as QrIntegrityStatus)}
+        >
           {Object.values(QrIntegrityStatus).map((s) => (
             <option key={s} value={s}>
               {humanizeEnum(s)}
@@ -272,7 +297,8 @@ function ScanEvents({ helmetCode }: { helmetCode: string }) {
       {open && (
         <>
           <p className="mb-2 text-xs text-body">
-            Type, time and coarse device class only. Visitor IPs are never stored in readable form or shown.
+            Type, time and coarse device class only. Visitor IPs are never stored in readable form
+            or shown.
           </p>
           {q.isLoading && <LoadingState />}
           {q.error && <ErrorState error={q.error} />}
@@ -300,7 +326,13 @@ function ScanEvents({ helmetCode }: { helmetCode: string }) {
           )}
           {q.data && items.length === 0 && <p className="text-sm text-body">No scans recorded.</p>}
           {q.hasNextPage && (
-            <Button className="mt-3" size="sm" variant="secondary" loading={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+            <Button
+              className="mt-3"
+              size="sm"
+              variant="secondary"
+              loading={q.isFetchingNextPage}
+              onClick={() => void q.fetchNextPage()}
+            >
               Load more
             </Button>
           )}

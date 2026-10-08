@@ -95,7 +95,10 @@ export class RiskEvaluationService {
             GROUP BY helmet_id`,
           this.prisma.productReport.groupBy({
             by: ['helmetId'],
-            where: { helmetId: { in: ids }, createdAt: { gte: new Date(now.getTime() - 30 * 24 * HOUR) } },
+            where: {
+              helmetId: { in: ids },
+              createdAt: { gte: new Date(now.getTime() - 30 * 24 * HOUR) },
+            },
             _count: { _all: true },
           }),
         ])
@@ -142,7 +145,9 @@ export class RiskEvaluationService {
     }
 
     // Signals not re-observed within the clear-after window go quiet.
-    const clearBefore = new Date(now.getTime() - this.config.get('RISK_SIGNAL_CLEAR_AFTER_HOURS') * HOUR);
+    const clearBefore = new Date(
+      now.getTime() - this.config.get('RISK_SIGNAL_CLEAR_AFTER_HOURS') * HOUR,
+    );
     const stale = await this.prisma.helmetRiskSignal.findMany({
       where: { status: 'ACTIVE', lastDetectedAt: { lt: clearBefore } },
       select: { id: true, helmetId: true },
@@ -266,7 +271,12 @@ export class RiskEvaluationService {
       where: { helmetId },
       include: { helmet: { select: { helmetCode: true } } },
     });
-    const reasons = assessment.reasons as unknown as { type: RiskSignalType; observed: number; threshold: number; label: string }[];
+    const reasons = assessment.reasons as unknown as {
+      type: RiskSignalType;
+      observed: number;
+      threshold: number;
+      label: string;
+    }[];
     const volumeOnly = reasons.every((r) => VOLUME_ONLY.includes(r.type));
     const top = reasons[0]!;
     const alert = await this.alerts.raise(

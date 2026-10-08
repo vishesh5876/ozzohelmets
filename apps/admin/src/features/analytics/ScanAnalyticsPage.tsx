@@ -34,9 +34,22 @@ export function ScanAnalyticsPage() {
       {data && (
         <div className="flex flex-col gap-6" data-testid="scan-analytics">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard inverted label="Scans today" value={formatNumber(data.today.total)} hint={counts(data.today)} />
-            <StatCard label="Last 7 days" value={formatNumber(data.last7d.total)} hint={counts(data.last7d)} />
-            <StatCard label="Last 30 days" value={formatNumber(data.last30d.total)} hint={counts(data.last30d)} />
+            <StatCard
+              inverted
+              label="Scans today"
+              value={formatNumber(data.today.total)}
+              hint={counts(data.today)}
+            />
+            <StatCard
+              label="Last 7 days"
+              value={formatNumber(data.last7d.total)}
+              hint={counts(data.last7d)}
+            />
+            <StatCard
+              label="Last 30 days"
+              value={formatNumber(data.last30d.total)}
+              hint={counts(data.last30d)}
+            />
             <StatCard
               label="Unusual activity"
               value={formatNumber(data.helmetsWithUnusualActivity)}
@@ -44,8 +57,15 @@ export function ScanAnalyticsPage() {
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Scans in period" value={formatNumber(data.period.total)} hint={counts(data.period)} />
-            <StatCard label="Helmets scanned in period" value={formatNumber(data.uniqueHelmetsScannedInPeriod)} />
+            <StatCard
+              label="Scans in period"
+              value={formatNumber(data.period.total)}
+              hint={counts(data.period)}
+            />
+            <StatCard
+              label="Helmets scanned in period"
+              value={formatNumber(data.uniqueHelmetsScannedInPeriod)}
+            />
             <StatCard
               label="Unknown-code requests"
               value={formatNumber(data.invalidTokenRequestsInPeriod)}

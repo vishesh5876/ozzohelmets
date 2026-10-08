@@ -1,12 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import {
-  QrIntegrityStatus,
-  RiskAlertStatus,
-  RiskAlertType,
-  RiskLevel,
-} from '@helmet/types';
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
+import { QrIntegrityStatus, RiskAlertStatus, RiskAlertType, RiskLevel } from '@helmet/types';
 import { plainText } from '../../../common/utils/plain-text';
 
 export class AnalyticsRangeQueryDto {

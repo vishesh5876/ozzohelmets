@@ -277,7 +277,12 @@ export class PublicEmergencyService {
    * device category and "Browser on OS" summary are stored (no raw user agent), plus the cache
    * flag. `SCAN_RECORDING_ENABLED=false` keeps dev/test traffic out of analytics.
    */
-  private logScan(helmetId: string, scan: ScanContext, scanType: ScanType, cacheHit: boolean): void {
+  private logScan(
+    helmetId: string,
+    scan: ScanContext,
+    scanType: ScanType,
+    cacheHit: boolean,
+  ): void {
     if (!this.config.get('SCAN_RECORDING_ENABLED')) return;
     const dedupSeconds = this.config.get('SCAN_DEDUP_SECONDS');
     const device = createHash('sha256')

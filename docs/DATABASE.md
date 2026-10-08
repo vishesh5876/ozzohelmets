@@ -80,6 +80,20 @@ WHERE email IS NOT NULL AND email_normalized IS NULL AND status <> 'DELETED';
 | `product_reports.priority`, `assigned_admin_id` + `product_report_events`   | report triage                                                                   | idx (`assigned_admin_id`, `status`), (`report_id`, `created_at`)                                               |
 | `pg_trgm` + GIN indexes on `lower(email_normalized)`, `lower(name)`         | admin partial search                                                            | expression indexes (kept out of Prisma's diff)                                                                 |
 
+### Phase 6 migration (`20261006090000_phase6_analytics_risk`)
+
+- `helmet_scans` + `device_category`, `cache_hit`, `synthetic` (new rows store a UA summary).
+- `helmets` + `qr_integrity_status` (`NORMAL` default), `qr_integrity_note`, `qr_integrity_changed_at`.
+- New: `helmet_scan_daily` (unique helmet+date), `platform_daily_stats` (PK date),
+  `helmet_risk_assessments` (PK helmet, score CHECK 0–100), `helmet_risk_signals`,
+  `risk_alerts`, `worker_job_runs`.
+- Hand-written: partial unique `helmet_risk_signals(helmet_id, type) WHERE status='ACTIVE'`;
+  partial unique `risk_alerts(dedup_key) WHERE status IN ('OPEN','ACKNOWLEDGED','INVESTIGATING')`;
+  CHECK `risk_alerts_subject` (helmet or source or platform type). These are outside Prisma's
+  model, so `prisma migrate diff` reports no drift.
+- Additive only; existing rows keep their values. See [ANALYTICS](ANALYTICS.md) and
+  [DATA-RETENTION](DATA-RETENTION.md).
+
 ## Not modelled (by decision)
 
 Retailers, distributors, partner users, stock locations, inventory ledgers, transfers/manifests
@@ -89,7 +103,8 @@ and dealer sales are intentionally absent ([ADR-001](ADR-001-no-retail-inventory
 
 - **Later:** warranty claims / service handling on the warranty record; erasure/anonymisation
   for completed deletion requests once retention rules are set.
-- **Scale:** partition `helmet_scans` and `audit_logs` by month.
+- **Scale:** partition `helmet_scans` (evaluated in Phase 6 — not yet justified; plan and
+  threshold in [DATA-RETENTION](DATA-RETENTION.md)) and `audit_logs` by month.
 
 ## Bulk generation
 

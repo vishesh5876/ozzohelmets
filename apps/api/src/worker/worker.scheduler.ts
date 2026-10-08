@@ -2,14 +2,23 @@ import { writeFile } from 'node:fs/promises';
 import { Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from '../config/app-config.service';
 import { AnalyticsAggregationService } from '../modules/analytics/analytics-aggregation.service';
-import { type JobName, type JobOutcome, JobRunnerService } from '../modules/analytics/job-runner.service';
+import {
+  type JobName,
+  type JobOutcome,
+  JobRunnerService,
+} from '../modules/analytics/job-runner.service';
 import { RetentionService } from '../modules/analytics/retention.service';
 import { RiskEvaluationService } from '../modules/analytics/risk-evaluation.service';
 
 /** Touched every 30 s while the worker runs; the container healthcheck reads its mtime. */
-export const WORKER_HEARTBEAT_FILE = process.env.WORKER_HEARTBEAT_FILE ?? '/tmp/helmet-worker-heartbeat';
+export const WORKER_HEARTBEAT_FILE =
+  process.env.WORKER_HEARTBEAT_FILE ?? '/tmp/helmet-worker-heartbeat';
 
-export const JOB_NAMES: readonly JobName[] = ['analytics.aggregate', 'risk.evaluate', 'retention.cleanup'];
+export const JOB_NAMES: readonly JobName[] = [
+  'analytics.aggregate',
+  'risk.evaluate',
+  'retention.cleanup',
+];
 
 /**
  * Three logical job groups on simple intervals. Every run goes through JobRunnerService (advisory
@@ -54,7 +63,9 @@ export class WorkerScheduler {
         const p = this.runJob(job)
           .then((o) => {
             if (o.status !== 'SKIPPED')
-              this.logger.log(`${job}: ${o.status} in ${o.durationMs} ms ${JSON.stringify(o.detail ?? {})}`);
+              this.logger.log(
+                `${job}: ${o.status} in ${o.durationMs} ms ${JSON.stringify(o.detail ?? {})}`,
+              );
           })
           .finally(() => this.inFlight.delete(p));
         this.inFlight.add(p);
@@ -63,7 +74,8 @@ export class WorkerScheduler {
       setTimeout(tick, 2_000 + every.findIndex(([j]) => j === job) * 3_000).unref();
       this.timers.push(setInterval(tick, minutes * 60_000));
     }
-    const beat = () => void writeFile(WORKER_HEARTBEAT_FILE, new Date().toISOString()).catch(() => undefined);
+    const beat = () =>
+      void writeFile(WORKER_HEARTBEAT_FILE, new Date().toISOString()).catch(() => undefined);
     beat();
     this.timers.push(setInterval(beat, 30_000));
     this.logger.log(`Worker started: ${every.map(([j, m]) => `${j} every ${m} min`).join(', ')}`);

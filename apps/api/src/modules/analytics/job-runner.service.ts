@@ -67,7 +67,12 @@ export class JobRunnerService {
       );
     } catch (err) {
       this.logger.error(`Job ${job} failed: ${(err as Error).message}`);
-      return { job, status: 'FAILED', durationMs: Date.now() - started, detail: { error: (err as Error).message } };
+      return {
+        job,
+        status: 'FAILED',
+        durationMs: Date.now() - started,
+        detail: { error: (err as Error).message },
+      };
     }
   }
 }

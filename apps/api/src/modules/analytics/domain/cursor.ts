@@ -11,7 +11,9 @@ export function encodeCursor(c: Cursor): string {
 
 export function decodeCursor(raw: string | undefined): (Cursor & { t: string }) | null {
   const c = decodeAnyCursor(raw);
-  return c && typeof c.t === 'string' && !Number.isNaN(Date.parse(c.t)) ? (c as Cursor & { t: string }) : null;
+  return c && typeof c.t === 'string' && !Number.isNaN(Date.parse(c.t))
+    ? (c as Cursor & { t: string })
+    : null;
 }
 
 export function decodeAnyCursor(raw: string | undefined): Cursor | null {

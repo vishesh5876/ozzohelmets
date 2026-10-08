@@ -305,3 +305,26 @@ Summary (details in [SECURITY-HARDENING](SECURITY-HARDENING.md), [ACCOUNT-RECOVE
   customer views are audited; audit metadata is redacted by key.
 - Public QR abuse controls count only misses (unknown/malformed tokens) per IP HMAC with a global
   burst mode; cached emergency pages keep being served; no CAPTCHA.
+
+## 16. Phase 6 — analytics & abuse detection
+
+Summary (details in [QR-ABUSE-DETECTION](QR-ABUSE-DETECTION.md), [RISK-ENGINE](RISK-ENGINE.md),
+[ANALYTICS](ANALYTICS.md), [DATA-RETENTION](DATA-RETENTION.md)):
+
+- **Privacy:** no precise location, no raw IPs (HMAC only), no fingerprinting (no canvas/audio/
+  WebGL), scans store a coarse device category and "Browser on OS" summary instead of the raw UA,
+  no query strings, **no medical data** in any analytics or risk computation.
+- **No identities in admin analytics:** responses never contain IPs, IP hashes or user agents;
+  source-level alerts carry an opaque, non-reversible `sourceRef`; attempted tokens are never stored.
+- **Availability first:** analytics never disables emergency pages; cached helmets are always
+  served; no CAPTCHA; risk and QR integrity never change lifecycle status.
+- **Non-accusatory output:** "Suspicious scan activity", "Possible copied QR", "Review recommended";
+  nothing is labelled counterfeit, fake or fraud. Customers are not notified automatically and see
+  only neutral counts.
+- **RBAC:** `analytics:view`, `risk-alert:view`, `risk-alert:manage`, `qr-integrity:manage`
+  ([RBAC-MATRIX](RBAC-MATRIX.md)); alert transitions and QR integrity changes are audited, individual
+  scans are not.
+- **Client IP integrity:** production rejects `TRUST_PROXY=true` and (by default) a missing trusted
+  proxy; forwarded headers arriving while untrusted are logged ([DEPLOYMENT](DEPLOYMENT.md)).
+- **Retention:** scan detail 180 days, aggregates kept; ownership, warranty, manufacturing and
+  audit history are never removed by retention.

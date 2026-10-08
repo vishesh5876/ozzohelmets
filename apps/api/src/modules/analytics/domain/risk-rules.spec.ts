@@ -28,7 +28,8 @@ const quiet: HelmetScanMetrics = {
 };
 const types = (m: Partial<HelmetScanMetrics>) =>
   evaluateHelmetSignals({ ...quiet, ...m }, T).map((s) => s.type);
-const score = (m: Partial<HelmetScanMetrics>) => scoreSignals(evaluateHelmetSignals({ ...quiet, ...m }, T));
+const score = (m: Partial<HelmetScanMetrics>) =>
+  scoreSignals(evaluateHelmetSignals({ ...quiet, ...m }, T));
 
 describe('risk rules (deterministic, explainable)', () => {
   it('a normally used helmet produces no signals', () => {
@@ -66,7 +67,9 @@ describe('risk rules (deterministic, explainable)', () => {
   });
 
   it('verification activity is compared with the helmet baseline', () => {
-    expect(types({ verify24h: 40, verifyBaselineDaily: 20 })).not.toContain('ABNORMAL_VERIFY_ACTIVITY');
+    expect(types({ verify24h: 40, verifyBaselineDaily: 20 })).not.toContain(
+      'ABNORMAL_VERIFY_ACTIVITY',
+    );
     expect(types({ verify24h: 40, verifyBaselineDaily: 2 })).toContain('ABNORMAL_VERIFY_ACTIVITY');
     // No history → baseline floor of 1/day.
     expect(types({ verify24h: 31, verifyBaselineDaily: 0 })).toContain('ABNORMAL_VERIFY_ACTIVITY');
@@ -79,7 +82,14 @@ describe('risk rules (deterministic, explainable)', () => {
   });
 
   it('possible copied QR needs a visitor pattern AND corroboration; reaches CRITICAL with several signals', () => {
-    const m = { scans1h: 120, scans24h: 300, uniqueIp1h: 40, scans15m: 30, uniqueIp15m: 28, verify24h: 60 };
+    const m = {
+      scans1h: 120,
+      scans24h: 300,
+      uniqueIp1h: 40,
+      scans15m: 30,
+      uniqueIp15m: 28,
+      verify24h: 60,
+    };
     expect(types(m)).toContain('QR_SHARED_OR_COPIED_POSSIBLE');
     const s = score(m);
     expect(s.level).toBe('CRITICAL');
@@ -93,7 +103,10 @@ describe('risk rules (deterministic, explainable)', () => {
   });
 
   it('scoring guards: one signal ≤ MEDIUM; CRITICAL needs ≥ 3 distinct signals; duplicates count once', () => {
-    const sig = (type: 'HIGH_SCAN_VOLUME' | 'HIGH_UNIQUE_VISITOR_COUNT' | 'RAPID_IP_CHURN', weight: number) => ({
+    const sig = (
+      type: 'HIGH_SCAN_VOLUME' | 'HIGH_UNIQUE_VISITOR_COUNT' | 'RAPID_IP_CHURN',
+      weight: number,
+    ) => ({
       type,
       weight,
       observed: 1,
@@ -101,12 +114,22 @@ describe('risk rules (deterministic, explainable)', () => {
       detail: '',
     });
     expect(scoreSignals([sig('HIGH_SCAN_VOLUME', 90)]).level).toBe('MEDIUM');
-    expect(scoreSignals([sig('HIGH_SCAN_VOLUME', 50), sig('HIGH_UNIQUE_VISITOR_COUNT', 50)]).level).toBe('HIGH');
     expect(
-      scoreSignals([sig('HIGH_SCAN_VOLUME', 25), sig('HIGH_SCAN_VOLUME', 25), sig('HIGH_SCAN_VOLUME', 25)]),
+      scoreSignals([sig('HIGH_SCAN_VOLUME', 50), sig('HIGH_UNIQUE_VISITOR_COUNT', 50)]).level,
+    ).toBe('HIGH');
+    expect(
+      scoreSignals([
+        sig('HIGH_SCAN_VOLUME', 25),
+        sig('HIGH_SCAN_VOLUME', 25),
+        sig('HIGH_SCAN_VOLUME', 25),
+      ]),
     ).toMatchObject({ score: 25, level: 'MEDIUM' });
     expect(
-      scoreSignals([sig('HIGH_SCAN_VOLUME', 30), sig('HIGH_UNIQUE_VISITOR_COUNT', 30), sig('RAPID_IP_CHURN', 30)]),
+      scoreSignals([
+        sig('HIGH_SCAN_VOLUME', 30),
+        sig('HIGH_UNIQUE_VISITOR_COUNT', 30),
+        sig('RAPID_IP_CHURN', 30),
+      ]),
     ).toMatchObject({ score: 90, level: 'CRITICAL' });
   });
 

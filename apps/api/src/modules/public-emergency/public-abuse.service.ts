@@ -87,7 +87,12 @@ export class PublicAbuseService {
         : Promise.resolve(null),
     ]);
     const limit = this.config.get('ENUMERATION_INVALID_TOKEN_LIMIT');
-    if (ipHash && ip && ip.count >= limit && (await this.once(`risk-alerted:enum:${ipHash}`, window))) {
+    if (
+      ipHash &&
+      ip &&
+      ip.count >= limit &&
+      (await this.once(`risk-alerted:enum:${ipHash}`, window))
+    ) {
       const ref = sourceRefFor(ipHash);
       this.alerts.raiseSafe({
         type: 'TOKEN_ENUMERATION',
@@ -143,7 +148,10 @@ export class PublicAbuseService {
     if (!ipHash) return { allowed: true };
     const window = this.config.get('PUBLIC_MISS_WINDOW_SECONDS');
     if ((await this.redis.exists(`scrape-block:ip:${ipHash}`)) === 1)
-      return { allowed: false, retryAfter: Math.max(await this.redis.ttl(`scrape-block:ip:${ipHash}`), 1) };
+      return {
+        allowed: false,
+        retryAfter: Math.max(await this.redis.ttl(`scrape-block:ip:${ipHash}`), 1),
+      };
     const res = await this.limiter.hit(
       `public-uncached:ip:${ipHash}`,
       this.config.get('PUBLIC_UNCACHED_LIMIT_WHEN_FLAGGED'),

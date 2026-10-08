@@ -76,12 +76,17 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
   public QR abuse controls, RBAC matrix + customer isolation tests, encryption/upload review.
 - Moved to later phases: label PDFs and batch print workflow, warranty claims, emailed reset links.
 
-## P6 — Analytics + QR Abuse / Anti-Copy Detection
+## P6 — Analytics + QR Abuse / Copied-Code Detection _(complete — see [`PHASE-6.md`](./PHASE-6.md))_
 
-- Scan analytics dashboards, activation funnel, regional views.
-- Clone detection signals over `helmet_scans`: scan velocity, impossible travel, device fan-out,
-  cross-region scans; alerting and admin review queue.
-- Builds on the Phase 4 verification page, VERIFY scans and product reports; recall campaigns.
+- Daily helmet and platform aggregates built by a scheduled **worker** (same codebase, separate
+  process, PostgreSQL advisory locks); dashboards read aggregates.
+- Admin Analytics: overview, QR scans, helmet activity, risk alerts, helmet analytics page.
+- Deterministic, explainable risk signals and scores (no ML), deduplicated alerts with a human
+  workflow, admin-only QR integrity marker; token enumeration and valid-token scraping detection.
+- Neutral customer scan summary; configurable retention (scan detail 180 days, aggregates kept).
+- Not done by decision: impossible-travel / regional views (no precise location is collected),
+  automatic customer notifications, automatic QR status changes, partitioning (evaluated, see
+  [`DATA-RETENTION.md`](./DATA-RETENTION.md)).
 
 ## P7 — Production Infrastructure + Monitoring + Launch Readiness
 

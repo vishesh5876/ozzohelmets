@@ -270,3 +270,31 @@ customer-auth     ─► identifiers (`parseAccountIdentifier` / `normalizeEmail
 | 43  | **Recovery grant through the normal recovery flow** | One reset path, one set of lockouts; the grant is just a second kind of one-time credential.                |
 | 44  | **Deletion requests without erasure**               | Workflow and audit now; destructive steps wait for retention rules.                                         |
 | 45  | **Abuse controls count misses, not scans**          | Genuine QR scans never miss; enumeration does. Keeps emergency access highly available.                     |
+
+## Phase 6 additions
+
+```
+public QR ─► API (scan row, Redis detection counters) ─► PostgreSQL ◄─ worker (dist/worker.js)
+                                                         ▲              aggregate · evaluate · retain
+admin ─► API /admin/analytics, /admin/risk-alerts ───────┘ (reads aggregates; today from raw)
+```
+
+### Dependency direction
+
+`AnalyticsCoreModule` (global, services only) is imported by both the HTTP app (`AnalyticsModule`
+adds controllers) and the worker (`WorkerModule`). `PublicAbuseService` depends on
+`RiskAlertsService` to raise source-level alerts; analytics depends on audit and the public cache,
+never on customer or medical modules. `AuditModule` was split into `AuditCoreModule` (service) and
+the HTTP controller so the worker loads no admin guards.
+
+### Key decisions
+
+| #   | Decision                                                           | Rationale                                                                                                 |
+| --- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| 46  | **Worker = second entrypoint of the API codebase**                 | Shares services and migrations with zero duplication; one image, two commands; no broker or microservice. |
+| 47  | **PostgreSQL advisory locks + idempotent upserts for jobs**        | Any number of workers, crash-safe, no external scheduler.                                                 |
+| 48  | **Aggregates for history, raw only for today**                     | Dashboards stay fast and survive scan-detail retention.                                                   |
+| 49  | **Deterministic weighted rules with guards, stored with reasons**  | Explainable to an operator; tunable by env; no single weak signal can produce HIGH/CRITICAL.              |
+| 50  | **Risk never changes lifecycle, QR integrity or emergency access** | Software sees requests, not helmets; humans decide.                                                       |
+| 51  | **No unknown-token storage; HyperLogLog for scraping**             | Detection without keeping attacker strings or per-source helmet lists.                                    |
+| 52  | **Partitioning deferred**                                          | Not needed at measured scale; plan documented in [DATA-RETENTION](./DATA-RETENTION.md).                   |

@@ -8,8 +8,8 @@ import { StatCard } from '../../components/StatCard';
 import { ErrorState, LoadingState } from '../../components/States';
 import { Table, Td, Th, THead, Tr } from '../../components/Table';
 import { api } from '../../lib/api';
-import { formatDateTime, formatNumber } from '../../lib/format';
-import { AnalyticsTabs, pct, RangePicker, type RangeState } from './shared';
+import { formatDateTime, formatNumber, pct } from '../../lib/format';
+import { AnalyticsTabs, RangePicker, type RangeState } from './shared';
 
 export function AnalyticsOverviewPage() {
   const [range, setRange] = useState<RangeState>({ range: '30d' });
@@ -74,7 +74,9 @@ function Overview({ data }: { data: AnalyticsOverviewDto }) {
           <StatCard label="Proof of purchase uploaded" value={pct(c.proofUploadRate)} />
           <StatCard
             label="Avg. days printed → activated"
-            value={c.avgDaysPrintedToActivation === null ? '—' : c.avgDaysPrintedToActivation.toFixed(1)}
+            value={
+              c.avgDaysPrintedToActivation === null ? '—' : c.avgDaysPrintedToActivation.toFixed(1)
+            }
           />
         </div>
       </section>
@@ -142,7 +144,10 @@ function Overview({ data }: { data: AnalyticsOverviewDto }) {
             )}
             {data.recentActivations.map((a) => (
               <li key={a.helmetId} className="flex justify-between px-4 py-3 text-sm">
-                <Link to={`/analytics/helmets/${a.helmetCode}`} className="font-mono hover:underline">
+                <Link
+                  to={`/analytics/helmets/${a.helmetCode}`}
+                  className="font-mono hover:underline"
+                >
                   {a.helmetCode}
                 </Link>
                 <span className="text-body">{formatDateTime(a.activatedAt)}</span>

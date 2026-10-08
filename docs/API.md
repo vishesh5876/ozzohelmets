@@ -256,6 +256,26 @@ unknown-token lookups (cached helmets are still served).
 New error codes: `CUSTOMER_NOT_ACTIVE`, `INVALID_STATUS_CHANGE`, `RECOVERY_GRANT_INVALID`,
 `DELETION_REQUEST_EXISTS`, `DELETION_REQUEST_NOT_FOUND`, `INVALID_DELETION_TRANSITION`.
 
-## Planned (P6+)
+## Phase 6 — analytics, risk alerts, QR integrity
 
-Analytics and clone detection; label printing; warranty claims.
+Cursor pagination (`?cursor=&limit=`) returns `{ items, nextCursor }`; cursors are opaque.
+
+| Method | Path                                                             | Permission            | Notes                                                                                                                |
+| ------ | ---------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/admin/analytics/overview?range=today\|7d\|30d\|custom&from&to` | `analytics:view`      | rates, period totals, daily series, warranty by model, recent activations                                            |
+| GET    | `/admin/analytics/scans?range…`                                  | `analytics:view`      | scan counts, top helmets, invalid-token requests, series                                                             |
+| GET    | `/admin/analytics/helmets?minLevel&includeResolved`              | `analytics:view`      | helmets with review signals (cursor, ordered by score)                                                               |
+| GET    | `/admin/analytics/helmets/:helmetCode`                           | `analytics:view`      | series, totals, risk + reasons, signals, product reports; `alerts` only with `risk-alert:view`                       |
+| GET    | `/admin/analytics/helmets/:helmetCode/scans`                     | `analytics:view`      | scan events (type, time, device category, cache flag) — no IP data (cursor)                                          |
+| PATCH  | `/admin/analytics/helmets/:helmetCode/qr-integrity`              | `qr-integrity:manage` | `{ status: NORMAL\|UNDER_REVIEW\|COMPROMISED, note (5–500) }`, audited                                               |
+| GET    | `/admin/risk-alerts?status=…\|OPEN_ANY&type`                     | `risk-alert:view`     | cursor, newest activity first                                                                                        |
+| GET    | `/admin/risk-alerts/:id`                                         | `risk-alert:view`     |                                                                                                                      |
+| PATCH  | `/admin/risk-alerts/:id`                                         | `risk-alert:manage`   | `{ status?, assignedAdminId?, resolutionReason? }`; reason required to resolve/dismiss; 409 on an invalid transition |
+| GET    | `/customer/helmets/:id/scan-summary`                             | owner                 | `{ since, emergencyScans30d, verificationScans30d, lastEmergencyScanAt, message }`                                   |
+
+`GET /public/verify/:token` gains an optional `integrityNotice` (only when an admin marked the QR
+`COMPROMISED`). The public emergency response is unchanged.
+
+## Planned (P7+)
+
+Label printing; warranty claims; production infrastructure.
