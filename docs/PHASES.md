@@ -102,3 +102,16 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
   INCIDENT-RESPONSE, MONITORING, DATA-INVENTORY, LAUNCH-CHECKLIST and runbooks.
 - Status: **READY WITH CONDITIONS**. An offsite backup with a tested restore, external uptime
   monitoring and the physical QR test are required before launch.
+
+## P8 — Production acceptance + pilot launch + operational polish _(see [`PHASE-8.md`](./PHASE-8.md))_
+
+- Customer: one guided activation and emergency setup with a progress indicator and a factual
+  completion summary; dashboard led by emergency protection status; per-helmet sharing on cards
+  and detail; consistent credential terminology; safer error copy; empty states.
+- Public: emergency facts in priority order; call buttons show the number.
+- Admin: Activation PIN state, batch workflow / export history / counts, batch filters, one-box
+  helmet search, customer quick links and separated restrictive actions, internal-test alert
+  dismissal; internal test model excluded from analytics. No new tables or migrations.
+- Ops: `scripts/production-smoke.sh`, `scripts/ozzo-health-report.sh`,
+  `scripts/pilot-metrics.sql`; RELEASE-CHECKLIST, CHANGELOG (v1.0.0), PILOT, support SOP,
+  manufacturing SOP additions (test helmets, physical PIN options).

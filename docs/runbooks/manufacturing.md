@@ -52,3 +52,36 @@ cash.
 | Need to reprint labels **after** mark-printed     | QR codes and Helmet IDs can be re-rendered (`/admin/helmets/:id/qr`), but **PINs cannot**: generate a new batch for those units. |
 | CSV leaked before the helmets were sold           | Treat as compromised: do not ship the batch; mark those helmets as deactivated/recalled; make a new batch.                       |
 | A misprinted or unreadable QR on a sold helmet    | Support links a replacement helmet ([REPLACEMENT](../REPLACEMENT.md)), or re-renders the same QR as a sticker.                   |
+
+## Internal acceptance-test helmets
+
+Never use a customer's helmet for testing. Create test helmets under a dedicated model:
+
+| Field       | Value                                             |
+| ----------- | ------------------------------------------------- |
+| Model name  | `OZZO INTERNAL TEST`                              |
+| SKU         | `OZZO-INTERNAL-TEST` (must match exactly)         |
+| Batch notes | `TEST-ACCEPTANCE-001` (and so on), what it is for |
+
+Helmets of this SKU work exactly like real ones, but they are left out of platform analytics
+(`ANALYTICS_EXCLUDED_MODEL_SKUS`, default `OZZO-INTERNAL-TEST`). The marker is never shown on
+public pages. Risk alerts caused by staff scanning test helmets can be closed with **Dismiss as
+internal acceptance test** (kept in the alert history and the audit log). Keep one activated
+test helmet with a synthetic emergency profile for the external uptime monitor and
+`scripts/production-smoke.sh` (`TEST_TOKEN`).
+
+## Physical Activation PIN presentation: open decision
+
+The physical format of the Activation PIN is **not decided yet** and does not block the pilot.
+Whatever is chosen must keep the PIN hidden until purchase, be tamper-evident, be readable once
+uncovered, and never appear on the outside of the box or in the QR code.
+
+| Option                                               | Pros                                      | Cons / risks                                                 |
+| ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| Scratch-off panel on a card in the box               | familiar, tamper-evident, cheap at volume | needs a specialist printer; scratching can damage characters |
+| Sealed / folded card (security envelope)             | simple printing, no special ink           | envelopes can be steamed open and resealed                   |
+| Protected sticker inside the helmet (peel-off cover) | stays with the helmet, hard to lose       | applied at the factory; a careless reseller could peel it    |
+| Printed inside the packaging (e.g. under a flap)     | no extra part                             | packaging is often thrown away before activation             |
+
+For the pilot (10–20 internal helmets) a sealed card is enough. Record the final decision here
+and in the manufacturing contract.

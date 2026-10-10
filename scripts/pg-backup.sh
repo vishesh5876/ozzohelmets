@@ -25,6 +25,7 @@ url="${url%%\?*}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 dest="$BACKUP_DIR/$stamp"
 mkdir -p "$dest"
+# shellcheck disable=SC2154  # rc is assigned inside the trap string itself.
 trap 'rc=$?; [ $rc -ne 0 ] && rm -rf "$dest"; exit $rc' EXIT
 
 "$PG_BIN/pg_dump" --format=custom --compress=6 --no-owner --no-privileges \

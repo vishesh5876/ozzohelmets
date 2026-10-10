@@ -290,6 +290,25 @@ unavailable. Please try again shortly."). Password and PIN checks return `503` "
 when the Argon2 queue is full. Clients should retry later. Neither is ever returned for a cached or
 database-served public emergency read.
 
+## Phase 8 — operational clarity (no new endpoints, no migrations)
+
+- `GET /admin/helmets/:id` adds `pinState` (`AVAILABLE` · `EXPORTED` · `PURGED` · `CONSUMED`)
+  and `batchLastExportedAt`. Derived from the PIN escrow and the export audit trail. The PIN
+  itself is never returned.
+- `GET /admin/helmets?search=` accepts Helmet ID (exact or fragment), serial, batch code
+  (`BAT-YYYY-NNNNN`, exact), model name or SKU. Owner email and Customer ID (`CU-…`) match the
+  helmets the customer **currently owns**, only for callers with `customers:read`. For others
+  those terms match nothing. `search` max length 254.
+- `GET /admin/batches` and `GET /admin/batches/:id` add `exportCount` and `lastExportedAt`
+  (audit log). The detail adds `stats`
+  `{ generated, printed, activated, active, lostOrStolen, remaining }`. The list adds the filters
+  `printStatus` (`NOT_PRINTED` | `PRINTED`), `manufacturedFrom` / `manufacturedTo`
+  (`YYYY-MM-DD`, inclusive), and `search` now also matches model name and SKU.
+- Analytics overview and daily platform aggregates exclude helmets whose model SKU is in
+  `ANALYTICS_EXCLUDED_MODEL_SKUS` (default `OZZO-INTERNAL-TEST`).
+- Customer-facing copy: Activation PIN errors read "The Helmet ID or Activation PIN could not be
+  verified."; an unknown public token reads "We could not verify this Helmet ID."
+
 ## Planned
 
 Label printing; warranty claims.

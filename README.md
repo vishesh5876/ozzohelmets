@@ -131,21 +131,23 @@ add more helmets from **Add helmet** (PIN only, no new account). Change the acco
    copy / print the approved information; repeated unknown-token lookups are rate-limited while
    real scans keep working.
 
-## Production (Phase 7): single VPS
+## Production: single VPS
 
-Production runs on **one Linux VPS behind Cloudflare** with Docker Compose
-(`docker-compose.prod.yml`: edge nginx, api, worker, admin, portal, postgres, redis) and uploads
-on the VPS filesystem. There is no AWS. Start with [VPS-DEPLOYMENT](docs/VPS-DEPLOYMENT.md):
+Production runs on **one Linux VPS behind Cloudflare**, with uploads on the VPS filesystem. There
+is no AWS. The live server is shared with other sites and uses **PM2 behind aaPanel's nginx**
+([PM2-DEPLOYMENT](docs/PM2-DEPLOYMENT.md)). The Docker Compose layout
+([VPS-DEPLOYMENT](docs/VPS-DEPLOYMENT.md)) remains the reference for a dedicated server.
 
 ```bash
-scripts/deploy-vps.sh --ref v1.0.0     # backup → build → migrate → start → smoke checks
-scripts/compose.sh ps                  # docker compose with the production files + deployed version
-scripts/backup.sh                      # daily via systemd timer; configure BACKUP_OFFSITE_CMD
-scripts/restore-drill.sh --backup <set> # prove a backup in an isolated project
+sudo -iu ozzo /opt/ozzohelmets/scripts/pm2-deploy.sh   # backup → build → migrate → reload
+scripts/production-smoke.sh                            # read-only public checks, from anywhere
+sudo /opt/ozzohelmets/scripts/ozzo-health-report.sh    # read-only server report (worker, backups, disk, DB, Redis)
 ```
 
-Status: **READY WITH CONDITIONS.** An offsite backup with a tested restore, external uptime
-monitoring and a physical QR label test are required before launch
+Releases follow [RELEASE-CHECKLIST](docs/RELEASE-CHECKLIST.md) and are recorded in
+[CHANGELOG](CHANGELOG.md). Rollout follows [PILOT](docs/PILOT.md). Status: **READY WITH
+CONDITIONS.** An offsite backup with a tested restore, external uptime monitoring and a physical
+QR label test are required before public customers
 ([LAUNCH-CHECKLIST](docs/LAUNCH-CHECKLIST.md)).
 
 ## Phase 6 walkthrough (analytics & QR abuse detection)
@@ -232,4 +234,7 @@ retention period, owner notifications, QR replacement process),
 [VPS deployment](docs/VPS-DEPLOYMENT.md) · [Disaster recovery](docs/DISASTER-RECOVERY.md) ·
 [Incident response](docs/INCIDENT-RESPONSE.md) · [Monitoring](docs/MONITORING.md) ·
 [Data inventory](docs/DATA-INVENTORY.md) · [Launch checklist](docs/LAUNCH-CHECKLIST.md) ·
-[Runbooks](docs/runbooks/)
+[Runbooks](docs/runbooks/) · **Phase 8:** [Phase 8](docs/PHASE-8.md) ·
+[Release checklist](docs/RELEASE-CHECKLIST.md) · [Pilot](docs/PILOT.md) ·
+[Support SOP](docs/runbooks/support.md) · [PM2 deployment](docs/PM2-DEPLOYMENT.md) ·
+[Changelog](CHANGELOG.md)

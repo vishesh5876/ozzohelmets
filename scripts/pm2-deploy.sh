@@ -85,7 +85,8 @@ for app in admin portal; do
   cp -a "apps/$app/dist" "$dest"
   ln -sfn "$dest" "$WWW_DIR/.$app.tmp"
   mv -Tf "$WWW_DIR/.$app.tmp" "$WWW_DIR/$app"   # atomic swap
-  # Keep the newest releases only.
+  # Keep the newest releases only (release dirs are named <app>-<timestamp>, no odd characters).
+  # shellcheck disable=SC2012
   ls -1dt "$WWW_DIR/releases/$app-"* | tail -n +$((KEEP_RELEASES + 1)) | xargs -r rm -rf
 done
 

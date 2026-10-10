@@ -106,3 +106,19 @@ scans (10 deliberately hot helmets) on the development container:
 Read queries are constant-count (no N+1). Risk evaluation is one grouped query for candidates plus
 ≈ 20 small statements per _flagged_ helmet (signal upserts, assessment, alert); normal helmets
 cost nothing beyond the grouped query. See DATA-RETENTION.md for the partitioning threshold.
+
+## Internal test helmets (Phase 8)
+
+Acceptance testing on production uses helmets of a dedicated model (SKU `OZZO-INTERNAL-TEST`;
+configure with `ANALYTICS_EXCLUDED_MODEL_SKUS`, comma-separated). They are excluded from:
+
+- `platform_daily_stats`: generated, activated, active profiles, emergency/verify scans,
+  unique helmets scanned, warranties, lost/stolen/damaged;
+- the overview's current counts: generated, activated, active, owners without contacts,
+  warranties, warranty by model, average days printed to activation, recent activations.
+
+Per-helmet analytics still work for them, so QA can check them. New customers created during
+testing are counted in "new customers" (accounts are not tied to a model). Alerts raised by
+staff scanning a test helmet are closed with **Dismiss as internal acceptance test**, which is
+kept in history. Already-aggregated past days keep their numbers until re-aggregated; the
+worker recomputes today and yesterday on every run.

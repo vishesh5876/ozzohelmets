@@ -34,6 +34,17 @@ describe('validateEnv', () => {
     expect(env.COOKIE_SECURE).toBe(true);
   });
 
+  it('parses the analytics test-model exclusion list (default OZZO-INTERNAL-TEST)', () => {
+    expect(validateEnv(base).ANALYTICS_EXCLUDED_MODEL_SKUS).toEqual(['OZZO-INTERNAL-TEST']);
+    expect(
+      validateEnv({ ...base, ANALYTICS_EXCLUDED_MODEL_SKUS: ' QA-1, ,QA-2 ' })
+        .ANALYTICS_EXCLUDED_MODEL_SKUS,
+    ).toEqual(['QA-1', 'QA-2']);
+    expect(
+      validateEnv({ ...base, ANALYTICS_EXCLUDED_MODEL_SKUS: '' }).ANALYTICS_EXCLUDED_MODEL_SKUS,
+    ).toEqual([]);
+  });
+
   it('lists every problem', () => {
     expect(() =>
       validateEnv({ ...base, JWT_ACCESS_SECRET: 'short', DATABASE_URL: 'nope' }),
