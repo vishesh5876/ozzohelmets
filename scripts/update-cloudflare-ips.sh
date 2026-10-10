@@ -17,9 +17,12 @@ if ! valid "$tmp/v4" || ! valid "$tmp/v6"; then
   exit 1
 fi
 mkdir -p "$OUT"
+# ips-v4 has no trailing newline: join with an explicit newline so ranges never merge, and keep
+# only well-formed CIDRs.
+{ cat "$tmp/v4"; echo; cat "$tmp/v6"; echo; } | tr -d '\r' | grep -E '^[0-9a-fA-F:.]+/[0-9]+$' > "$tmp/all"
 {
   echo "# Cloudflare edge ranges — generated $(date -u +%FT%TZ) by update-cloudflare-ips.sh"
-  while read -r r; do [ -n "$r" ] && echo "set_real_ip_from $r;"; done < <(cat "$tmp/v4" "$tmp/v6")
+  while read -r r; do [ -n "$r" ] && echo "set_real_ip_from $r;"; done < "$tmp/all"
   echo "real_ip_header CF-Connecting-IP;"
   echo "real_ip_recursive off;"
 } > "$tmp/realip.conf"
@@ -28,7 +31,7 @@ mkdir -p "$OUT"
   echo "geo \$realip_remote_addr \$from_cloudflare {"
   echo "  default 0;"
   echo "  127.0.0.1 1;"
-  while read -r r; do [ -n "$r" ] && echo "  $r 1;"; done < <(cat "$tmp/v4" "$tmp/v6")
+  while read -r r; do [ -n "$r" ] && echo "  $r 1;"; done < "$tmp/all"
   echo "}"
 } > "$tmp/geo.conf"
 install -m 644 "$tmp/realip.conf" "$OUT/realip.conf"
