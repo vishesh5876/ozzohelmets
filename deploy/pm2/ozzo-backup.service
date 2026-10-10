@@ -1,0 +1,11 @@
+[Unit]
+Description=Ozzo Helmets local backup (PostgreSQL dump + uploads)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ozzo
+Group=ozzo
+ExecStart=/opt/ozzohelmets/scripts/pg-backup.sh
+Nice=10
+IOSchedulingClass=idle
