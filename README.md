@@ -131,6 +131,23 @@ add more helmets from **Add helmet** (PIN only, no new account). Change the acco
    copy / print the approved information; repeated unknown-token lookups are rate-limited while
    real scans keep working.
 
+## Production (Phase 7): single VPS
+
+Production runs on **one Linux VPS behind Cloudflare** with Docker Compose
+(`docker-compose.prod.yml`: edge nginx, api, worker, admin, portal, postgres, redis) and uploads
+on the VPS filesystem. There is no AWS. Start with [VPS-DEPLOYMENT](docs/VPS-DEPLOYMENT.md):
+
+```bash
+scripts/deploy-vps.sh --ref v1.0.0     # backup → build → migrate → start → smoke checks
+scripts/compose.sh ps                  # docker compose with the production files + deployed version
+scripts/backup.sh                      # daily via systemd timer; configure BACKUP_OFFSITE_CMD
+scripts/restore-drill.sh --backup <set> # prove a backup in an isolated project
+```
+
+Status: **READY WITH CONDITIONS.** An offsite backup with a tested restore, external uptime
+monitoring and a physical QR label test are required before launch
+([LAUNCH-CHECKLIST](docs/LAUNCH-CHECKLIST.md)).
+
 ## Phase 6 walkthrough (analytics & QR abuse detection)
 
 1. Run the worker next to the API: `pnpm --filter @helmet/api worker` (or `--once all` for a
@@ -211,4 +228,8 @@ retention period, owner notifications, QR replacement process),
 [Customer auth](docs/CUSTOMER-AUTH.md) · [Warranty](docs/WARRANTY.md) · [Product authenticity](docs/PRODUCT-AUTHENTICITY.md) · [Activation](docs/ACTIVATION.md) · [Emergency profile](docs/EMERGENCY-PROFILE.md) ·
 [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [API](docs/API.md) ·
 [Helmet lifecycle](docs/HELMET-LIFECYCLE.md) · [Development](docs/DEVELOPMENT.md) ·
-[Deployment](docs/DEPLOYMENT.md)
+[Deployment](docs/DEPLOYMENT.md) · **Production (Phase 7):** [Phase 7](docs/PHASE-7.md) ·
+[VPS deployment](docs/VPS-DEPLOYMENT.md) · [Disaster recovery](docs/DISASTER-RECOVERY.md) ·
+[Incident response](docs/INCIDENT-RESPONSE.md) · [Monitoring](docs/MONITORING.md) ·
+[Data inventory](docs/DATA-INVENTORY.md) · [Launch checklist](docs/LAUNCH-CHECKLIST.md) ·
+[Runbooks](docs/runbooks/)

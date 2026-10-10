@@ -59,7 +59,8 @@ plaintext. Showing them only once in the HTTP response of an asynchronous, possi
 
 **Residual risk.** Between generation and printing, someone holding both the database and
 `PIN_ESCROW_KEYS` can recover PINs. Mitigations: separate key (not the DB credentials), key in a
-secret manager/KMS in production (Phase 7: KMS envelope encryption), short escrow window, export
+restricted env file on the VPS (`/etc/helmet-platform/app.env`, 0640, separate from the DB
+credentials, never in backups; see VPS-DEPLOYMENT), short escrow window, export
 auditing. The PIN is the proof of possession for first activation, so it is concealed on the
 activation card, never encoded in the QR, consumed atomically on use, and can never become the
 account password.
@@ -328,3 +329,31 @@ Summary (details in [QR-ABUSE-DETECTION](QR-ABUSE-DETECTION.md), [RISK-ENGINE](R
   proxy; forwarded headers arriving while untrusted are logged ([DEPLOYMENT](DEPLOYMENT.md)).
 - **Retention:** scan detail 180 days, aggregates kept; ownership, warranty, manufacturing and
   audit history are never removed by retention.
+
+## 17. Phase 7 — production on a VPS
+
+Summary (details in [PHASE-7](PHASE-7.md), [VPS-DEPLOYMENT](VPS-DEPLOYMENT.md),
+[DATA-INVENTORY](DATA-INVENTORY.md)):
+
+- **Exposure:** only the edge publishes 80/443. PostgreSQL, Redis, API and worker are on an
+  internal network. UFW allows 22/80/443 only. Optional origin lock to Cloudflare ranges. Unknown
+  hosts are closed (444). Internal metrics return 404 at the edge.
+- **Client IP:** Cloudflare `CF-Connecting-IP` honoured only from Cloudflare ranges; the edge
+  overwrites `X-Forwarded-For`; the API trusts only the edge subnet. Spoofing was tested.
+- **Headers:** HSTS (edge); CSP per app; strict CSP on `/e/` and `/verify/` (`default-src 'none'`
+  for the API); `nosniff`, `X-Frame-Options DENY`, COOP, Permissions-Policy. The browser check
+  found no violations.
+- **Containers:** non-root api/worker/SPAs, read-only root filesystems, `cap_drop: ALL`,
+  `no-new-privileges`, resource limits, minimal images.
+- **Secrets:** restricted env files only (none in the repository or compose YAML). Startup
+  refuses dev, weak, reused or shared secrets, wildcard or HTTP CORS, non-HTTPS QR URLs and
+  Swagger without opt-in. Keyrings must be backed up offline (not in backups).
+- **Availability vs. abuse:** valid emergency reads are never login-throttled. Redis down → public
+  reads fail open from PostgreSQL, auth fails closed (503). Argon2 work is capped so login floods
+  cannot slow emergency pages.
+- **Uploads:** symlink-safe atomic local storage (0600/0700), served only through authorised API
+  routes. Optional ClamAV scan for warranty PDFs, failing closed.
+- **Logs:** no IPs at the edge, QR tokens masked, extended redaction. Audited across 1,330 log
+  lines with zero sensitive values found.
+- **Dependencies:** audit reduced to 0 critical; the remaining findings are dev-only or the Prisma
+  CLI (see PHASE-7).

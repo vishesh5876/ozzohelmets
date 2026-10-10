@@ -88,9 +88,17 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
   automatic customer notifications, automatic QR status changes, partitioning (evaluated, see
   [`DATA-RETENTION.md`](./DATA-RETENTION.md)).
 
-## P7 — Production Infrastructure + Monitoring + Launch Readiness
+## P7 — VPS Production Deployment + Monitoring + Backups + Launch Readiness _(complete — see [`PHASE-7.md`](./PHASE-7.md))_
 
-- AWS infrastructure (IaC): ECS/Fargate or EKS, RDS PostgreSQL, ElastiCache Redis, S3, CloudFront/
-  Cloudflare, KMS-backed keys (envelope encryption for medical data and PIN escrow), Secrets Manager.
-- Observability (OpenTelemetry, metrics, alerting), backups/PITR, DR runbooks, pen test, load tests,
-  launch checklist.
+- Single Linux VPS behind Cloudflare, Docker Compose (`docker-compose.prod.yml`): edge nginx (TLS,
+  Cloudflare real IP, origin lock option, rate limits, headers), api, worker, admin, portal,
+  postgres, redis; uploads on the local filesystem. **No AWS.**
+- Health live/ready, Redis outage policy (public fail-open, auth fail-closed), Prometheus metrics,
+  worker DB heartbeat + admin System status, Argon2 concurrency limiter, optional ClamAV,
+  production config guards, admin bootstrap and key-rotation CLI.
+- Backups (pg_dump + uploads, manifest, GFS, offsite hook), restore with confirmation, restore
+  drills, deploy/rollback script, systemd timer, CI (no deployment).
+- Load and failure tests, dependency audit, security review; VPS-DEPLOYMENT, DISASTER-RECOVERY,
+  INCIDENT-RESPONSE, MONITORING, DATA-INVENTORY, LAUNCH-CHECKLIST and runbooks.
+- Status: **READY WITH CONDITIONS**. An offsite backup with a tested restore, external uptime
+  monitoring and the physical QR test are required before launch.

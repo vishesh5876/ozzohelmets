@@ -298,3 +298,27 @@ the HTTP controller so the worker loads no admin guards.
 | 50  | **Risk never changes lifecycle, QR integrity or emergency access** | Software sees requests, not helmets; humans decide.                                                       |
 | 51  | **No unknown-token storage; HyperLogLog for scraping**             | Detection without keeping attacker strings or per-source helmet lists.                                    |
 | 52  | **Partitioning deferred**                                          | Not needed at measured scale; plan documented in [DATA-RETENTION](./DATA-RETENTION.md).                   |
+
+## Phase 7 additions (VPS production)
+
+```
+Cloudflare ─► edge nginx (TLS, real IP, limits, headers) ─► admin / portal nginx ─► api ─► postgres
+                                                                       worker ─┘    └─► redis
+uploads: /srv/helmet-platform/uploads (bind mount)   backups: /srv/helmet-platform/backups (+ offsite)
+```
+
+New modules: `system` (status + Prometheus endpoint), `infrastructure/metrics` (registry,
+route-template HTTP middleware), `cli` (admin bootstrap, encryption status/rotation; third
+entrypoint `dist/cli.js` of the same image), `security/concurrency-limiter` (Argon2 cap).
+
+### Key decisions
+
+| #   | Decision                                                             | Rationale                                                                                          |
+| --- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 53  | **Single VPS + Docker Compose, no AWS**                              | Matches scale and budget; operable by a small team; backups and drills replace managed-service HA. |
+| 54  | **Edge nginx in front of the SPA containers**                        | One place for TLS, Cloudflare real IP, origin lock, limits and HSTS; SPA images stay simple.       |
+| 55  | **Redis is optional for public reads, mandatory for auth**           | Emergency pages must survive a Redis outage; security controls must never silently switch off.     |
+| 56  | **Cap Argon2 concurrency per process**                               | A login flood otherwise starves the CPU emergency reads need (measured p99 3.8 s → 42 ms).         |
+| 57  | **Migrations as a one-off deploy step, never on boot in production** | Explicit, logged, preceded by a backup; read-only containers.                                      |
+| 58  | **In-house Prometheus registry with route-template labels**          | No new dependency, no high-cardinality or personal data in metrics.                                |
+| 59  | **Local filesystem uploads behind the existing storage abstraction** | No object-store dependency; S3-compatible storage stays a drop-in option.                          |

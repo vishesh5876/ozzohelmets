@@ -124,7 +124,7 @@ Recommended at launch: UFW + `cloudflare-only` + monthly range refresh.
 3. Origin certificate: SSL/TLS → Origin Server → Create certificate (RSA, the three hostnames,
    15 years). Save as `/etc/helmet-platform/tls/origin.crt` and `origin.key` (640,
    root:helmetdeploy). Alternative: Let's Encrypt via DNS-01 (`certbot --dns-cloudflare`) writing
-   to the same paths, then `docker compose … exec edge nginx -s reload` after renewal.
+   to the same paths, then `scripts/compose.sh exec edge nginx -s reload` after renewal.
 4. Caching: leave the default (static assets only). Do **not** cache `/api/*` or HTML; API
    responses are `no-store`. `/e/*` is `no-cache`.
 5. Security: WAF managed rules on; Bot Fight Mode is optional — test that `/e/<token>` still loads
@@ -189,16 +189,25 @@ password manager / sealed vault with two people able to access it. A database ba
 ```bash
 # 1. Prepend a new key version, keep the old one: DATA_ENCRYPTION_KEYS=v2:<new>,v1:<old>
 # 2. Deploy (new writes use v2; v1 still decrypts)
-docker compose -f docker-compose.prod.yml --env-file /etc/helmet-platform/compose.env \
-  run --rm --no-deps api node dist/cli.js encryption:rotate --keyring data --dry-run
-docker compose … run --rm --no-deps api node dist/cli.js encryption:rotate --keyring data
-docker compose … run --rm --no-deps api node dist/cli.js encryption:status
+scripts/compose.sh run --rm --no-deps api node dist/cli.js encryption:rotate --keyring data --dry-run
+scripts/compose.sh run --rm --no-deps api node dist/cli.js encryption:rotate --keyring data
+scripts/compose.sh run --rm --no-deps api node dist/cli.js encryption:status
 # 3. Only when status shows no "v1" ciphertexts: remove v1 from the keyring and deploy.
 ```
 
 Batched, restartable (re-run any time), idempotent, audited (`system.encryption_keys_rotated`,
 counts only), never logs plaintext; concurrent owner edits win and are skipped. Same for
 `--keyring escrow`.
+
+### Password hashing capacity (`ARGON2_MAX_CONCURRENCY`, `ARGON2_MAX_QUEUE`)
+
+Every login, PIN check and recovery-code check runs Argon2id (64 MiB, t=3), which takes about
+150 ms of CPU each. Without a cap, a login flood used every API core and made emergency pages slow
+(measured p99 3.8 s). Each API process therefore runs at most `ARGON2_MAX_CONCURRENCY` hashes at
+once (default 1) and queues up to `ARGON2_MAX_QUEUE` (default 16). Interactive callers beyond the
+queue get `503 The service is busy`. Batch PIN hashing waits instead of failing. With the
+defaults one API container handles about 5–7 logins per second and keeps emergency p99 under
+50 ms during a flood. Raise the concurrency to 2 only on 4+ dedicated vCPUs, or add a replica.
 
 ## 6. PostgreSQL and Redis
 
@@ -254,11 +263,24 @@ the VPS (or `--pull` prebuilt ones), starts PostgreSQL/Redis, runs
 health checks and runs smoke checks through the edge. It never deletes volumes and never runs
 `migrate reset` or `db push`.
 
+### Running compose commands: `scripts/compose.sh`
+
+Always use `scripts/compose.sh <args>` instead of `docker compose` directly. It passes
+`docker-compose.prod.yml`, `/etc/helmet-platform/compose.env` (override with `COMPOSE_ENV_FILE`)
+and `$DATA_ROOT/deploy-state/release.env`, which `deploy-vps.sh` writes so every later command
+(`ps`, `logs`, `run`, `up`) uses the **deployed** image version, not the default in compose.env.
+
+```bash
+scripts/compose.sh ps
+scripts/compose.sh logs --tail 200 api worker
+scripts/compose.sh exec postgres psql -U helmet -d helmet_platform
+```
+
 ### Admin bootstrap (no default credentials)
 
 ```bash
 read -rs PW   # type a strong password (12+ chars, upper/lower/digit); not echoed, not in history
-printf '%s' "$PW" | docker compose -f docker-compose.prod.yml --env-file /etc/helmet-platform/compose.env \
+printf '%s' "$PW" | scripts/compose.sh \
   run --rm -T --no-deps api node dist/cli.js admin:bootstrap --email ops@example.com --name "Ops Lead"
 unset PW
 ```
@@ -308,7 +330,7 @@ problem uses the restore procedure. Never `prisma migrate reset` in production.
 
 ## 11. Optional components
 
-- **ClamAV**: `docker compose … --profile clamav up -d clamav`, then `MALWARE_SCAN_ENABLED=true` in
+- **ClamAV**: `scripts/compose.sh --profile clamav up -d clamav`, then `MALWARE_SCAN_ENABLED=true` in
   app.env and redeploy. Warranty PDFs are scanned in memory before being stored; when the scanner
   is unreachable uploads fail closed (503). Needs ~1.2 GB RAM. Recommended for public production.
 - **Monitoring**: [MONITORING](MONITORING.md).

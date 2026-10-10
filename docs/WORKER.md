@@ -42,10 +42,20 @@ The scheduler touches `/tmp/helmet-worker-heartbeat` every 30 s (`WORKER_HEARTBE
 compose healthcheck fails when it is older than 2 minutes. `SIGTERM`/`SIGINT` stop new runs and
 wait for in-flight jobs before exiting. Run under an init process (`init: true`).
 
+The worker also upserts a row in `worker_heartbeats` (worker id, hostname, version, start time,
+last beat) every 30 s. Rows older than 7 days are pruned by `retention.cleanup`. Admin → Dashboard →
+**System status** and the metrics `helmet_worker_heartbeat_timestamp_seconds` and
+`helmet_worker_job_*` read it, together with `worker_job_runs`. Graceful `SIGTERM` exits 0 (Phase 7).
+
 ## Operations
 
-- Migrations are applied by the API container (`prisma migrate deploy`); the worker starts after
-  the API is healthy.
+- **Production (VPS):** the worker is the `worker` service in `docker-compose.prod.yml` (same
+  image as the API, read-only root, no published ports). `deploy-vps.sh` runs migrations as a
+  one-off step before starting api and worker. Run a job by hand with
+  `scripts/compose.sh run --rm --no-deps worker node dist/worker.js --once all`.
+
+- Dev compose: migrations are applied by the API container (`RUN_MIGRATIONS_ON_START=true`); the
+  worker starts after the API is healthy.
 - Job history: `SELECT job, status, started_at, duration_ms, detail FROM worker_job_runs ORDER BY
 started_at DESC LIMIT 20;`
 - Backfill after an outage: `node dist/worker.js --once analytics.aggregate` (recomputes today and

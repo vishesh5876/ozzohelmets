@@ -1,15 +1,18 @@
 # Deployment
 
-Phase 1 ships container images and a compose file; AWS infrastructure is deliberately out of
-scope until Phase 7.
+Container images and compose files. **Production runs on a single Linux VPS behind Cloudflare
+with Docker Compose and local filesystem uploads. See [VPS-DEPLOYMENT](VPS-DEPLOYMENT.md)**
+(Phase 7), plus [DISASTER-RECOVERY](DISASTER-RECOVERY.md), [MONITORING](MONITORING.md) and
+[LAUNCH-CHECKLIST](LAUNCH-CHECKLIST.md). This page covers the images, the local full stack and
+configuration notes from earlier phases.
 
 ## Images
 
-| Image          | Dockerfile                                                | Notes                                                                                                                                                                                                                                  |
-| -------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API            | `apps/api/Dockerfile`                                     | Multi-stage; `pnpm deploy --prod` tree on `node:22-bookworm-slim`, runs as `node`. On start: `prisma migrate deploy && node dist/main.js`. Healthcheck `GET /api/v1/health`. Run with an init process (`init: true`).                  |
-| (API storage)  | volume at `/app/storage`                                  | Local profile-photo storage (`FILE_STORAGE_LOCAL_DIR`). Use a persistent volume, or implement the S3 provider for multi-instance deployments.                                                                                          |
-| Admin / Portal | `docker/spa.Dockerfile` (`--build-arg APP=admin\|portal`) | Vite build served by nginx; `/api/` proxied to `API_UPSTREAM` (default `http://api:4000`); immutable caching for hashed assets, `no-cache` for `index.html`; security headers. Portal accepts `--build-arg VITE_EMERGENCY_NUMBER=112`. |
+| Image          | Dockerfile                                                | Notes                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API            | `apps/api/Dockerfile`                                     | Multi-stage, pruned production tree on `node:22-bookworm-slim` (676 MB), runs as `node`, read-only-root compatible. Runs `prisma migrate deploy` on start **only** with `RUN_MIGRATIONS_ON_START=true` (dev compose); production migrates as a one-off step in `deploy-vps.sh`. Healthcheck `GET /api/v1/health/ready`. Same image runs the worker and the CLI (`dist/cli.js`). |
+| (API storage)  | bind mount at `/app/storage`                              | Local upload storage (`FILE_STORAGE_LOCAL_DIR`): `/srv/helmet-platform/uploads` on the VPS (UID 1000, 0700). Checked for writability at startup. The S3-compatible provider remains optional.                                                                                                                                                                                   |
+| Admin / Portal | `docker/spa.Dockerfile` (`--build-arg APP=admin\|portal`) | Vite build served by unprivileged nginx on :8080; `/api/` proxied to `API_HOST_PORT` (default `api:4000`); per-app CSP via `CSP_POLICY` (strict on `/e/` and `/verify/`); immutable caching for hashed assets, `no-cache` for `index.html`. Portal accepts `--build-arg VITE_EMERGENCY_NUMBER=112`.                                                                             |
 
 Build context is always the repo root:
 
@@ -32,6 +35,10 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 `COOKIE_SECURE=false`).
 
 ## Production checklist
+
+> Superseded for the VPS deployment by [LAUNCH-CHECKLIST](LAUNCH-CHECKLIST.md). Kept for the
+> configuration notes from earlier phases. Mentions of a secret manager, managed PostgreSQL or an
+> S3 provider are options, not requirements.
 
 - [ ] Real secrets from a secret manager (`node scripts/generate-secrets.mjs` for initial values);
       `PIN_ESCROW_KEYS` and `DATA_ENCRYPTION_KEYS` stored separately from DB credentials.
@@ -67,10 +74,12 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
   volumes move it to a dedicated worker/queue (no schema change needed). Argon2 runs on the libuv
   pool — consider `UV_THREADPOOL_SIZE` ≥ 8 on generation-heavy instances.
 
-## AWS (Phase 7 sketch)
+## Hosting decision (Phase 7)
 
-ECS Fargate (API, SPAs or S3+CloudFront for SPAs), RDS PostgreSQL, ElastiCache Redis, KMS
-envelope encryption for keyrings, Secrets Manager, ALB + Cloudflare, CloudWatch/OTel.
+The platform is **not** deployed to AWS. Production is one VPS (Cloudflare → edge nginx → Docker
+Compose: api, worker, admin, portal, postgres, redis) with uploads on the VPS filesystem. See
+[VPS-DEPLOYMENT](VPS-DEPLOYMENT.md). The storage abstraction keeps an S3-compatible provider
+possible later, without making it a dependency.
 
 ## Phase 5 configuration
 

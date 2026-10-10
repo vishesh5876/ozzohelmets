@@ -94,6 +94,16 @@ WHERE email IS NOT NULL AND email_normalized IS NULL AND status <> 'DELETED';
 - Additive only; existing rows keep their values. See [ANALYTICS](ANALYTICS.md) and
   [DATA-RETENTION](DATA-RETENTION.md).
 
+### Phase 7 migration (`20261010090000_phase7_worker_heartbeat`)
+
+- New: `worker_heartbeats` (PK `worker_id` varchar(120), `hostname`, `version`, `started_at`,
+  `last_beat_at` + index). Written by the worker every 30 s, pruned after 7 days.
+- Additive only. Verified on a fresh database and on an upgraded Phase 6 database (row counts
+  unchanged, drift check clean).
+- Production applies migrations only with `prisma migrate deploy` (one-off step in
+  `scripts/deploy-vps.sh`). Never `migrate reset` or `db push`. Backups and restores:
+  [DISASTER-RECOVERY](DISASTER-RECOVERY.md).
+
 ## Not modelled (by decision)
 
 Retailers, distributors, partner users, stock locations, inventory ledgers, transfers/manifests

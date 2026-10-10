@@ -107,11 +107,11 @@ customer's own data. Details: [CUSTOMER-AUTH](./CUSTOMER-AUTH.md), [ACTIVATION](
 
 ## Public
 
-| Method | Path                             | Notes                                                                                                                                                                                                                                                                                |
-| ------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/public/emergency/:token`       | No auth. Rate limit `public`. `state` ∈ `NOT_ACTIVATED`, `ACTIVATED_PROFILE_INCOMPLETE`, `ACTIVE`, `LOST`, `STOLEN`, `DAMAGED`, `REPLACED`, `DEACTIVATED`, `RECALLED`, `UNAVAILABLE`; only `ACTIVE` carries `profile`/`contacts`. Unknown/malformed tokens → 404 `HELMET_NOT_FOUND`. |
-| GET    | `/public/emergency/:token/photo` | Only while the owner's photo is publicly visible.                                                                                                                                                                                                                                    |
-| GET    | `/health`                        | DB + Redis readiness.                                                                                                                                                                                                                                                                |
+| Method | Path                                 | Notes                                                                                                                                                                                                                                                                                |
+| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/public/emergency/:token`           | No auth. Rate limit `public`. `state` ∈ `NOT_ACTIVATED`, `ACTIVATED_PROFILE_INCOMPLETE`, `ACTIVE`, `LOST`, `STOLEN`, `DAMAGED`, `REPLACED`, `DEACTIVATED`, `RECALLED`, `UNAVAILABLE`; only `ACTIVE` carries `profile`/`contacts`. Unknown/malformed tokens → 404 `HELMET_NOT_FOUND`. |
+| GET    | `/public/emergency/:token/photo`     | Only while the owner's photo is publicly visible.                                                                                                                                                                                                                                    |
+| GET    | `/health` (alias of `/health/ready`) | DB + Redis readiness (Phase 7: see below).                                                                                                                                                                                                                                           |
 
 Example (`ACTIVE`, owner shared name, blood group, allergies and contacts):
 
@@ -276,6 +276,20 @@ Cursor pagination (`?cursor=&limit=`) returns `{ items, nextCursor }`; cursors a
 `GET /public/verify/:token` gains an optional `integrityNotice` (only when an admin marked the QR
 `COMPROMISED`). The public emergency response is unchanged.
 
-## Planned (P7+)
+## Phase 7 — operations
 
-Label printing; warranty claims; production infrastructure.
+| Method | Path                   | Auth                                    | Notes                                                                                                                        |
+| ------ | ---------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/health/live`         | public                                  | `{status:"ok"}` whenever the process answers; no dependency checks                                                           |
+| GET    | `/health/ready`        | public                                  | `ok` · `degraded` (200, Redis down: emergency pages still served from PostgreSQL) · 503 when PostgreSQL is unreachable (3 s) |
+| GET    | `/admin/system/status` | `dashboard:read`                        | `SystemStatusDto`: version, commit, DB/Redis up, worker heartbeats, each job's last run/success/duration/failures (24 h)     |
+| GET    | `/internal/metrics`    | `Authorization: Bearer <METRICS_TOKEN>` | Prometheus text. 404 when no token is configured, 401 when wrong; **always 404 through the edge proxy**                      |
+
+Errors caused by an unavailable dependency return `503 SERVICE_UNAVAILABLE` ("Service temporarily
+unavailable. Please try again shortly."). Password and PIN checks return `503` "The service is busy"
+when the Argon2 queue is full. Clients should retry later. Neither is ever returned for a cached or
+database-served public emergency read.
+
+## Planned
+
+Label printing; warranty claims.

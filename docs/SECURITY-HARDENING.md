@@ -71,9 +71,10 @@ Admin endpoints never decrypt.
   sharp (metadata stripped), random storage keys, served with `nosniff` and `no-store`.
 - Warranty proofs: PDF structural checks (no JavaScript/embedded files/launch actions), images
   re-encoded, private storage, owner/permitted-admin download only.
-- Local disk storage remains for development; private object storage (S3 with block public
-  access, SSE-KMS) is a **production deployment task** (Phase 7). The storage abstraction already
-  has an S3 provider.
+- Production uses **local VPS disk storage** (Phase 7 decision): symlink-safe atomic writes,
+  0600/0700, writability checked at startup, never served directly by nginx, backed up with the
+  database. Optional ClamAV scanning for warranty PDFs. The storage abstraction keeps an
+  S3-compatible provider possible later; it is not required.
 
 ## Errors
 
