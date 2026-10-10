@@ -37,6 +37,8 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 command -v pm2 >/dev/null || die "pm2 not found"
 cd "$APP_DIR"
 
+# aaPanel's global npmrc points the npm cache at a shared root-owned directory: use our own.
+export npm_config_cache="${HOME}/.npm" npm_config_update_notifier=false
 pnpm() { CI=true npx -y "pnpm@${PNPM_VERSION}" "$@"; }
 
 if [ "$PULL" = 1 ]; then
