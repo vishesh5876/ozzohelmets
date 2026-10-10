@@ -29,8 +29,9 @@ Redis 7 (apt)          127.0.0.1:6380  requirepass, noeviction, FLUSHALL/CONFIG 
 | `/etc/helmet-platform/app.env`                   | all secrets and settings                                    | `root:ozzo` 640 |
 | `/etc/helmet-platform/tls/origin.{crt,key}`      | Cloudflare Origin CA certificate                            | `root` 600      |
 | `/etc/helmet-platform/nginx-cloudflare/`         | Cloudflare ranges (`realip.conf`)                           | `root` 644      |
+| `/srv/helmet-platform`                           | data root (nginx user `www` may traverse, not list)         | `ozzo` 751      |
 | `/srv/helmet-platform/uploads`                   | profile photos, warranty proofs (local filesystem)          | `ozzo` 700      |
-| `/srv/helmet-platform/www/{portal,admin}`        | symlinks to the current SPA release                         | `ozzo`          |
+| `/srv/helmet-platform/www/{portal,admin}`        | symlinks to the current SPA release (read by nginx)         | `ozzo` 755      |
 | `/srv/helmet-platform/backups`                   | local backup sets                                           | `ozzo` 700      |
 | `/var/log/ozzohelmets/`                          | PM2 logs (api/worker)                                       | `ozzo`          |
 | `/www/server/panel/vhost/nginx/0.ozzo-http.conf` | http-level maps/zones/upstream (`deploy/aapanel/http.conf`) | root            |
