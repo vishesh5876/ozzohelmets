@@ -335,3 +335,18 @@ h3 {
     color: #000 !important;
   }
 }
+
+/* Utility classes instead of inline style attributes (strict CSP: no style-src 'unsafe-inline'). */
+.skeleton-short {
+  width: 60%;
+}
+.mt-16 {
+  margin-top: 16px;
+}
+.mt-20 {
+  margin-top: 20px;
+}
+.verify-link {
+  text-align: center;
+  margin-top: 8px;
+}

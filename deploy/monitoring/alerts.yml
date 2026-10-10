@@ -1,0 +1,147 @@
+# Alert rules. Thresholds are starting points — tune after a few weeks of real traffic.
+# Severity: critical = page someone now; warning = look today.
+groups:
+  - name: availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="helmet-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: API not answering metrics scrapes (public emergency pages likely down)
+          runbook: docs/runbooks/public-emergency-outage.md
+      - alert: DatabaseDown
+        expr: helmet_database_up == 0 or pg_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: PostgreSQL unreachable — readiness fails, emergency pages for uncached helmets fail
+          runbook: docs/INCIDENT-RESPONSE.md
+      - alert: RedisDown
+        expr: helmet_redis_up == 0 or redis_up == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: Redis unreachable — emergency pages served from PostgreSQL; logins/activation answer 503
+          runbook: docs/INCIDENT-RESPONSE.md
+      - alert: HighServerErrorRate
+        expr: |
+          sum(rate(helmet_http_requests_total{status="5xx"}[10m]))
+            / clamp_min(sum(rate(helmet_http_requests_total[10m])), 0.01) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'More than 5% of API requests fail with 5xx' }
+      - alert: PublicEmergencySlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(helmet_http_request_duration_seconds_bucket{route="/api/v1/public/emergency/:token"}[10m]))) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'p95 of the public emergency endpoint above 1 s' }
+      - alert: DependencyOutageTraffic
+        expr: sum(increase(helmet_dependency_unavailable_total[5m])) > 20
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          { summary: 'Requests are being served degraded or refused because a dependency is down' }
+
+  - name: worker
+    rules:
+      - alert: WorkerHeartbeatMissing
+        expr: time() - helmet_worker_heartbeat_timestamp_seconds > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: No worker heartbeat for 5+ minutes (analytics, risk evaluation, retention delayed)
+          runbook: docs/INCIDENT-RESPONSE.md
+      - alert: WorkerJobStale
+        expr: |
+          (time() - helmet_worker_job_last_success_timestamp_seconds)
+            > 3 * helmet_worker_job_expected_interval_seconds
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: 'Worker job {{ $labels.job }} has not succeeded for 3 intervals' }
+      - alert: WorkerJobFailing
+        expr: helmet_worker_job_failures_24h > 3
+        labels: { severity: warning }
+        annotations: { summary: 'Worker job {{ $labels.job }} failed more than 3 times in 24 h' }
+
+  - name: host
+    rules:
+      - alert: DiskSpaceWarning
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 0.80
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: 'Filesystem {{ $labels.mountpoint }} above 80% used' }
+      - alert: DiskSpaceCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) > 0.90
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: 'Filesystem {{ $labels.mountpoint }} above 90% used — PostgreSQL/uploads/backups at risk'
+          runbook: docs/INCIDENT-RESPONSE.md
+      - alert: MemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'Less than 10% memory available' }
+      - alert: SwapHeavy
+        expr: (1 - node_memory_SwapFree_bytes / clamp_min(node_memory_SwapTotal_bytes, 1)) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: 'More than half of swap in use' }
+      - alert: OomKill
+        expr: increase(node_vmstat_oom_kill[15m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: 'The kernel OOM-killed a process (check container limits)' }
+      - alert: CpuSustainedHigh
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 20m
+        labels: { severity: warning }
+        annotations: { summary: 'CPU above 90% for 20 minutes' }
+
+  - name: datastores
+    rules:
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'PostgreSQL above 80% of max_connections' }
+      - alert: PostgresDeadlocks
+        expr: sum(increase(pg_stat_database_deadlocks[15m])) > 0
+        labels: { severity: warning }
+        annotations: { summary: 'PostgreSQL reported deadlocks' }
+      - alert: PostgresLongTransaction
+        expr: max(pg_stat_activity_max_tx_duration) > 300
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: 'A PostgreSQL transaction has been open for over 5 minutes' }
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1) > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          { summary: 'Redis above 80% of maxmemory (noeviction → writes fail when full)' }
+      - alert: RedisRejectingWrites
+        expr: increase(redis_rejected_connections_total[10m]) > 0 or increase(redis_evicted_keys_total[10m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: 'Redis rejected connections or evicted keys' }
+
+  - name: backups
+    rules:
+      - alert: BackupStale
+        expr: time() - helmet_backup_last_success_timestamp_seconds > 26 * 3600
+        labels: { severity: critical }
+        annotations:
+          summary: No successful backup in 26 hours
+          runbook: docs/DISASTER-RECOVERY.md
+      - alert: BackupMissingMetric
+        expr: absent(helmet_backup_last_success_timestamp_seconds)
+        for: 26h
+        labels: { severity: warning }
+        annotations: { summary: 'Backup status metric missing (backup timer not running?)' }
+      - alert: OffsiteBackupStale
+        expr: time() - helmet_backup_offsite_last_success_timestamp_seconds > 26 * 3600
+        labels: { severity: warning }
+        annotations: { summary: 'Offsite copy of the backup has not succeeded in 26 hours' }

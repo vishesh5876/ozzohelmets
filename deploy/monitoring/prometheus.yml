@@ -1,0 +1,31 @@
+# Prometheus for the single-VPS stack (compose profile "monitoring"). Bound to 127.0.0.1:9090 —
+# use an SSH tunnel. It runs on the same VPS, so it cannot detect a total VPS/network outage:
+# external uptime monitoring is required separately (docs/MONITORING.md).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files: [/etc/prometheus/alerts.yml]
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ['alertmanager:9093'] }]
+
+scrape_configs:
+  - job_name: helmet-api
+    metrics_path: /api/v1/internal/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics_token
+    dns_sd_configs:
+      - names: [api]
+        type: A
+        port: 4000
+  - job_name: node
+    static_configs: [{ targets: ['node-exporter:9100'] }]
+  - job_name: postgres
+    static_configs: [{ targets: ['postgres-exporter:9187'] }]
+  - job_name: redis
+    static_configs: [{ targets: ['redis-exporter:9121'] }]
+  - job_name: prometheus
+    static_configs: [{ targets: ['localhost:9090'] }]

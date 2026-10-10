@@ -1,0 +1,364 @@
+# Production / VPS stack (standalone — not an override of docker-compose.yml, which stays the
+# development file). See docs/VPS-DEPLOYMENT.md.
+#
+#   docker compose -f docker-compose.prod.yml --env-file /etc/helmet-platform/compose.env up -d
+#
+# Only the edge proxy publishes ports (80/443). PostgreSQL, Redis, the API and the worker live on
+# private networks. Secrets come from env files outside the repository, never from this YAML.
+# Mutable data lives under ${DATA_ROOT} on the host, never inside the git checkout.
+
+name: ${COMPOSE_PROJECT_NAME:-helmet}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '5'
+
+x-hardened: &hardened
+  restart: unless-stopped
+  logging: *logging
+  security_opt: ['no-new-privileges:true']
+
+x-app-image: &app-image
+  image: ${IMAGE_PREFIX:-helmet}/api:${APP_VERSION:-local}
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+    args:
+      APP_VERSION: ${APP_VERSION:-local}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      BUILD_DATE: ${BUILD_DATE:-unknown}
+
+services:
+  edge:
+    <<: *hardened
+    image: nginx:1.27-alpine
+    depends_on:
+      admin: { condition: service_healthy }
+      portal: { condition: service_healthy }
+      api: { condition: service_healthy }
+    ports:
+      - '${HTTP_BIND:-0.0.0.0}:80:80'
+      - '${HTTPS_BIND:-0.0.0.0}:443:443'
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN:?set PORTAL_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      ORIGIN_ACCESS: ${ORIGIN_ACCESS:-allow-all}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/conf.d
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      # Cloudflare ranges: refreshed on the VPS by scripts/update-cloudflare-ips.sh.
+      - ${CLOUDFLARE_IPS_DIR:-./deploy/nginx/cloudflare}:/etc/nginx/cloudflare:ro
+      - ${TLS_DIR:-/etc/helmet-platform/tls}:/etc/nginx/tls:ro
+      - ${DATA_ROOT:-/srv/helmet-platform}/acme:/var/www/acme:ro
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, CHOWN, SETUID, SETGID]
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/__edge_health']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 128M }
+    networks: [edge]
+
+  admin:
+    <<: *hardened
+    image: ${IMAGE_PREFIX:-helmet}/admin:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: docker/spa.Dockerfile
+      args:
+        APP: admin
+        APP_VERSION: ${APP_VERSION:-local}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    environment:
+      # Admin loads Inter from Google Fonts.
+      CSP_POLICY: "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    read_only: true
+    # nginx-unprivileged runs as UID 101: its writable paths are tmpfs owned by that user.
+    tmpfs:
+      [
+        '/tmp:uid=101,gid=101',
+        '/etc/nginx/conf.d:uid=101,gid=101',
+        '/var/cache/nginx:uid=101,gid=101',
+      ]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 64M }
+    networks: [edge]
+
+  portal:
+    <<: *hardened
+    image: ${IMAGE_PREFIX:-helmet}/portal:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: docker/spa.Dockerfile
+      args:
+        APP: portal
+        APP_VERSION: ${APP_VERSION:-local}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        VITE_EMERGENCY_NUMBER: ${EMERGENCY_NUMBER:-112}
+    read_only: true
+    # nginx-unprivileged runs as UID 101: its writable paths are tmpfs owned by that user.
+    tmpfs:
+      [
+        '/tmp:uid=101,gid=101',
+        '/etc/nginx/conf.d:uid=101,gid=101',
+        '/var/cache/nginx:uid=101,gid=101',
+      ]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 64M }
+    networks: [edge]
+
+  api:
+    <<: [*hardened, *app-image]
+    init: true
+    env_file: ${APP_ENV_FILE:-/etc/helmet-platform/app.env}
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      FILE_STORAGE_DRIVER: local
+      FILE_STORAGE_LOCAL_DIR: /app/storage
+      RUN_MIGRATIONS_ON_START: 'false'
+      # Requests reach the API only from the edge / SPA proxies on the private edge network.
+      TRUST_PROXY: ${EDGE_SUBNET:-172.30.0.0/24}
+      TRUST_CLOUDFLARE: 'false'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - ${DATA_ROOT:-/srv/helmet-platform}/uploads:/app/storage
+    read_only: true
+    tmpfs: ['/tmp:size=64m']
+    cap_drop: [ALL]
+    deploy:
+      replicas: ${API_REPLICAS:-1}
+      resources:
+        limits: { cpus: '1.5', memory: 768M }
+    networks: [edge, backend]
+
+  worker:
+    <<: [*hardened, *app-image]
+    init: true
+    command: ['node', 'dist/worker.js']
+    env_file: ${APP_ENV_FILE:-/etc/helmet-platform/app.env}
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS_ON_START: 'false'
+      TRUST_PROXY: ${EDGE_SUBNET:-172.30.0.0/24}
+      TRUST_CLOUDFLARE: 'false'
+    depends_on:
+      api: { condition: service_healthy }
+    read_only: true
+    tmpfs: ['/tmp:size=16m']
+    cap_drop: [ALL]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const s=require('fs').statSync('/tmp/helmet-worker-heartbeat');process.exit(Date.now()-s.mtimeMs<120000?0:1)"
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 384M }
+    networks: [backend]
+
+  postgres:
+    <<: *hardened
+    image: postgres:16-alpine
+    env_file: ${POSTGRES_ENV_FILE:-/etc/helmet-platform/postgres.env}
+    # Conservative defaults for a 4 GB VPS; tune with docs/VPS-DEPLOYMENT.md#postgresql-tuning.
+    command:
+      - postgres
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-100}
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=${PG_SLOW_QUERY_MS:-1000}
+      # Slow-query lines without bind parameters (values can be personal data).
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1s
+      - -c
+      - idle_in_transaction_session_timeout=60000
+    shm_size: 256m
+    volumes:
+      - ${DATA_ROOT:-/srv/helmet-platform}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { memory: 1536M }
+    networks: [backend]
+
+  redis:
+    <<: *hardened
+    image: redis:7-alpine
+    # Ephemeral infrastructure (rate limits, caches, detection windows) — PostgreSQL holds all
+    # business state. AOF keeps counters across restarts; noeviction never silently drops
+    # security keys (lockouts, revocations): when full, writes fail → auth fails closed (503).
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --appendfsync
+      - everysec
+      - --save
+      - ''
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - noeviction
+      - --bind
+      - 0.0.0.0
+      - --rename-command
+      - FLUSHALL
+      - ''
+      - --rename-command
+      - CONFIG
+      - ''
+    volumes:
+      - ${DATA_ROOT:-/srv/helmet-platform}/redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 384M }
+    networks: [backend]
+
+  # ── Optional: ClamAV for warranty PDFs (MALWARE_SCAN_ENABLED=true). Needs ~1.2 GB RAM. ──
+  clamav:
+    <<: *hardened
+    profiles: [clamav]
+    image: clamav/clamav:1.4
+    volumes:
+      - ${DATA_ROOT:-/srv/helmet-platform}/clamav:/var/lib/clamav
+    deploy:
+      resources:
+        limits: { memory: 1536M }
+    # backend for clamd (3310); egress so freshclam can download signature updates.
+    networks: [backend, egress]
+
+  # ── Optional monitoring (docs/MONITORING.md). Prometheus/Alertmanager bind to localhost
+  #    only — reach them through an SSH tunnel. External uptime checks stay off-box. ──
+  prometheus:
+    <<: *hardened
+    profiles: [monitoring]
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROM_RETENTION_SIZE:-2GB}
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${MONITORING_SECRETS_DIR:-/etc/helmet-platform/monitoring}:/etc/prometheus/secrets:ro
+      - ${DATA_ROOT:-/srv/helmet-platform}/prometheus:/prometheus
+    ports: ['127.0.0.1:9090:9090']
+    deploy:
+      resources:
+        limits: { memory: 512M }
+    networks: [backend, monitoring]
+
+  alertmanager:
+    <<: *hardened
+    profiles: [monitoring]
+    image: prom/alertmanager:v0.27.0
+    command: [--config.file=/etc/alertmanager/alertmanager.yml, --storage.path=/alertmanager]
+    volumes:
+      - ${ALERTMANAGER_CONFIG:-./deploy/monitoring/alertmanager.yml}:/etc/alertmanager/alertmanager.yml:ro
+      - ${DATA_ROOT:-/srv/helmet-platform}/alertmanager:/alertmanager
+    ports: ['127.0.0.1:9093:9093']
+    deploy:
+      resources:
+        limits: { memory: 128M }
+    # egress to deliver notifications (webhook / email).
+    networks: [monitoring, egress]
+
+  node-exporter:
+    <<: *hardened
+    profiles: [monitoring]
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ${DATA_ROOT:-/srv/helmet-platform}/node-exporter-textfile:/textfile:ro
+    deploy:
+      resources:
+        limits: { memory: 64M }
+    networks: [monitoring]
+
+  postgres-exporter:
+    <<: *hardened
+    profiles: [monitoring]
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    env_file: ${MONITORING_ENV_FILE:-/etc/helmet-platform/monitoring.env}
+    deploy:
+      resources:
+        limits: { memory: 64M }
+    networks: [backend, monitoring]
+
+  redis-exporter:
+    <<: *hardened
+    profiles: [monitoring]
+    image: oliver006/redis_exporter:v1.62.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    deploy:
+      resources:
+        limits: { memory: 64M }
+    networks: [backend, monitoring]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.30.0.0/24}
+  # No route to the internet and no published ports: API, worker, PostgreSQL, Redis only.
+  backend:
+    internal: true
+  monitoring:
+    internal: true
+  # Outbound internet for services that need it (ClamAV updates, alert notifications).
+  egress: {}

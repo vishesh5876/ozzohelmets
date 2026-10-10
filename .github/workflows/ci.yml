@@ -1,0 +1,144 @@
+# Pull-request gates. Nothing here deploys: production deployment stays a manual, approved
+# `scripts/deploy-vps.sh` run on the VPS (docs/VPS-DEPLOYMENT.md §9).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  quality:
+    name: Format · lint · typecheck · unit · build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  integration:
+    name: Integration tests + migration verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: helmet, POSTGRES_PASSWORD: helmet, POSTGRES_DB: postgres }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U helmet" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      SHADOW: postgresql://helmet:helmet@localhost:5432/shadow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @helmet/types build
+      - name: Fresh migration + schema drift check
+        working-directory: apps/api
+        run: |
+          psql postgresql://helmet:helmet@localhost:5432/postgres -c 'CREATE DATABASE shadow' -c 'CREATE DATABASE fresh'
+          DATABASE_URL=postgresql://helmet:helmet@localhost:5432/fresh npx prisma migrate deploy
+          npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW" --exit-code
+      - name: Integration tests (real PostgreSQL + Redis)
+        run: pnpm test:e2e
+
+  browser:
+    name: Playwright journeys
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          {
+            POSTGRES_USER: helmet,
+            POSTGRES_PASSWORD: helmet-dev-only,
+            POSTGRES_DB: helmet_platform,
+          }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U helmet" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: cp .env.example .env
+      - run: pnpm prisma
+      - run: pnpm --filter @helmet/api build
+      - run: pnpm --filter @helmet/e2e exec playwright install --with-deps chromium
+      - name: Start API and frontends
+        run: |
+          (cd apps/api && THROTTLE_AUTH_LIMIT=500 npx dotenv -e ../../.env -- node dist/main.js > /tmp/api.log 2>&1 &)
+          (pnpm --filter @helmet/admin dev > /tmp/admin.log 2>&1 &)
+          (pnpm --filter @helmet/portal dev > /tmp/portal.log 2>&1 &)
+          npx wait-on -t 120000 http://localhost:4000/api/v1/health/ready http://localhost:3000 http://localhost:3001
+      - run: pnpm test:e2e:browser
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: e2e/test-results
+          retention-days: 7
+
+  docker:
+    name: Docker images · production compose · nginx · scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build images (not pushed)
+        run: |
+          docker build -f apps/api/Dockerfile -t helmet/api:ci --build-arg APP_VERSION=ci --build-arg GIT_SHA=${{ github.sha }} .
+          docker build -f docker/spa.Dockerfile --build-arg APP=admin -t helmet/admin:ci .
+          docker build -f docker/spa.Dockerfile --build-arg APP=portal -t helmet/portal:ci .
+          docker images | grep helmet
+      - name: Validate production compose with example env files
+        run: |
+          mkdir -p /tmp/cfg
+          sed 's|/etc/helmet-platform/|/tmp/cfg/|g' deploy/env/compose.env.example > /tmp/cfg/compose.env
+          for f in app postgres monitoring; do cp deploy/env/$f.env.example /tmp/cfg/$f.env; done
+          docker compose -f docker-compose.prod.yml --env-file /tmp/cfg/compose.env config -q
+      - name: Edge nginx configuration test
+        run: |
+          mkdir -p /tmp/tls && openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj /CN=test \
+            -keyout /tmp/tls/origin.key -out /tmp/tls/origin.crt
+          docker run --rm --add-host api:127.0.0.1 --add-host admin:127.0.0.1 --add-host portal:127.0.0.1 \
+            -e ADMIN_DOMAIN=admin.test -e PORTAL_DOMAIN=safe.test -e API_DOMAIN=api.test -e ORIGIN_ACCESS=cloudflare-only \
+            -v $PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v $PWD/deploy/nginx/templates:/etc/nginx/templates:ro -v $PWD/deploy/nginx/snippets:/etc/nginx/snippets:ro \
+            -v $PWD/deploy/nginx/cloudflare:/etc/nginx/cloudflare:ro -v /tmp/tls:/etc/nginx/tls:ro \
+            --entrypoint sh nginx:1.27-alpine -c '/docker-entrypoint.d/20-envsubst-on-templates.sh && sed -i "s/ resolve;/;/" /etc/nginx/conf.d/edge.conf && nginx -t'
+      - name: Prometheus rules
+        run: docker run --rm --entrypoint promtool -v $PWD/deploy/monitoring:/m prom/prometheus:v2.55.1 check rules /m/alerts.yml
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh

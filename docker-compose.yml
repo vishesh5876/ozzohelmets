@@ -53,6 +53,8 @@ services:
       TRUST_PROXY: '1'
       LOG_LEVEL: ${LOG_LEVEL:-info}
       FILE_STORAGE_LOCAL_DIR: /app/storage
+      # Dev convenience only; production runs `prisma migrate deploy` as an explicit step.
+      RUN_MIGRATIONS_ON_START: 'true'
     volumes:
       - api-storage:/app/storage
     ports:
@@ -100,7 +102,7 @@ services:
       args: { APP: admin }
     restart: unless-stopped
     ports:
-      - '${ADMIN_PORT:-3000}:80'
+      - '${ADMIN_PORT:-3000}:8080'
     depends_on:
       api: { condition: service_healthy }
 
@@ -112,7 +114,7 @@ services:
       args: { APP: portal }
     restart: unless-stopped
     ports:
-      - '${PORTAL_PORT:-3001}:80'
+      - '${PORTAL_PORT:-3001}:8080'
     depends_on:
       api: { condition: service_healthy }
 

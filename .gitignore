@@ -20,3 +20,7 @@ storage/
 apps/api/storage/
 e2e/test-results/
 e2e/playwright-report/
+
+# Synthetic load-test data (generated)
+loadtest/seed-data.json
+loadtest/results/

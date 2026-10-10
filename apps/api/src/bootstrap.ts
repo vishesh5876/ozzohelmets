@@ -24,8 +24,13 @@ export function configureApp(app: NestExpressApplication): AppConfigService {
     helmet({
       contentSecurityPolicy: config.get('SWAGGER_ENABLED')
         ? false // Swagger UI needs inline scripts; the API itself serves no HTML otherwise.
-        : { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+        : {
+            useDefaults: false,
+            directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+          },
       crossOriginResourcePolicy: { policy: 'same-site' },
+      // HSTS is set once, at the edge proxy where TLS terminates (docs/VPS-DEPLOYMENT.md).
+      strictTransportSecurity: false,
     }),
   );
   app.use(cookieParser());

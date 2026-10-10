@@ -247,7 +247,7 @@ function render(token: string, result: Lookup | null): void {
         { class: 'card' },
         h('p', { class: 'lead' }, 'Loading emergency information…'),
         h('div', { class: 'skeleton' }),
-        h('div', { class: 'skeleton', style: 'width:60%' }),
+        h('div', { class: 'skeleton skeleton-short' }),
       ),
     );
   } else if (result.kind === 'ok') {
@@ -273,9 +273,8 @@ function render(token: string, result: Lookup | null): void {
             h(
               'a',
               {
-                class: 'btn btn-primary',
+                class: 'btn btn-primary mt-20',
                 href: `/activate?t=${encodeURIComponent(token)}`,
-                style: 'margin-top:20px',
               },
               'Activate helmet',
             ),
@@ -327,11 +326,7 @@ function render(token: string, result: Lookup | null): void {
       ),
     );
   } else {
-    const retry = h(
-      'button',
-      { class: 'btn btn-secondary', type: 'button', style: 'margin-top:16px' },
-      'Try again',
-    );
+    const retry = h('button', { class: 'btn btn-secondary mt-16', type: 'button' }, 'Try again');
     retry.addEventListener('click', () => void start(token));
     main.append(
       h(
@@ -355,7 +350,7 @@ function render(token: string, result: Lookup | null): void {
 function verifyLink(token: string): HTMLElement {
   return h(
     'p',
-    { class: 'muted no-print', style: 'text-align:center;margin-top:8px' },
+    { class: 'muted no-print verify-link' },
     h('a', { href: `/verify/${encodeURIComponent(token)}` }, 'Verify product identity'),
   );
 }

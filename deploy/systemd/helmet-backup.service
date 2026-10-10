@@ -1,0 +1,18 @@
+# Daily Helmet Platform backup. Install:
+#   sudo cp deploy/systemd/helmet-backup.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now helmet-backup.timer
+[Unit]
+Description=Helmet Platform backup (PostgreSQL + uploads)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=helmetdeploy
+Group=helmetdeploy
+WorkingDirectory=/opt/helmet-platform
+ExecStart=/opt/helmet-platform/scripts/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Exit code 2 = local backup OK, offsite copy failed (still reported as a failure to systemd).

@@ -1,0 +1,17 @@
+# Example Alertmanager config. Copy to /etc/helmet-platform/alertmanager.yml, set a real
+# receiver (webhook to your chat/on-call tool, or SMTP email) and point ALERTMANAGER_CONFIG at it.
+route:
+  receiver: ops
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: ops
+      repeat_interval: 1h
+receivers:
+  - name: ops
+    webhook_configs:
+      - url: http://127.0.0.1:9/replace-with-your-webhook
+        send_resolved: true
