@@ -51,4 +51,7 @@ export const TEST_ENV: Record<string, string> = {
   RISK_IP_CHURN_15MIN: '6',
   RISK_VERIFY_DAILY: '10',
   RISK_MIN_SCANS_FOR_EVALUATION: '5',
+  METRICS_TOKEN: 'test-metrics-token-0123456789abcdef',
+  APP_VERSION: '1.0.0-test',
+  GIT_SHA: 'abc1234',
 };

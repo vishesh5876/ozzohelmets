@@ -33,6 +33,7 @@ import { buildPublicProfile } from '../domain/public-profile';
 import { EmergencyContactsService } from '../contacts/emergency-contacts.service';
 import { EmergencyVisibilityService } from '../visibility/emergency-visibility.service';
 import { PROFILE_CIPHER } from '../emergency.tokens';
+import { metrics } from '../../../infrastructure/metrics/metrics';
 import type { UpdateEmergencyProfileDto } from './emergency-profile.dto';
 
 const MEDICAL_LIST_FIELDS = ['allergies', 'medicalConditions', 'medications'] as const;
@@ -427,6 +428,7 @@ export class EmergencyProfileService {
     const image = await processProfilePhoto(file, this.config.get('PROFILE_PHOTO_MAX_BYTES'));
     const key = `profile-photos/${uuidv7()}.webp`;
     await this.storage.put(key, image.data, image.contentType);
+    metrics.uploads.inc({ kind: 'profile_photo', result: 'stored' });
 
     let previousKey: string | null = null;
     try {

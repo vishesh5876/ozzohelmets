@@ -260,6 +260,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           >
             <LogOut className="h-4 w-4" aria-hidden /> Sign out
           </button>
+          <p className="mt-3 text-[11px] text-mute" data-testid="app-version">
+            Version {import.meta.env.VITE_APP_VERSION ?? 'dev'} · Commit{' '}
+            {(import.meta.env.VITE_GIT_SHA ?? 'local').slice(0, 7)}
+          </p>
         </div>
       )}
     </div>

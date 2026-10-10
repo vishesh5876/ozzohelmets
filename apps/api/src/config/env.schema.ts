@@ -126,6 +126,8 @@ export const envSchema = z
     RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(60),
     /** In production, refuse to start when no proxy is trusted (set false only for direct exposure). */
     REQUIRE_TRUSTED_PROXY_IN_PRODUCTION: bool.default('true'),
+    /** Swagger in production only with this explicit opt-in (put it behind auth / IP allow-list). */
+    ALLOW_SWAGGER_IN_PRODUCTION: bool.default('false'),
     /** Sensitive actions (transfer, stolen, retire, …) require a password re-check this recent. */
     RECENT_AUTH_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(300),
     TRANSFER_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
@@ -157,6 +159,21 @@ export const envSchema = z
 
     FILE_STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
     FILE_STORAGE_LOCAL_DIR: z.string().min(1).default('./storage'),
+    /** Phase 7: optional ClamAV (clamd TCP) scanning of stored-as-uploaded documents (PDFs). */
+    MALWARE_SCAN_ENABLED: bool.default('false'),
+    CLAMAV_HOST: z.string().min(1).default('clamav'),
+    CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+    MALWARE_SCAN_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
+    /** Bearer token for GET /api/v1/internal/metrics (Prometheus). Unset = endpoint disabled (404). */
+    METRICS_TOKEN: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined))
+      .pipe(z.string().min(24, 'METRICS_TOKEN must be at least 24 characters').optional()),
+    /** Build metadata baked into the image (shown to admins only). */
+    APP_VERSION: z.string().max(40).default('0.0.0-dev'),
+    GIT_SHA: z.string().max(40).default('unknown'),
+    BUILD_DATE: z.string().max(40).default('unknown'),
     PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(5_242_880),
 
     PUBLIC_CACHE_TTL_SECONDS: z.coerce.number().int().min(5).max(60).default(30),
@@ -218,6 +235,75 @@ export const envSchema = z
         message: 'must be true in production',
       });
     }
+    // Phase 7 guards ─────────────────────────────────────────────────────────────────────────
+    const issue = (path: string, message: string) =>
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+    // Database password: never empty, default or short.
+    let dbPassword = '';
+    try {
+      dbPassword = decodeURIComponent(new URL(env.DATABASE_URL).password);
+    } catch {
+      /* URL validity is checked by the field schema */
+    }
+    const weakPasswords = ['postgres', 'password', 'helmet', 'admin', 'changeme', 'secret', 'root'];
+    if (
+      dbPassword.length < 16 ||
+      weakPasswords.includes(dbPassword.toLowerCase()) ||
+      /dev-only|changeme|example/i.test(dbPassword)
+    )
+      issue(
+        'DATABASE_URL',
+        'database password must be a strong secret (16+ characters, not a default)',
+      );
+
+    // CORS: explicit HTTPS origins only (credentials are allowed, so never "*").
+    if (env.CORS_ORIGINS.length === 0) issue('CORS_ORIGINS', 'set the exact admin/portal origins');
+    for (const origin of env.CORS_ORIGINS) {
+      if (origin === '*' || origin.includes('*'))
+        issue('CORS_ORIGINS', 'wildcard origins are not allowed with credentials');
+      else if (!/^https:\/\/[^/]+$/.test(origin))
+        issue('CORS_ORIGINS', `origin "${origin}" must be https://host (no path)`);
+    }
+
+    // The QR base URL is printed on labels: HTTPS, real host.
+    try {
+      const u = new URL(env.PUBLIC_EMERGENCY_BASE_URL);
+      if (u.protocol !== 'https:')
+        issue('PUBLIC_EMERGENCY_BASE_URL', 'must use https:// in production');
+      if (/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(u.hostname))
+        issue('PUBLIC_EMERGENCY_BASE_URL', 'must be the public QR domain, not localhost');
+    } catch {
+      /* checked by the field schema */
+    }
+
+    if (env.SWAGGER_ENABLED && !env.ALLOW_SWAGGER_IN_PRODUCTION)
+      issue(
+        'SWAGGER_ENABLED',
+        'Swagger is disabled in production; set ALLOW_SWAGGER_IN_PRODUCTION=true only temporarily and behind auth/IP restriction',
+      );
+
+    // One secret per function: reuse would let a leak in one area unlock another.
+    const named: [string, string | undefined][] = [
+      ['JWT_ACCESS_SECRET', env.JWT_ACCESS_SECRET],
+      ['JWT_CUSTOMER_ACCESS_SECRET', env.JWT_CUSTOMER_ACCESS_SECRET],
+      ['CUSTOMER_CREDENTIAL_PEPPER', env.CUSTOMER_CREDENTIAL_PEPPER],
+      ['PIN_HASH_PEPPER', env.PIN_HASH_PEPPER],
+      ['IP_HASH_SECRET', env.IP_HASH_SECRET],
+      ['METRICS_TOKEN', env.METRICS_TOKEN],
+    ];
+    const seen = new Map<string, string>();
+    for (const [name, value] of named) {
+      if (!value) continue;
+      const prev = seen.get(value);
+      if (prev && !(prev === 'JWT_ACCESS_SECRET' && name === 'JWT_CUSTOMER_ACCESS_SECRET'))
+        issue(name, `must differ from ${prev}`);
+      seen.set(value, name);
+    }
+    const escrowKeys = new Set(env.PIN_ESCROW_KEYS.map((k) => k.key.toString('base64')));
+    if (env.DATA_ENCRYPTION_KEYS.some((k) => escrowKeys.has(k.key.toString('base64'))))
+      issue('DATA_ENCRYPTION_KEYS', 'must not reuse a PIN_ESCROW_KEYS key');
+
     // Client-IP identity (Phase 6): behind a reverse proxy, an untrusted proxy makes every visitor
     // share one IP (one rate-limit budget, one "visitor" in analytics); trusting every hop lets
     // clients spoof X-Forwarded-For. Require an explicit hop count / CIDR list, or Cloudflare.

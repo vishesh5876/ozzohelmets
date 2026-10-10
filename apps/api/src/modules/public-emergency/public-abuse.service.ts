@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { AppConfigService } from '../../config/app-config.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
+import { metrics } from '../../infrastructure/metrics/metrics';
+import { isRedisUnavailableError } from '../../infrastructure/redis/redis-errors';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
 import { invalidTokenCounterKey, utcDay } from '../analytics/analytics-aggregation.service';
 import { RiskAlertsService, sourceRefFor } from '../analytics/risk-alerts.service';
@@ -25,6 +27,9 @@ export type PublicAccessDecision = { allowed: true } | { allowed: false; retryAf
  *   `SYSTEM_RATE_LIMIT_SPIKE` alert per hour.
  * No CAPTCHA. IPs are only seen as keyed HMACs; alerts carry an opaque source reference, never the
  * IP, the IP hash or attempted tokens.
+ *
+ * Redis outage (Phase 7): every check here **fails open** — emergency access is the priority and
+ * 131-bit tokens make enumeration impractical even unthrottled. Non-Redis errors still propagate.
  */
 @Injectable()
 export class PublicAbuseService {
@@ -65,13 +70,19 @@ export class PublicAbuseService {
   /** True when this IP produced too many misses or is scraping valid helmets. */
   async isFlagged(ipHash: string | null): Promise<boolean> {
     if (!ipHash) return false;
-    if ((await this.redis.exists(`scrape-flag:ip:${ipHash}`)) === 1) return true;
-    const state = await this.limiter.peek(`public-miss:ip:${ipHash}`, await this.missLimit());
-    return !state.allowed;
+    return this.failOpen(false, async () => {
+      if ((await this.redis.exists(`scrape-flag:ip:${ipHash}`)) === 1) return true;
+      const state = await this.limiter.peek(`public-miss:ip:${ipHash}`, await this.missLimit());
+      return !state.allowed;
+    });
   }
 
   /** Records a malformed/unknown token lookup (per IP, globally and in the daily counter). */
-  async recordMiss(ipHash: string | null): Promise<void> {
+  recordMiss(ipHash: string | null): Promise<void> {
+    return this.failOpen(undefined, () => this.recordMissInner(ipHash));
+  }
+
+  private async recordMissInner(ipHash: string | null): Promise<void> {
     const window = this.config.get('PUBLIC_MISS_WINDOW_SECONDS');
     const day = invalidTokenCounterKey(utcDay(new Date()));
     const [, , ip] = await Promise.all([
@@ -110,8 +121,12 @@ export class PublicAbuseService {
    * Records a lookup of a valid helmet for scraping detection. Never blocks the current request;
    * at most a few Redis operations (PFADD, and PFCOUNT only when the set changed).
    */
-  async recordValidAccess(ipHash: string | null, helmetId: string): Promise<void> {
-    if (!ipHash) return;
+  recordValidAccess(ipHash: string | null, helmetId: string): Promise<void> {
+    if (!ipHash) return Promise.resolve();
+    return this.failOpen(undefined, () => this.recordValidAccessInner(ipHash, helmetId));
+  }
+
+  private async recordValidAccessInner(ipHash: string, helmetId: string): Promise<void> {
     const window = this.config.get('VALID_TOKEN_SCRAPE_WINDOW_SECONDS');
     const key = `scrape:ip:${ipHash}`;
     const added = await this.redis.pfadd(key, helmetId);
@@ -144,8 +159,14 @@ export class PublicAbuseService {
    * A flagged IP asking for a helmet that is not in the public cache: allowed within a small
    * per-window budget, unless the source crossed the scraping block threshold.
    */
-  async allowUncached(ipHash: string | null): Promise<PublicAccessDecision> {
-    if (!ipHash) return { allowed: true };
+  allowUncached(ipHash: string | null): Promise<PublicAccessDecision> {
+    if (!ipHash) return Promise.resolve({ allowed: true });
+    return this.failOpen<PublicAccessDecision>({ allowed: true }, () =>
+      this.allowUncachedInner(ipHash),
+    );
+  }
+
+  private async allowUncachedInner(ipHash: string): Promise<PublicAccessDecision> {
     const window = this.config.get('PUBLIC_MISS_WINDOW_SECONDS');
     if ((await this.redis.exists(`scrape-block:ip:${ipHash}`)) === 1)
       return {
@@ -158,6 +179,23 @@ export class PublicAbuseService {
       window,
     );
     return res.allowed ? { allowed: true } : { allowed: false, retryAfter: res.retryAfter };
+  }
+
+  private lastOutageLog = 0;
+
+  /** Runs a Redis-backed check; if Redis is unreachable, returns `fallback` (fail open). */
+  private async failOpen<T>(fallback: T, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isRedisUnavailableError(err)) throw err;
+      metrics.dependencyUnavailable.inc({ dependency: 'redis', handling: 'public_fail_open' });
+      if (Date.now() - this.lastOutageLog > 30_000) {
+        this.lastOutageLog = Date.now();
+        this.logger.warn('Redis unavailable: public abuse controls bypassed (failing open)');
+      }
+      return fallback;
+    }
   }
 
   /** True the first time per TTL (alert gating so the database isn't written per request). */

@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppConfigService } from './config/app-config.service';
 import { AllExceptionsFilter } from './common/http/all-exceptions.filter';
+import { httpMetricsMiddleware } from './infrastructure/metrics/http-metrics.middleware';
 
 /**
  * Applies the HTTP pipeline shared by the real server and e2e tests:
@@ -15,6 +16,7 @@ export function configureApp(app: NestExpressApplication): AppConfigService {
 
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
+  app.use(httpMetricsMiddleware);
   app.setGlobalPrefix('api', { exclude: [] });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 

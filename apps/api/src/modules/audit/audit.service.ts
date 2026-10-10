@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { metrics } from '../../infrastructure/metrics/metrics';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import type { AuditAction } from './audit-actions';
 
@@ -37,6 +38,8 @@ export class AuditService {
         ipHash: entry.ipHash ?? null,
       },
     });
+    // Fixed action names only (low cardinality); counted after the insert was accepted.
+    metrics.auditEvents.inc({ action: entry.action });
   }
 
   /** Best-effort variant for paths where an audit failure must not fail the request. */

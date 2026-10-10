@@ -5,6 +5,9 @@ import request from 'supertest';
 import type { AdminRole } from '@helmet/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
+import { ConfigService } from '@nestjs/config';
+import { AppConfigService } from '../src/config/app-config.service';
+import { validateEnv } from '../src/config/env.schema';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../src/infrastructure/redis/redis.constants';
 import { HashingService } from '../src/security/hashing.service';
@@ -17,8 +20,19 @@ export interface TestContext {
   http: () => ReturnType<typeof request>;
 }
 
-export async function createTestApp(): Promise<TestContext> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+/**
+ * @param overrides environment overrides for this app instance only (e.g. a dead REDIS_URL for
+ * outage tests, a rotated keyring). Validated with the same schema as production.
+ */
+export async function createTestApp(overrides?: Record<string, string>): Promise<TestContext> {
+  let builder = Test.createTestingModule({ imports: [AppModule] });
+  if (overrides)
+    builder = builder
+      .overrideProvider(AppConfigService)
+      .useValue(
+        new AppConfigService(new ConfigService(validateEnv({ ...process.env, ...overrides }))),
+      );
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
   configureApp(app);
   await app.init();
@@ -38,7 +52,7 @@ export async function resetState(ctx: TestContext): Promise<void> {
   if (!dbName.endsWith('_test'))
     throw new Error(`Refusing to truncate non-test database "${dbName}"`);
   await ctx.prisma.$executeRawUnsafe(
-    'TRUNCATE risk_alerts, platform_daily_stats, worker_job_runs, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_scans, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
+    'TRUNCATE risk_alerts, platform_daily_stats, worker_job_runs, worker_heartbeats, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_scans, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
   );
   await ctx.redis.flushdb();
 }

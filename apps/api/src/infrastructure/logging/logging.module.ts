@@ -29,7 +29,38 @@ export const REDACT_PATHS = [
   '*.medicalConditions',
   '*.medications',
   '*.emergencyNotes',
+  // Phase 7 audit additions.
+  'req.headers["x-recent-auth"]',
+  '*.recentAuthToken',
+  '*.transferCode',
+  '*.credential',
+  '*.credentialHash',
+  '*.recoveryCodeHash',
+  '*.dateOfBirth',
+  '*.phone',
+  '*.alternatePhone',
+  '*.contacts',
+  '*.pinCiphertext',
+  '*.secret',
+  '*.DATABASE_URL',
 ];
+
+/**
+ * Masks capability values in paths: the public QR token grants access to the emergency page,
+ * so it is logged as `:token`; query strings are dropped entirely.
+ */
+export function safeLogUrl(url: string): string {
+  return url
+    .split('?')[0]!
+    .replace(/\/(public\/emergency|public\/verify|e|verify)\/[A-Za-z0-9_-]{6,64}/g, '/$1/:token');
+}
+
+const QUIET_PATHS = new Set([
+  '/api/v1/health',
+  '/api/v1/health/live',
+  '/api/v1/health/ready',
+  '/api/v1/internal/metrics',
+]);
 
 /** pino-pretty is a dev dependency; production images run in development mode without it. */
 function hasPrettyPrinter(): boolean {
@@ -60,12 +91,14 @@ function hasPrettyPrinter(): boolean {
             req: (req: { id: string; method: string; url: string }) => ({
               id: req.id,
               method: req.method,
-              // Strip query strings; public tokens in paths are acceptable (non-secret identifiers).
-              url: req.url.split('?')[0],
+              url: safeLogUrl(req.url),
             }),
             res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
           },
-          autoLogging: { ignore: (req: IncomingMessage) => req.url === '/api/v1/health' },
+          // Probes and scrapes would dominate the logs.
+          autoLogging: {
+            ignore: (req: IncomingMessage) => QUIET_PATHS.has((req.url ?? '').split('?')[0]!),
+          },
           transport:
             config.get('NODE_ENV') === 'development' && hasPrettyPrinter()
               ? {

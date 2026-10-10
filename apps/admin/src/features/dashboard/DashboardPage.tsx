@@ -20,6 +20,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { formatDate, formatNumber } from '../../lib/format';
 import { OperationsPanel } from './OperationsPanel';
+import { SystemStatusCard } from './SystemStatusCard';
 
 export function DashboardPage() {
   const { admin } = useAuth();
@@ -46,6 +47,7 @@ export function DashboardPage() {
       {data && (
         <div className="flex flex-col gap-6">
           <OperationsPanel />
+          <SystemStatusCard />
           <h2 className="text-display-sm font-bold">Manufacturing</h2>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard label="Helmets" value={formatNumber(data.helmets)} inverted />

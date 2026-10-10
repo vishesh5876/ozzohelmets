@@ -52,6 +52,10 @@ export class RetentionService {
         },
       })
     ).count;
+    // Heartbeats of workers gone for a week (restarts create a new row each time).
+    await this.prisma.workerHeartbeat.deleteMany({
+      where: { lastBeatAt: { lt: new Date(now.getTime() - 7 * DAY_MS) } },
+    });
     const aggregateDays = this.config.get('ANALYTICS_AGGREGATE_RETENTION_DAYS');
     const aggregatesDeleted =
       aggregateDays > 0

@@ -1068,3 +1068,16 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+/// Phase 7: one row per worker process, refreshed every 30 s. Read by metrics and the admin
+/// system-status card to detect a stopped or stuck worker. Old rows are pruned by retention.
+model WorkerHeartbeat {
+  workerId   String   @id @map("worker_id") @db.VarChar(120)
+  hostname   String   @db.VarChar(100)
+  version    String   @db.VarChar(40)
+  startedAt  DateTime @map("started_at") @db.Timestamptz(3)
+  lastBeatAt DateTime @map("last_beat_at") @db.Timestamptz(3)
+
+  @@index([lastBeatAt])
+  @@map("worker_heartbeats")
+}

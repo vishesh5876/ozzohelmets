@@ -87,7 +87,10 @@ export class AnalyticsAggregationService {
   }
 
   async aggregatePlatformDay(day: string, isToday: boolean): Promise<void> {
-    const invalid = Number((await this.redis.get(invalidTokenCounterKey(day))) ?? 0);
+    // Redis down: treat as 0; GREATEST() below keeps any value already recorded for the day.
+    const invalid = Number(
+      (await this.redis.get(invalidTokenCounterKey(day)).catch(() => null)) ?? 0,
+    );
     await this.prisma.$executeRaw`
       WITH r AS (
         SELECT (${day}::date::timestamp AT TIME ZONE 'UTC') AS s,

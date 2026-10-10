@@ -274,3 +274,29 @@ export const RISK_ALERT_LABELS: Record<RiskAlertType, string> = {
 /** Statement shown wherever risk is displayed. */
 export const RISK_DISCLAIMER =
   'Suspicious scan activity does not prove a physical helmet is counterfeit. Review recommended.';
+
+/** Phase 7: operations status for admins (no secrets, no configuration values). */
+export interface SystemJobStatusDto {
+  job: 'analytics.aggregate' | 'risk.evaluate' | 'retention.cleanup';
+  expectedIntervalMinutes: number;
+  lastRunAt: IsoDateString | null;
+  lastStatus: 'RUNNING' | 'SUCCEEDED' | 'FAILED' | null;
+  lastSuccessAt: IsoDateString | null;
+  lastDurationMs: number | null;
+  failuresLast24h: number;
+  /** No success within 3× the expected interval. */
+  stale: boolean;
+}
+
+export interface SystemStatusDto {
+  api: { version: string; gitSha: string; buildDate: string; uptimeSeconds: number };
+  worker: {
+    /** Workers with a heartbeat in the last 90 s. */
+    alive: number;
+    lastHeartbeatAt: IsoDateString | null;
+    version: string | null;
+  };
+  jobs: SystemJobStatusDto[];
+  dependencies: { database: 'up' | 'down'; redis: 'up' | 'down' };
+  malwareScanning: boolean;
+}

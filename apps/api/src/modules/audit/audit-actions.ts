@@ -51,6 +51,8 @@ export const AuditAction = {
   RISK_ALERT_DISMISSED: 'risk_alert.dismissed',
   RISK_ALERT_ASSIGNED: 'risk_alert.assigned',
   QR_INTEGRITY_CHANGED: 'helmet.qr_integrity.changed',
+  // Phase 7: offline maintenance.
+  ENCRYPTION_KEYS_ROTATED: 'system.encryption_keys_rotated',
   HELMET_ACTIVATED: 'helmet.activated',
   ACTIVATION_PIN_CONSUMED: 'helmet.activation_pin.consumed',
   ACTIVATION_FAILED: 'helmet.activation.failed',

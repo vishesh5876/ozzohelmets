@@ -1,6 +1,8 @@
 import { writeFile } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import { Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from '../config/app-config.service';
+import { PrismaService } from '../infrastructure/prisma/prisma.service';
 import { AnalyticsAggregationService } from '../modules/analytics/analytics-aggregation.service';
 import {
   type JobName,
@@ -30,6 +32,8 @@ export class WorkerScheduler {
   private readonly timers: NodeJS.Timeout[] = [];
   private stopping = false;
   private readonly inFlight = new Set<Promise<unknown>>();
+  private readonly workerId = `${hostname()}:${process.pid}`;
+  private readonly startedAt = new Date();
 
   constructor(
     private readonly config: AppConfigService,
@@ -37,7 +41,26 @@ export class WorkerScheduler {
     private readonly aggregation: AnalyticsAggregationService,
     private readonly risk: RiskEvaluationService,
     private readonly retention: RetentionService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /** Heartbeat row in PostgreSQL (read by metrics and the admin system status). Never throws. */
+  private async beatDb(): Promise<void> {
+    const now = new Date();
+    await this.prisma.workerHeartbeat
+      .upsert({
+        where: { workerId: this.workerId },
+        create: {
+          workerId: this.workerId,
+          hostname: hostname().slice(0, 100),
+          version: this.config.get('APP_VERSION'),
+          startedAt: this.startedAt,
+          lastBeatAt: now,
+        },
+        update: { lastBeatAt: now },
+      })
+      .catch((err: Error) => this.logger.warn(`heartbeat write failed: ${err.message}`));
+  }
 
   runJob(job: JobName): Promise<JobOutcome> {
     switch (job) {
@@ -74,8 +97,10 @@ export class WorkerScheduler {
       setTimeout(tick, 2_000 + every.findIndex(([j]) => j === job) * 3_000).unref();
       this.timers.push(setInterval(tick, minutes * 60_000));
     }
-    const beat = () =>
+    const beat = () => {
       void writeFile(WORKER_HEARTBEAT_FILE, new Date().toISOString()).catch(() => undefined);
+      void this.beatDb();
+    };
     beat();
     this.timers.push(setInterval(beat, 30_000));
     this.logger.log(`Worker started: ${every.map(([j, m]) => `${j} every ${m} min`).join(', ')}`);

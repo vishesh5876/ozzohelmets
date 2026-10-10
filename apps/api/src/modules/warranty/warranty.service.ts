@@ -25,6 +25,8 @@ import {
 } from '../file-storage/file-storage.types';
 import { OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
+import { MalwareScannerService } from '../file-storage/malware-scanner.service';
+import { metrics } from '../../infrastructure/metrics/metrics';
 import {
   effectiveStatus,
   isoDate,
@@ -58,6 +60,7 @@ export class WarrantyService {
     private readonly cache: PublicEmergencyCacheService,
     private readonly config: AppConfigService,
     @Inject(FILE_STORAGE_PROVIDER) private readonly storage: FileStorageProvider,
+    private readonly scanner: MalwareScannerService,
   ) {}
 
   async forCustomer(
@@ -207,8 +210,19 @@ export class WarrantyService {
     if (!file)
       throw new AppException(ErrorCode.INVALID_FILE, 'Choose a file.', HttpStatus.BAD_REQUEST);
     const doc = await processProofOfPurchase(file, this.config.get('WARRANTY_PROOF_MAX_BYTES'));
+    // PDFs are stored as uploaded, so they are malware-scanned (if enabled) before any write.
+    // Images were fully decoded and re-encoded by the processor.
+    if (doc.contentType === 'application/pdf') {
+      try {
+        await this.scanner.assertClean(doc.data, 'warranty_proof');
+      } catch (err) {
+        metrics.uploads.inc({ kind: 'warranty_proof', result: 'rejected_scan' });
+        throw err;
+      }
+    }
     const key = `warranty-proofs/${uuidv7()}.${doc.extension}`;
     await this.storage.put(key, doc.data, doc.contentType);
+    metrics.uploads.inc({ kind: 'warranty_proof', result: 'stored' });
     let previous: string | null = null;
     try {
       await this.prisma.$transaction(async (tx) => {

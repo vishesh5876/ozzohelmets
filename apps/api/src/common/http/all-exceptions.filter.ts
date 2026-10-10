@@ -10,6 +10,8 @@ import { ThrottlerException } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { type ApiFailure, ErrorCode } from '@helmet/types';
+import { metrics } from '../../infrastructure/metrics/metrics';
+import { isRedisUnavailableError } from '../../infrastructure/redis/redis-errors';
 import { AppException } from './app.exception';
 
 const STATUS_CODE_MAP: Partial<Record<number, ErrorCode>> = {
@@ -29,6 +31,7 @@ const STATUS_CODE_MAP: Partial<Record<number, ErrorCode>> = {
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
+  private lastOutageLog = 0;
 
   constructor(private readonly exposeInternalMessages = false) {}
 
@@ -39,7 +42,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body } = this.toFailure(exception);
     if (req?.id) body.error.requestId = String(req.id);
 
-    if (status >= 500) {
+    if (status === HttpStatus.SERVICE_UNAVAILABLE && !(exception instanceof AppException)) {
+      // Dependency outage: one compact line every 10 s instead of a stack trace per request.
+      if (Date.now() - this.lastOutageLog > 10_000) {
+        this.lastOutageLog = Date.now();
+        const err = exception instanceof Error ? exception : new Error(String(exception));
+        this.logger.warn(
+          { err: { name: err.name, message: err.message } },
+          'Dependency unavailable',
+        );
+      }
+    } else if (status >= 500) {
       const err = exception instanceof Error ? exception : new Error(String(exception));
       this.logger.error(
         { err: { name: err.name, message: err.message, stack: err.stack }, requestId: req?.id },
@@ -87,6 +100,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return this.build(status, r.code ?? code, message, r.details);
       }
       return this.build(status, code, typeof response === 'string' ? response : exception.message);
+    }
+    // Infrastructure outages: a clean 503 (no internals), never a 500 with a stack trace.
+    const redisDown = isRedisUnavailableError(exception);
+    if (
+      redisDown ||
+      exception instanceof Prisma.PrismaClientInitializationError ||
+      (exception instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(exception.code))
+    ) {
+      metrics.dependencyUnavailable.inc({
+        dependency: redisDown ? 'redis' : 'postgres',
+        handling: 'http_503',
+      });
+      return this.build(
+        HttpStatus.SERVICE_UNAVAILABLE,
+        ErrorCode.SERVICE_UNAVAILABLE,
+        'Service temporarily unavailable. Please try again shortly.',
+      );
     }
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       if (exception.code === 'P2002') {
