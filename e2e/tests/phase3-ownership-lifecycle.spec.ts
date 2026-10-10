@@ -119,7 +119,7 @@ async function onboard(page: Page, name: string, allergy: string, contact: strin
   await page.getByRole('button', { name: 'Looks good' }).click();
   await page.getByRole('button', { name: 'Turn on emergency profile' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Your helmet emergency profile is active.' }),
+    page.getByRole('heading', { name: 'Emergency information is active' }),
   ).toBeVisible();
 }
 
@@ -189,8 +189,8 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await a.goto(`${PORTAL}/app/helmets`);
     await expect(a.getByRole('heading', { name: 'Active' })).toBeVisible();
     const card = a.getByTestId('helmet-card').filter({ hasText: helmet.helmetCode });
-    await expect(card).toContainText('Profile active');
-    await card.getByRole('link', { name: 'View' }).click();
+    await expect(card).toContainText('Emergency sharing on');
+    await card.getByRole('link', { name: 'View helmet' }).click();
     await expect(a.getByRole('heading', { name: helmet.helmetCode })).toBeVisible();
     const { text } = await scan(browser, helmet.qrUrl);
     expect(text).toContain(A_NAME);
@@ -201,7 +201,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await expect(a.getByRole('heading', { name: 'Transfer this helmet' })).toBeVisible();
     await a.fill('#confirm-password', A_PASSWORD);
     await a.getByRole('button', { name: 'Confirm password' }).click();
-    await a.getByRole('button', { name: 'Generate transfer code' }).click();
+    await a.getByRole('button', { name: 'Generate Transfer Code' }).click();
     transferCode = (await a.getByTestId('transfer-code').innerText()).trim();
     expect(transferCode).toMatch(/^TR-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     await expect(a.getByTestId('transfer-countdown')).toHaveText(/^(29|30):\d\d$/);
@@ -229,7 +229,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await b.fill('#claim-confirm', B_PASSWORD);
     await b.getByRole('button', { name: 'Create account and claim' }).click();
     await expect(
-      b.getByText('Save this recovery code. It can be used if you forget your password.'),
+      b.getByText('This code can recover your account if you forget your password.'),
     ).toBeVisible();
     expect((await b.getByTestId('recovery-code').innerText()).trim()).toMatch(/^RK-/);
     await b.getByTestId('recovery-saved').check();

@@ -15,7 +15,7 @@ export function ComingSoonPage({ title, description }: { title: string; descript
             <p className="mt-3 text-lg text-body">{description}</p>
             {fromQr && (
               <p className="mt-3 rounded-md bg-canvas-soft p-4 text-sm">
-                Keep the Helmet ID and activation PIN from your helmet label safe — you will need
+                Keep the Helmet ID and Activation PIN from your helmet label safe — you will need
                 them to activate.
               </p>
             )}

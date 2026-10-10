@@ -36,6 +36,9 @@ export function HelmetsPage() {
       {data.length === 0 ? (
         <div className="rounded-xl border border-dashed border-hairline p-8 text-center">
           <p className="font-bold">No helmets yet</p>
+          <p className="mt-1 text-sm text-body">
+            Scan the QR code inside your helmet, or enter its Helmet ID and Activation PIN.
+          </p>
           <Link to="/activate" className={buttonVariants({ className: 'mt-4' })}>
             Activate helmet
           </Link>

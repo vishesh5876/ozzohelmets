@@ -5,11 +5,14 @@ import { HELMET_STATUSES, type HelmetStatus } from '@helmet/types';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class HelmetQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: 'Helmet ID (HM-XXXX-XXXX, partial ok) or serial number' })
+  @ApiPropertyOptional({
+    description:
+      'Helmet ID (partial ok), serial, batch code (BAT-…), model name/SKU; owner email or Customer ID (customers:read)',
+  })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @MaxLength(64)
+  @MaxLength(254)
   search?: string;
 
   @ApiPropertyOptional({

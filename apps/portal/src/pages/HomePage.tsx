@@ -29,7 +29,7 @@ export function HomePage() {
               ['Scan', 'Scan the QR code inside your helmet.'],
               [
                 'Activate',
-                'Enter the activation PIN from the label and create a password. Save your recovery code.',
+                'Enter the Activation PIN from the label and create a password. Save your Recovery Code.',
               ],
               [
                 'Protect',

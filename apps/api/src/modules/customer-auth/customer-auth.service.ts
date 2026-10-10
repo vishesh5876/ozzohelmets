@@ -265,7 +265,7 @@ export class CustomerAuthService {
       meta,
     );
 
-    // The same field accepts the customer's recovery code or a support Account Recovery Grant.
+    // The same field accepts the customer's Recovery Code or a support Account Recovery Grant.
     const grantCode = normalizeRecoveryGrant(rawRecoveryCode);
     let ok: boolean;
     let grantId: string | undefined;
@@ -295,7 +295,7 @@ export class CustomerAuthService {
     }
     if (!ok || !user) {
       await this.recordFailure(keys, meta, 'recovery', user?.id ?? null);
-      throw this.invalidCredentials('The email, ID or recovery code is incorrect.');
+      throw this.invalidCredentials('The email, ID or Recovery Code is incorrect.');
     }
     await Promise.all(keys.map((k) => this.lockout.reset(k)));
 

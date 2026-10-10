@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { type AdminWarrantyListItemDto, type WarrantyStatus } from '@helmet/types';
 import { Badge, Input, Select } from '@helmet/ui';
 import { PageHeader } from '../../components/PageHeader';
@@ -15,7 +15,8 @@ const FILTERS: (WarrantyStatus | '')[] = ['', 'ACTIVE', 'EXPIRED', 'VOID', 'REPL
 
 export function WarrantiesPage() {
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  const [params] = useSearchParams();
+  const [search, setSearch] = useState(params.get('search') ?? '');
   const [status, setStatus] = useState<WarrantyStatus | ''>('');
   const debounced = useDebounced(search.trim());
   const { data, isLoading, error, refetch } = useQuery({

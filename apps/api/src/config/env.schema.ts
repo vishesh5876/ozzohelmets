@@ -117,6 +117,16 @@ export const envSchema = z
     RISK_MIN_SCANS_FOR_EVALUATION: z.coerce.number().int().min(1).default(10),
     RISK_SIGNAL_CLEAR_AFTER_HOURS: z.coerce.number().int().min(1).default(24),
     RISK_ALERT_SUPPRESS_HOURS: z.coerce.number().int().min(0).default(24),
+    /** Phase 8: model SKUs whose helmets are internal test fixtures, excluded from analytics. */
+    ANALYTICS_EXCLUDED_MODEL_SKUS: z
+      .string()
+      .default('OZZO-INTERNAL-TEST')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
     ENUMERATION_INVALID_TOKEN_LIMIT: z.coerce.number().int().min(2).default(50),
     VALID_TOKEN_SCRAPE_LIMIT: z.coerce.number().int().min(2).default(100),
     VALID_TOKEN_SCRAPE_WINDOW_SECONDS: z.coerce.number().int().min(60).default(3600),

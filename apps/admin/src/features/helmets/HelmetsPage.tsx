@@ -86,13 +86,13 @@ export function HelmetsPage() {
         title={preset?.title ?? 'All helmets'}
         description={
           preset?.description ??
-          'Search by Helmet ID or serial number, or filter by status, batch and model.'
+          'Search by Helmet ID, serial, batch code, model, or (with customer access) owner email or Customer ID.'
         }
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
         <Input
           type="search"
-          placeholder="HM-XXXX-XXXX or serial number"
+          placeholder="Helmet ID, serial, batch, model, customer email or ID"
           aria-label="Search helmets"
           value={search}
           onChange={(e) => setParam('search', e.target.value)}

@@ -56,14 +56,21 @@ export class HelmetsService {
     private readonly readiness: EmergencyReadinessService,
   ) {}
 
-  async list(query: HelmetQueryDto): Promise<PaginatedResult<HelmetListItemDto>> {
+  /**
+   * `canSearchCustomers`: whether the caller may look helmets up by owner email / Customer ID
+   * (customers:read). Without it, those terms simply match nothing.
+   */
+  async list(
+    query: HelmetQueryDto,
+    canSearchCustomers = false,
+  ): Promise<PaginatedResult<HelmetListItemDto>> {
     const where: Prisma.HelmetWhereInput = {
       batchId: query.batchId,
       helmetModelId: query.helmetModelId,
       ...(query.status?.length ? { status: { in: query.status } } : {}),
       ...(query.activated === true ? { activatedAt: { not: null } } : {}),
       ...(query.activated === false ? { activatedAt: null } : {}),
-      ...this.searchFilter(query.search),
+      ...this.searchFilter(query.search, canSearchCustomers),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.helmet.findMany({
@@ -94,6 +101,11 @@ export class HelmetsService {
       },
     });
     if (!helmet) throw AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.');
+    // Export history comes from the audit log (no schema change): only relevant while escrowed.
+    const lastExport =
+      !helmet.activationPinUsed && helmet.activationSecret
+        ? await lastBatchExport(this.prisma, helmet.batch.id)
+        : null;
 
     const adminIds = [
       ...new Set(
@@ -140,6 +152,14 @@ export class HelmetsService {
       qrUrl: this.config.publicHelmetUrl(helmet.publicToken),
       activationPinUsed: helmet.activationPinUsed,
       pinEscrowed: helmet.activationSecret !== null,
+      pinState: helmet.activationPinUsed
+        ? 'CONSUMED'
+        : helmet.activationSecret === null
+          ? 'PURGED'
+          : lastExport
+            ? 'EXPORTED'
+            : 'AVAILABLE',
+      batchLastExportedAt: lastExport?.toISOString() ?? null,
       scanCount: helmet._count.scans,
       // Operational targets are reached only via activation, enablement, transfer or support restore.
       allowedTransitions: this.statuses
@@ -308,16 +328,36 @@ export class HelmetsService {
     };
   }
 
-  private searchFilter(search: string | undefined): Prisma.HelmetWhereInput {
+  /**
+   * One search box for operators. Exact identifiers return immediately via unique indexes:
+   *  - Helmet ID (any case/spacing) → exact match
+   *  - Customer ID (CU-…) or email → helmets the customer currently owns (customers:read only)
+   *  - batch code (BAT-…) → that batch
+   * Anything else matches Helmet ID / serial fragments and model name or SKU.
+   */
+  private searchFilter(
+    search: string | undefined,
+    canSearchCustomers: boolean,
+  ): Prisma.HelmetWhereInput {
     if (!search) return {};
     const exactCode = normalizeHelmetCode(search);
     if (exactCode) return { helmetCode: exactCode };
-    const term = search.toUpperCase();
+    const trimmed = search.trim();
+    const currentOwner = (user: Prisma.UserWhereInput): Prisma.HelmetWhereInput =>
+      canSearchCustomers
+        ? { ownerships: { some: { status: 'ACTIVE', user } } }
+        : { id: { in: [] } };
+    if (trimmed.includes('@')) return currentOwner({ emailNormalized: trimmed.toLowerCase() });
+    const term = trimmed.toUpperCase();
+    if (/^CU-[A-Z0-9-]{4,}$/.test(term)) return currentOwner({ customerCode: term });
+    if (/^BAT-\d{4}-\d+$/.test(term)) return { batch: { batchCode: term } };
     return {
       OR: [
         { helmetCode: { startsWith: term.startsWith('HM') ? term : `HM-${term}` } },
         { helmetCode: { contains: term } },
         { serialNumber: { contains: term, mode: 'insensitive' } },
+        { helmetModel: { name: { contains: trimmed, mode: 'insensitive' } } },
+        { helmetModel: { sku: { contains: term, mode: 'insensitive' } } },
       ],
     };
   }
@@ -334,4 +374,21 @@ function toListItem(h: HelmetListRow): HelmetListItemDto {
     activatedAt: h.activatedAt?.toISOString() ?? null,
     createdAt: h.createdAt.toISOString(),
   };
+}
+
+/** When the batch's manufacturing CSV (with PINs) was last exported, from the audit log. */
+export async function lastBatchExport(
+  prisma: PrismaService,
+  batchId: string,
+): Promise<Date | null> {
+  const row = await prisma.auditLog.findFirst({
+    where: {
+      action: AuditAction.BATCH_EXPORT_MANUFACTURING_CSV,
+      entityType: 'helmet_batch',
+      entityId: batchId,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  return row?.createdAt ?? null;
 }

@@ -18,6 +18,9 @@ import { useAuth } from '../../lib/auth-context';
 import { formatDateTime } from '../../lib/format';
 import { AnalyticsTabs, Disclaimer, RiskLevelBadge } from './shared';
 
+/** Standard reason for alerts raised by internal QA scans (kept in history and the audit log). */
+const INTERNAL_TEST_REASON = 'Internal acceptance test: scans by our own staff on a test helmet.';
+
 export function RiskAlertsPage() {
   const [status, setStatus] = useState<RiskAlertStatus | 'OPEN_ANY' | ''>('OPEN_ANY');
   const [type, setType] = useState<RiskAlertType | ''>('');
@@ -242,6 +245,18 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
                 Dismiss
               </Button>
             </div>
+            <button
+              type="button"
+              className="self-start text-xs font-medium text-body underline underline-offset-4"
+              onClick={() =>
+                update.mutate({
+                  status: 'DISMISSED',
+                  resolutionReason: INTERNAL_TEST_REASON,
+                })
+              }
+            >
+              Dismiss as internal acceptance test
+            </button>
             {update.error && <InlineError error={update.error} />}
           </div>
         </RequirePermission>

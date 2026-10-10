@@ -1,6 +1,12 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { ActorType, type BatchDto, ErrorCode, HelmetStatus } from '@helmet/types';
+import {
+  ActorType,
+  type BatchDto,
+  type BatchStatsDto,
+  ErrorCode,
+  HelmetStatus,
+} from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { buildMeta } from '../../common/dto/pagination.dto';
 import { PaginatedResult } from '../../common/http/api-response.interceptor';
@@ -32,7 +38,24 @@ export class BatchesService {
     const where: Prisma.HelmetBatchWhereInput = {
       helmetModelId: query.helmetModelId,
       generationStatus: query.generationStatus,
-      ...(query.search ? { batchCode: { contains: query.search, mode: 'insensitive' } } : {}),
+      printStatus: query.printStatus,
+      ...(query.manufacturedFrom || query.manufacturedTo
+        ? {
+            manufacturingDate: {
+              ...(query.manufacturedFrom ? { gte: new Date(query.manufacturedFrom) } : {}),
+              ...(query.manufacturedTo ? { lte: new Date(query.manufacturedTo) } : {}),
+            },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { batchCode: { contains: query.search, mode: 'insensitive' } },
+              { helmetModel: { name: { contains: query.search, mode: 'insensitive' } } },
+              { helmetModel: { sku: { contains: query.search, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.helmetBatch.findMany({
@@ -44,9 +67,10 @@ export class BatchesService {
       }),
       this.prisma.helmetBatch.count({ where }),
     ]);
-    const escrow = await this.escrowCounts(rows.map((r) => r.id));
+    const ids = rows.map((r) => r.id);
+    const [escrow, exports] = await Promise.all([this.escrowCounts(ids), this.exportHistory(ids)]);
     return new PaginatedResult(
-      rows.map((r) => toBatchDto(r, escrow.get(r.id) ?? 0)),
+      rows.map((r) => toBatchDto(r, escrow.get(r.id) ?? 0, exports.get(r.id))),
       buildMeta(query.page, query.pageSize, total),
     );
   }
@@ -54,8 +78,12 @@ export class BatchesService {
   async get(id: string): Promise<BatchDto> {
     const row = await this.prisma.helmetBatch.findUnique({ where: { id }, include: batchInclude });
     if (!row) throw AppException.notFound(ErrorCode.BATCH_NOT_FOUND, 'Batch not found.');
-    const escrow = await this.escrowCounts([id]);
-    return toBatchDto(row, escrow.get(id) ?? 0);
+    const [escrow, exports, stats] = await Promise.all([
+      this.escrowCounts([id]),
+      this.exportHistory([id]),
+      this.stats(id),
+    ]);
+    return { ...toBatchDto(row, escrow.get(id) ?? 0, exports.get(id)), stats };
   }
 
   async create(
@@ -260,5 +288,43 @@ export class BatchesService {
       WHERE h.batch_id = ANY(${batchIds}::uuid[])
       GROUP BY h.batch_id`;
     return new Map(rows.map((r) => [r.batch_id, Number(r.n)]));
+  }
+
+  /** Manufacturing CSV exports per batch, from the audit log (no extra columns needed). */
+  private async exportHistory(
+    batchIds: string[],
+  ): Promise<Map<string, { count: number; lastAt: Date | null }>> {
+    if (batchIds.length === 0) return new Map();
+    const rows = await this.prisma.auditLog.groupBy({
+      by: ['entityId'],
+      where: {
+        action: AuditAction.BATCH_EXPORT_MANUFACTURING_CSV,
+        entityType: 'helmet_batch',
+        entityId: { in: batchIds },
+      },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    return new Map(
+      rows.map((r) => [r.entityId as string, { count: r._count._all, lastAt: r._max.createdAt }]),
+    );
+  }
+
+  private async stats(batchId: string): Promise<BatchStatsDto> {
+    const [byStatus, activated] = await Promise.all([
+      this.prisma.helmet.groupBy({ by: ['status'], where: { batchId }, _count: { _all: true } }),
+      this.prisma.helmet.count({ where: { batchId, activatedAt: { not: null } } }),
+    ]);
+    const count = (...statuses: string[]) =>
+      byStatus.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r._count._all, 0);
+    const generated = byStatus.reduce((n, r) => n + r._count._all, 0);
+    return {
+      generated,
+      printed: generated - count('GENERATED'),
+      activated,
+      active: count('ACTIVE'),
+      lostOrStolen: count('LOST', 'STOLEN'),
+      remaining: generated - activated,
+    };
   }
 }

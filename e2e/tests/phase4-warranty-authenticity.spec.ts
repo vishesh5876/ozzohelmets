@@ -234,7 +234,7 @@ test.describe.serial('Phase 4: Customer ID → warranty → verification → tra
     await expect(customer.getByText(/You can also sign in with your Customer ID/)).toBeVisible();
     await customer.goto(`${PORTAL}/app/helmets`);
     const card = customer.getByTestId('helmet-card').filter({ hasText: helmet.helmetCode });
-    await card.getByRole('link', { name: 'View' }).click();
+    await card.getByRole('link', { name: 'View helmet' }).click();
     await expect(customer.getByRole('heading', { name: helmet.helmetCode })).toBeVisible();
     await expect(customer.getByTestId('warranty-section')).toContainText('Warranty not registered');
   });

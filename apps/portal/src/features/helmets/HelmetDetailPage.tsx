@@ -67,81 +67,74 @@ export function HelmetDetailPage() {
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="flex flex-col gap-4 md:col-span-2">
-          <Card>
-            <CardContent>
-              <dl className="grid gap-5 sm:grid-cols-2">
-                <Item label="Model" value={`${helmet.model.brand} ${helmet.model.name}`} />
-                <Item
-                  label="Serial number"
-                  value={<span className="font-mono text-sm">{helmet.serialNumber}</span>}
-                />
-                <Item
-                  label={helmet.acquiredVia === 'TRANSFER' ? 'Owned since' : 'Activated'}
-                  value={dateFmt.format(new Date(helmet.ownedSince))}
-                />
-                <Item
-                  label="Emergency information"
-                  value={<Badge tone={profile.tone}>{profile.label}</Badge>}
-                />
-                {helmet.replacedBy && (
-                  <Item
-                    label="Replaced by"
-                    value={<span className="font-mono">{helmet.replacedBy.helmetCode}</span>}
-                  />
-                )}
-                {helmet.replaces && (
-                  <Item
-                    label="Replaces"
-                    value={<span className="font-mono">{helmet.replaces.helmetCode}</span>}
-                  />
-                )}
-              </dl>
-              {helmet.pendingTransfer && (
-                <p className="mt-5 rounded-md bg-canvas-soft px-4 py-3 text-sm">
-                  A transfer code is active until{' '}
-                  {dateTimeFmt.format(new Date(helmet.pendingTransfer.expiresAt))}.{' '}
-                  <Link to={`/app/helmets/${helmet.id}/transfer`} className="font-medium underline">
-                    Manage transfer
-                  </Link>
-                </p>
-              )}
-              <div className="mt-6 flex flex-wrap gap-2">
-                {canEnable &&
-                  (profileReady ? (
-                    <Button loading={emergency.isPending} onClick={() => emergency.mutate(true)}>
-                      Show emergency info on this helmet
-                    </Button>
-                  ) : (
-                    <Link to="/app/onboarding" className={buttonVariants()}>
-                      Set up emergency profile
-                    </Link>
-                  ))}
-                {canDisable && (
-                  <Button
-                    variant="secondary"
-                    loading={emergency.isPending}
-                    onClick={() => emergency.mutate(false)}
-                  >
-                    Hide emergency info on this helmet
+          <Section title="Emergency protection" testId="protection-section">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={helmet.emergencyEnabled ? 'solid' : 'outline'}>
+                {helmet.emergencyEnabled ? 'Emergency sharing on' : 'Emergency sharing off'}
+              </Badge>
+              <Badge tone={profile.tone}>{profile.label}</Badge>
+            </div>
+            <p className="mt-3 text-sm text-body">
+              {helmet.emergencyEnabled
+                ? 'Anyone who scans this helmet’s QR code sees the emergency information you chose to share.'
+                : profileReady
+                  ? 'Your emergency profile is ready, but this helmet does not show it.'
+                  : 'Emergency information is not active yet. Complete your emergency setup to show it on this helmet.'}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {canEnable &&
+                (profileReady ? (
+                  <Button loading={emergency.isPending} onClick={() => emergency.mutate(true)}>
+                    Show emergency info on this helmet
                   </Button>
-                )}
-                <a
-                  href={helmet.publicUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonVariants({ variant: 'subtle' })}
+                ) : (
+                  <Link
+                    to={`/app/onboarding?helmet=${encodeURIComponent(helmet.id)}`}
+                    className={buttonVariants()}
+                  >
+                    Complete emergency setup
+                  </Link>
+                ))}
+              {canDisable && (
+                <Button
+                  variant="secondary"
+                  loading={emergency.isPending}
+                  onClick={() => emergency.mutate(false)}
                 >
-                  Open public page
-                </a>
-              </div>
-              <InlineError error={emergency.error} />
-            </CardContent>
-          </Card>
+                  Hide emergency info on this helmet
+                </Button>
+              )}
+              <a
+                href={helmet.publicUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({ variant: 'subtle' })}
+              >
+                Open public page
+              </a>
+            </div>
+            <InlineError error={emergency.error} />
+          </Section>
+
+          <Section title="Identity">
+            <dl className="grid gap-5 sm:grid-cols-2">
+              <Item label="Model" value={`${helmet.model.brand} ${helmet.model.name}`} />
+              <Item
+                label="Helmet ID"
+                value={<span className="font-mono">{helmet.helmetCode}</span>}
+              />
+              <Item
+                label="Serial number"
+                value={<span className="font-mono text-sm">{helmet.serialNumber}</span>}
+              />
+              <Item label="Status" value={<HelmetStatusBadge status={helmet.status} />} />
+            </dl>
+          </Section>
 
           <Card data-testid="warranty-section">
             <CardContent className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="font-bold">Warranty</p>
+                <h2 className="font-bold">Warranty</h2>
                 <p className="text-sm text-body">{warrantyLine(helmet.warranty)}</p>
               </div>
               <Link
@@ -155,52 +148,80 @@ export function HelmetDetailPage() {
             </CardContent>
           </Card>
 
-          {actions.length > 0 && (
-            <Card>
-              <CardContent className="flex flex-col gap-3">
-                <p className="font-bold">Manage helmet</p>
-                <div className="flex flex-wrap gap-2" data-testid="helmet-actions">
-                  {actions.map((a) => (
-                    <Link
-                      key={a.slug}
-                      to={`/app/helmets/${helmet.id}/${a.slug}`}
-                      className={buttonVariants({ variant: 'subtle', size: 'sm' })}
-                    >
-                      {a.label}
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Section title="Ownership">
+            <dl className="grid gap-5 sm:grid-cols-2">
+              <Item
+                label={helmet.acquiredVia === 'TRANSFER' ? 'Owned since' : 'Activated'}
+                value={dateFmt.format(new Date(helmet.ownedSince))}
+              />
+              <Item
+                label="How you got it"
+                value={
+                  helmet.acquiredVia === 'TRANSFER' ? 'Transferred to you' : 'Activated by you'
+                }
+              />
+              {helmet.replacedBy && (
+                <Item
+                  label="Replaced by"
+                  value={<span className="font-mono">{helmet.replacedBy.helmetCode}</span>}
+                />
+              )}
+              {helmet.replaces && (
+                <Item
+                  label="Replaces"
+                  value={<span className="font-mono">{helmet.replaces.helmetCode}</span>}
+                />
+              )}
+            </dl>
+            {helmet.pendingTransfer && (
+              <p className="mt-5 rounded-md bg-canvas-soft px-4 py-3 text-sm">
+                A Transfer Code is active until{' '}
+                {dateTimeFmt.format(new Date(helmet.pendingTransfer.expiresAt))}.{' '}
+                <Link to={`/app/helmets/${helmet.id}/transfer`} className="font-medium underline">
+                  Manage transfer
+                </Link>
+              </p>
+            )}
+          </Section>
 
-          <Card>
-            <CardContent>
-              <p className="mb-4 font-bold">Timeline</p>
-              <ol
-                className="relative flex flex-col gap-4 border-l border-hairline pl-5"
-                data-testid="timeline"
-              >
-                {[...helmet.timeline].reverse().map((e, i) => (
-                  <li key={`${e.at}-${i}`} className="relative">
-                    <span
-                      className="absolute top-1.5 -left-[25px] h-2 w-2 rounded-full bg-ink"
-                      aria-hidden
-                    />
-                    <p className="text-sm font-medium">
-                      {TIMELINE_LABELS[e.type]}
-                      {e.detail ? ` · ${e.detail}` : ''}
-                    </p>
-                    <p className="text-xs text-body">{dateTimeFmt.format(new Date(e.at))}</p>
-                  </li>
+          <Section title="Lifecycle">
+            {actions.length > 0 && (
+              <div className="mb-5 flex flex-wrap gap-2" data-testid="helmet-actions">
+                {actions.map((a) => (
+                  <Link
+                    key={a.slug}
+                    to={`/app/helmets/${helmet.id}/${a.slug}`}
+                    className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+                  >
+                    {a.label}
+                  </Link>
                 ))}
-              </ol>
-            </CardContent>
-          </Card>
+              </div>
+            )}
+            <ol
+              className="relative flex flex-col gap-4 border-l border-hairline pl-5"
+              data-testid="timeline"
+              aria-label="Helmet history"
+            >
+              {[...helmet.timeline].reverse().map((e, i) => (
+                <li key={`${e.at}-${i}`} className="relative">
+                  <span
+                    className="absolute top-1.5 -left-[25px] h-2 w-2 rounded-full bg-ink"
+                    aria-hidden
+                  />
+                  <p className="text-sm font-medium">
+                    {TIMELINE_LABELS[e.type]}
+                    {e.detail ? ` · ${e.detail}` : ''}
+                  </p>
+                  <p className="text-xs text-body">{dateTimeFmt.format(new Date(e.at))}</p>
+                </li>
+              ))}
+            </ol>
+          </Section>
         </div>
         <Card>
           <CardContent className="flex flex-col items-center gap-3">
-            <p className="self-start font-bold">Helmet QR code</p>
+            <h2 className="self-start font-bold">QR code and activity</h2>
             {qrUrl ? (
               <img src={qrUrl} alt={`QR code for ${helmet.helmetCode}`} className="h-44 w-44" />
             ) : (
@@ -214,6 +235,25 @@ export function HelmetDetailPage() {
         </Card>
       </div>
     </>
+  );
+}
+
+function Section({
+  title,
+  testId,
+  children,
+}: {
+  title: string;
+  testId?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card data-testid={testId}>
+      <CardContent>
+        <h2 className="mb-4 font-bold">{title}</h2>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 

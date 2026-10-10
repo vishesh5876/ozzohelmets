@@ -150,7 +150,7 @@ export function CreateBatchPage() {
               <span>
                 <span className="block font-medium">Generate helmets immediately</span>
                 <span className="block text-sm text-body">
-                  Creates a Helmet ID, QR token, activation PIN, QR code and barcode for every unit.
+                  Creates a Helmet ID, QR token, Activation PIN, QR code and barcode for every unit.
                 </span>
               </span>
             </label>

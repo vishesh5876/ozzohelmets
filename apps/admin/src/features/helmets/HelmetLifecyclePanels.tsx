@@ -44,7 +44,7 @@ function useRefresh(helmetId: string) {
     ]);
 }
 
-/** Ownership periods + transfers (no medical data, no transfer codes). */
+/** Ownership periods + transfers (no medical data, no Transfer Codes). */
 export function OwnershipCard({ helmet }: { helmet: HelmetDetailDto }) {
   const history = useQuery({
     queryKey: ['helmets', helmet.id, 'ownership'],

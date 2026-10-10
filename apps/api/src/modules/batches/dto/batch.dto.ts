@@ -66,4 +66,19 @@ export class BatchQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['PENDING', 'GENERATING', 'COMPLETED', 'FAILED'])
   generationStatus?: BatchGenerationStatus;
+
+  @ApiPropertyOptional({ enum: ['NOT_PRINTED', 'PRINTED'] })
+  @IsOptional()
+  @IsIn(['NOT_PRINTED', 'PRINTED'])
+  printStatus?: 'NOT_PRINTED' | 'PRINTED';
+
+  @ApiPropertyOptional({ description: 'Manufacturing date from (YYYY-MM-DD, inclusive)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  manufacturedFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Manufacturing date to (YYYY-MM-DD, inclusive)' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  manufacturedTo?: string;
 }

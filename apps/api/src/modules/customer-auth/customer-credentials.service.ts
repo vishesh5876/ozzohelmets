@@ -19,7 +19,7 @@ export class CustomerCredentialsService {
       passwordProblem(password, { helmetCode: context.helmetCode }) ??
       (context.activationPin &&
       password.trim().toUpperCase().replace(/[\s-]/g, '') === context.activationPin
-        ? 'Don’t reuse the activation PIN as your password.'
+        ? 'Don’t reuse the Activation PIN as your password.'
         : null) ??
       (context.email && password.trim().toLowerCase() === context.email.toLowerCase()
         ? 'Don’t use your email address as your password.'

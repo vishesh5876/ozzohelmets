@@ -216,6 +216,18 @@ h3 {
 .contact .btn {
   margin-top: 12px;
 }
+.call-btn {
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+.call-number {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
 .helmet {
   font-size: 15px;
   color: var(--body);

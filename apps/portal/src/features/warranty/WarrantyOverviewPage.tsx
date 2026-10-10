@@ -20,7 +20,16 @@ export function WarrantyOverviewPage() {
     <>
       <PageTitle title="Warranty" />
       {data.length === 0 ? (
-        <p className="text-body">Activate a helmet to register its warranty.</p>
+        <div className="rounded-xl border border-dashed border-hairline p-8 text-center">
+          <p className="font-bold">No helmets to register</p>
+          <p className="mt-1 text-sm text-body">
+            Activate a helmet first. Its warranty can then be registered here with the purchase
+            date.
+          </p>
+          <Link to="/activate" className={buttonVariants({ className: 'mt-4' })}>
+            Activate helmet
+          </Link>
+        </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {data.map((h) => (

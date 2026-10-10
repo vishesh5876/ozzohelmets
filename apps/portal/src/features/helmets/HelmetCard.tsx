@@ -21,15 +21,22 @@ export function HelmetCard({ helmet }: { helmet: CustomerHelmetDto }) {
       <Link to={`/app/helmets/${helmet.id}`} className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-body">
+            <p className="font-bold">
               {helmet.model.brand} {helmet.model.name}
             </p>
-            <p className="font-mono text-lg font-bold">{helmet.helmetCode}</p>
+            <p className="font-mono text-body">{helmet.helmetCode}</p>
           </div>
           <HelmetStatusBadge status={helmet.status} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-body">
-          {helmet.group !== 'RETIRED' && <Badge tone={profile.tone}>{profile.label}</Badge>}
+          {helmet.group !== 'RETIRED' && (
+            <Badge tone={helmet.emergencyEnabled ? 'solid' : 'outline'}>
+              {helmet.emergencyEnabled ? 'Emergency sharing on' : 'Emergency sharing off'}
+            </Badge>
+          )}
+          {helmet.group !== 'RETIRED' && !helmet.emergencyEnabled && (
+            <span className="sr-only">{profile.label}</span>
+          )}
           {helmet.pendingTransfer && <Badge tone="soft">Transfer pending</Badge>}
           {helmet.activatedAt && (
             <span>Activated {dateFmt.format(new Date(helmet.activatedAt))}</span>
@@ -49,7 +56,7 @@ export function HelmetCard({ helmet }: { helmet: CustomerHelmetDto }) {
           to={`/app/helmets/${helmet.id}`}
           className={buttonVariants({ variant: 'subtle', size: 'sm' })}
         >
-          View
+          View helmet
         </Link>
         {quick.map((a) => (
           <Link

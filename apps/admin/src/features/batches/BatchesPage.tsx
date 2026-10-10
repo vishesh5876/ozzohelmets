@@ -18,16 +18,23 @@ export function BatchesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [print, setPrint] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const debounced = useDebounced(search);
+  const filtered = Boolean(debounced || status || print || from || to);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['batches', page, debounced, status],
+    queryKey: ['batches', page, debounced, status, print, from, to],
     queryFn: () =>
       api.page<BatchDto>('/admin/batches', {
         page,
         pageSize: 25,
         search: debounced,
         generationStatus: status,
+        printStatus: print,
+        manufacturedFrom: from,
+        manufacturedTo: to,
       }),
     placeholderData: keepPreviousData,
     refetchInterval: (q) =>
@@ -47,11 +54,11 @@ export function BatchesPage() {
           </RequirePermission>
         }
       />
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Input
           className="sm:max-w-xs"
           type="search"
-          placeholder="Search batch code"
+          placeholder="Batch code, model or SKU"
           aria-label="Search batches"
           value={search}
           onChange={(e) => {
@@ -74,13 +81,56 @@ export function BatchesPage() {
           <option value="COMPLETED">Generated</option>
           <option value="FAILED">Failed</option>
         </Select>
+        <Select
+          className="sm:max-w-44"
+          aria-label="Print status"
+          value={print}
+          onChange={(e) => {
+            setPrint(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">Printed or not</option>
+          <option value="NOT_PRINTED">Not printed</option>
+          <option value="PRINTED">Printed</option>
+        </Select>
+        <label className="flex items-center gap-2 text-sm text-body">
+          From
+          <Input
+            type="date"
+            className="sm:w-40"
+            aria-label="Manufactured from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPage(1);
+            }}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-body">
+          To
+          <Input
+            type="date"
+            className="sm:w-40"
+            aria-label="Manufactured to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPage(1);
+            }}
+          />
+        </label>
       </div>
       {isLoading && <LoadingState />}
       {error && <ErrorState error={error} onRetry={() => void refetch()} />}
       {data && data.items.length === 0 && (
         <EmptyState
-          title="No batches found"
-          description="Create a batch to generate helmet identities."
+          title={filtered ? 'No batches match these filters' : 'No batches yet'}
+          description={
+            filtered
+              ? 'Clear the search or widen the date range.'
+              : 'Create a helmet model first, then a batch to generate helmet identities.'
+          }
         />
       )}
       {data && data.items.length > 0 && (

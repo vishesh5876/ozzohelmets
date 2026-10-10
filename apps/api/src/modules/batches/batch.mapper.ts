@@ -8,7 +8,11 @@ export const batchInclude = {
 
 export type BatchRow = Prisma.HelmetBatchGetPayload<{ include: typeof batchInclude }>;
 
-export function toBatchDto(b: BatchRow, pinsEscrowed: number): BatchDto {
+export function toBatchDto(
+  b: BatchRow,
+  pinsEscrowed: number,
+  exports: { count: number; lastAt: Date | null } = { count: 0, lastAt: null },
+): BatchDto {
   return {
     id: b.id,
     batchCode: b.batchCode,
@@ -23,6 +27,8 @@ export function toBatchDto(b: BatchRow, pinsEscrowed: number): BatchDto {
     printStatus: b.printStatus,
     printedAt: b.printedAt?.toISOString() ?? null,
     pinsEscrowed,
+    exportCount: exports.count,
+    lastExportedAt: exports.lastAt?.toISOString() ?? null,
     notes: b.notes,
     createdBy: b.creator,
     createdAt: b.createdAt.toISOString(),

@@ -125,6 +125,8 @@ export function BatchDetailPage() {
         <InlineError error={generate.error ?? exportCsv.error} />
       </div>
 
+      <Workflow batch={batch} />
+
       <div className="mt-2 grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -182,6 +184,14 @@ export function BatchDetailPage() {
               <span className="text-body">PINs in escrow</span>
               <span className="font-medium tabular-nums">{formatNumber(batch.pinsEscrowed)}</span>
             </div>
+            <div className="flex items-center justify-between" data-testid="export-status">
+              <span className="text-body">CSV exports</span>
+              <span className="text-right font-medium">
+                {batch.exportCount === 0
+                  ? 'Not exported yet'
+                  : `${formatNumber(batch.exportCount)} · last ${formatDateTime(batch.lastExportedAt)}`}
+              </span>
+            </div>
             {batch.printedAt && (
               <div className="flex items-center justify-between">
                 <span className="text-body">Printed</span>
@@ -195,6 +205,25 @@ export function BatchDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {batch.stats && batch.stats.generated > 0 && (
+        <section className="mt-4" aria-labelledby="batch-stats-h">
+          <h2 id="batch-stats-h" className="sr-only">
+            Helmet counts
+          </h2>
+          <dl
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+            data-testid="batch-stats"
+          >
+            <Stat label="Generated" value={batch.stats.generated} />
+            <Stat label="Printed" value={batch.stats.printed} />
+            <Stat label="Activated" value={batch.stats.activated} />
+            <Stat label="Active (sharing)" value={batch.stats.active} />
+            <Stat label="Lost / stolen" value={batch.stats.lostOrStolen} />
+            <Stat label="Not yet activated" value={batch.stats.remaining} />
+          </dl>
+        </section>
+      )}
 
       {batch.generatedCount > 0 && (
         <section className="mt-8">
@@ -220,7 +249,7 @@ export function BatchDetailPage() {
         <ul className="mb-5 list-disc space-y-1 pl-5 text-sm text-body">
           <li>{formatNumber(batch.generatedCount)} helmets move from Generated to Printed.</li>
           <li>
-            {formatNumber(batch.pinsEscrowed)} escrowed activation PINs are permanently destroyed.
+            {formatNumber(batch.pinsEscrowed)} escrowed Activation PINs are permanently destroyed.
           </li>
           <li>Future CSV exports will not include PINs.</li>
         </ul>
@@ -235,5 +264,54 @@ export function BatchDetailPage() {
         </div>
       </Dialog>
     </>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-hairline p-4">
+      <dt className="text-xs text-body">{label}</dt>
+      <dd className="text-display-sm font-bold tabular-nums">{formatNumber(value)}</dd>
+    </div>
+  );
+}
+
+/** Where this batch is in the manufacturing flow, and what to do next. */
+function Workflow({ batch }: { batch: BatchDto }) {
+  const generated = batch.generationStatus === 'COMPLETED';
+  const exported = batch.exportCount > 0;
+  const printed = batch.printStatus === 'PRINTED';
+  const steps = [
+    { label: 'Generate helmets', done: generated },
+    { label: 'Export manufacturing CSV', done: exported || printed },
+    { label: 'Print labels & mark printed', done: printed },
+    { label: 'Helmets activated by customers', done: (batch.stats?.activated ?? 0) > 0 },
+  ];
+  const next = steps.findIndex((st) => !st.done);
+  const hint = !generated
+    ? 'Next: generate the helmet identities for this batch.'
+    : !exported && !printed
+      ? 'Next: export the manufacturing CSV (includes Activation PINs) and send it to the printer securely.'
+      : !printed
+        ? 'Next: once labels and PIN cards are printed and checked, mark the batch printed. This destroys the escrowed PINs.'
+        : 'Labels are printed and PIN escrow is purged. Helmets activate as customers scan them.';
+  return (
+    <Card className="mt-2" data-testid="batch-workflow">
+      <CardContent className="flex flex-col gap-3 py-4">
+        <ol className="grid gap-2 sm:grid-cols-4" aria-label="Manufacturing workflow">
+          {steps.map((st, i) => (
+            <li
+              key={st.label}
+              className={`flex items-center gap-2 border-t-4 pt-2 text-sm ${st.done ? 'border-ink font-medium' : i === next ? 'border-ink/40' : 'border-hairline text-body'}`}
+              aria-current={i === next ? 'step' : undefined}
+            >
+              <span aria-hidden>{st.done ? '✓' : `${i + 1}.`}</span> {st.label}
+              <span className="sr-only">{st.done ? '(done)' : i === next ? '(next)' : ''}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="text-sm text-body">{hint}</p>
+      </CardContent>
+    </Card>
   );
 }

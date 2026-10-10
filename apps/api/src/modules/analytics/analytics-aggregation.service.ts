@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
+import { AnalyticsScopeService } from './analytics-scope.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.constants';
 
@@ -25,6 +26,7 @@ export class AnalyticsAggregationService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly scope: AnalyticsScopeService,
   ) {}
 
   /** Today + yesterday (late events), plus a one-off backfill when no aggregates exist yet. */
@@ -91,6 +93,8 @@ export class AnalyticsAggregationService {
     const invalid = Number(
       (await this.redis.get(invalidTokenCounterKey(day)).catch(() => null)) ?? 0,
     );
+    // Internal acceptance-test helmets (by model SKU) never count in platform numbers.
+    const ex = await this.scope.excludedModelIds();
     await this.prisma.$executeRaw`
       WITH r AS (
         SELECT (${day}::date::timestamp AT TIME ZONE 'UTC') AS s,
@@ -101,17 +105,17 @@ export class AnalyticsAggregationService {
         lost_helmets, stolen_helmets, damaged_helmets, product_reports_created,
         recovery_grants_issued, invalid_token_requests, risk_alerts_opened, updated_at)
       SELECT ${day}::date,
-        (SELECT count(*) FROM helmets, r WHERE created_at >= r.s AND created_at < r.e),
-        (SELECT count(*) FROM helmets, r WHERE activated_at >= r.s AND activated_at < r.e),
+        (SELECT count(*) FROM helmets, r WHERE created_at >= r.s AND created_at < r.e AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmets, r WHERE activated_at >= r.s AND activated_at < r.e AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM users, r WHERE created_at >= r.s AND created_at < r.e),
-        (SELECT count(*) FROM helmets WHERE status = 'ACTIVE'),
-        (SELECT coalesce(sum(emergency_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date),
-        (SELECT coalesce(sum(verification_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date),
-        (SELECT count(*) FROM helmet_scan_daily WHERE date = ${day}::date AND total_scans > 0),
-        (SELECT count(*) FROM helmet_warranties, r WHERE registered_at >= r.s AND registered_at < r.e),
-        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'LOST' AND created_at >= r.s AND created_at < r.e),
-        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'STOLEN' AND created_at >= r.s AND created_at < r.e),
-        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'DAMAGED' AND created_at >= r.s AND created_at < r.e),
+        (SELECT count(*) FROM helmets WHERE status = 'ACTIVE' AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT coalesce(sum(emergency_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT coalesce(sum(verification_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmet_scan_daily WHERE date = ${day}::date AND total_scans > 0 AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmet_warranties, r WHERE registered_at >= r.s AND registered_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'LOST' AND created_at >= r.s AND created_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'STOLEN' AND created_at >= r.s AND created_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'DAMAGED' AND created_at >= r.s AND created_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM product_reports, r WHERE created_at >= r.s AND created_at < r.e),
         (SELECT count(*) FROM account_recovery_grants, r WHERE created_at >= r.s AND created_at < r.e),
         ${invalid},

@@ -40,6 +40,25 @@ const PROFILE_TONE: Record<EmergencyProfileStatus, NonNullable<BadgeProps['tone'
   ACTIVE: 'solid',
 };
 
+const PIN_STATE: Record<HelmetDetailDto['pinState'], { label: string; help: string }> = {
+  AVAILABLE: {
+    label: 'Available for manufacturing',
+    help: 'Unused. The plaintext PIN is still in escrow and will be included in the batch manufacturing export.',
+  },
+  EXPORTED: {
+    label: 'Unused · exported for printing',
+    help: 'Unused. The batch manufacturing CSV with this PIN has been exported; escrow is purged when the batch is marked printed.',
+  },
+  PURGED: {
+    label: 'Unused · escrow purged',
+    help: 'Unused, but the plaintext PIN can no longer be retrieved by anyone. Only the printed card has it.',
+  },
+  CONSUMED: {
+    label: 'Consumed',
+    help: 'Used to activate this helmet. A PIN works only once.',
+  },
+};
+
 export function HelmetDetailPage() {
   const { id = '' } = useParams();
   const { can } = useAuth();
@@ -107,16 +126,16 @@ export function HelmetDetailPage() {
                     </Link>
                   }
                 />
-                <Item
-                  label="Activation PIN"
-                  value={
-                    helmet.activationPinUsed
-                      ? 'Used'
-                      : helmet.pinEscrowed
-                        ? 'Unused · in escrow (exportable)'
-                        : 'Unused · escrow purged'
-                  }
-                />
+                <div className="sm:col-span-2" data-testid="pin-state">
+                  <dt className="text-body">Activation PIN</dt>
+                  <dd className="mt-1 font-medium">{PIN_STATE[helmet.pinState].label}</dd>
+                  <dd className="mt-1 text-xs text-body">
+                    {PIN_STATE[helmet.pinState].help}
+                    {helmet.pinState === 'EXPORTED' && helmet.batchLastExportedAt
+                      ? ` Last exported ${formatDateTime(helmet.batchLastExportedAt)}.`
+                      : ''}
+                  </dd>
+                </div>
                 <Item label="Activated" value={formatDateTime(helmet.activatedAt)} />
                 <Item label="QR scans" value={formatNumber(helmet.scanCount)} />
                 <Item

@@ -6,12 +6,14 @@ import {
 } from './analytics.controller';
 import { AnalyticsAggregationService } from './analytics-aggregation.service';
 import { AnalyticsQueryService } from './analytics-query.service';
+import { AnalyticsScopeService } from './analytics-scope.service';
 import { JobRunnerService } from './job-runner.service';
 import { RetentionService } from './retention.service';
 import { RiskAlertsService } from './risk-alerts.service';
 import { RiskEvaluationService } from './risk-evaluation.service';
 
 const SERVICES = [
+  AnalyticsScopeService,
   AnalyticsAggregationService,
   AnalyticsQueryService,
   RiskAlertsService,

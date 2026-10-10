@@ -475,7 +475,7 @@ export class AdminCustomersService {
     if (user.status !== 'ACTIVE')
       throw AppException.conflict(
         ErrorCode.CUSTOMER_NOT_ACTIVE,
-        'Restore the account before issuing a recovery grant.',
+        'Restore the account before issuing a Recovery Grant.',
       );
     const credential = generateRecoveryGrantCredential();
     const credentialHash = await this.hashing.hashCustomerSecret(credential);

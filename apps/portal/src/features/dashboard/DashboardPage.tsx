@@ -15,7 +15,6 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { keys } from '../../lib/query';
-import { ReadinessCard } from '../emergency/ReadinessCard';
 import { HelmetCard } from '../helmets/HelmetCard';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -42,18 +41,21 @@ export function DashboardPage() {
   if (error || !data) return <ErrorState error={error} />;
   const owned = data.helmets.length > 0;
 
+  const sharingOn = data.helmets.filter((h) => h.emergencyEnabled).length;
+  const inUse = data.helmets.filter((h) => h.group === 'ACTIVE').length;
+
   return (
     <>
       <PageTitle
         title={customer?.name ? `Hi, ${customer.name.split(' ')[0]}` : 'Dashboard'}
-        description="Your helmets, emergency profile and account at a glance."
+        description="Your emergency protection, helmets and account at a glance."
       />
       <div className="flex flex-col gap-6">
         {!owned && (
           <div className="rounded-xl bg-ink p-6 text-on-dark">
             <p className="text-display-sm font-bold">Activate your first helmet</p>
             <p className="mt-1 text-mute">
-              Scan the QR code inside your helmet, or enter its Helmet ID and activation PIN.
+              Scan the QR code inside your helmet, or enter its Helmet ID and Activation PIN.
             </p>
             <Link
               to="/activate"
@@ -64,11 +66,85 @@ export function DashboardPage() {
           </div>
         )}
 
+        {owned && (
+          <section
+            aria-labelledby="protection-h"
+            data-testid="protection-status"
+            className={cn(
+              'rounded-xl border-2 p-5 sm:p-6',
+              data.readiness.enabled && sharingOn > 0
+                ? 'border-ink'
+                : 'border-danger bg-danger-soft',
+            )}
+          >
+            <p className="text-sm font-medium text-body">Emergency protection</p>
+            {data.readiness.enabled && sharingOn > 0 ? (
+              <>
+                <h2 id="protection-h" className="mt-1 text-display-sm font-bold">
+                  Emergency information is active
+                </h2>
+                <p className="mt-1 text-body">
+                  Shown on {sharingOn} of {inUse || data.helmets.length} helmet
+                  {(inUse || data.helmets.length) === 1 ? '' : 's'} · {data.contactCount} emergency
+                  contact{data.contactCount === 1 ? '' : 's'}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to="/app/profile"
+                    className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+                  >
+                    Update emergency profile
+                  </Link>
+                  <Link
+                    to="/app/contacts"
+                    className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+                  >
+                    Emergency contacts
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="protection-h" className="mt-1 text-display-sm font-bold">
+                  Emergency information is not active yet.
+                </h2>
+                <p className="mt-1 text-body">
+                  {data.readiness.enabled
+                    ? 'Your profile is ready but not shown on any helmet. Turn sharing on for the helmet you ride with.'
+                    : 'Anyone who scans your helmet sees only a basic notice until you finish setting up your emergency profile.'}
+                </p>
+                <Link
+                  to={data.readiness.enabled ? '/app/helmets' : '/app/onboarding'}
+                  className={buttonVariants({ size: 'lg', className: 'mt-4' })}
+                >
+                  {data.readiness.enabled ? 'Choose a helmet' : 'Complete emergency setup'}
+                </Link>
+              </>
+            )}
+          </section>
+        )}
+
         {data.health.length > 0 && <HealthList warnings={data.health} />}
 
-        {owned && !data.readiness.enabled && <ReadinessCard readiness={data.readiness} />}
+        {owned && (
+          <section aria-labelledby="helmets-h">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 id="helmets-h" className="text-display-sm font-bold">
+                My helmets
+              </h2>
+              <Link to="/activate" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+                Add helmet
+              </Link>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {data.helmets.map((h) => (
+                <HelmetCard key={h.id} helmet={h} />
+              ))}
+            </div>
+          </section>
+        )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <section className="rounded-xl border border-hairline p-5" aria-labelledby="profile-h">
             <div className="flex items-baseline justify-between gap-3">
               <h2 id="profile-h" className="font-bold">
@@ -78,7 +154,7 @@ export function DashboardPage() {
                 {data.readiness.enabled ? 'Shared on scan' : 'Not shared'}
               </span>
             </div>
-            <p className="mt-2 text-display-sm font-bold tabular-nums" data-testid="completion">
+            <p className="mt-2 font-bold tabular-nums" data-testid="completion">
               {data.completion.percent}% complete
             </p>
             <div
@@ -107,107 +183,74 @@ export function DashboardPage() {
                 </li>
               ))}
             </ul>
-            <Link
-              to="/app/profile"
-              className={buttonVariants({ variant: 'subtle', size: 'sm', className: 'mt-4' })}
-            >
-              Update emergency profile
-            </Link>
           </section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Stat label="Helmets" value={data.helmets.length} to="/app/helmets" />
-            <Stat label="Emergency contacts" value={data.contactCount} to="/app/contacts" />
-            <Stat label="Warranties active" value={data.warranty.active} to="/app/warranty" />
-            <Stat
-              label="Signed-in devices"
-              value={data.security.activeSessions}
-              to="/app/account"
-            />
+          <div className="flex flex-col gap-3">
+            <section className="rounded-xl border border-hairline p-5" aria-labelledby="warranty-h">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 id="warranty-h" className="font-bold">
+                  Warranty
+                </h2>
+                <Link
+                  to="/app/warranty"
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  View
+                </Link>
+              </div>
+              <p className="mt-2 text-sm text-body">
+                <span className="font-bold text-ink tabular-nums">{data.warranty.active}</span>{' '}
+                active
+                {' · '}
+                <span className="font-bold text-ink tabular-nums">
+                  {data.warranty.notRegistered}
+                </span>{' '}
+                not registered
+              </p>
+            </section>
+            <section className="rounded-xl border border-hairline p-5" aria-labelledby="security-h">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 id="security-h" className="font-bold">
+                  Account security
+                </h2>
+                <Link
+                  to="/app/account"
+                  className="text-sm font-medium underline underline-offset-4"
+                >
+                  Manage
+                </Link>
+              </div>
+              <dl className="mt-2 grid gap-2 text-sm">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-body">Recovery Code</dt>
+                  <dd className="font-medium">
+                    {!data.security.recoveryCodeConfigured
+                      ? 'Missing'
+                      : data.security.recoveryCodeAcknowledged
+                        ? 'Saved'
+                        : 'Not confirmed as saved'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-body">Signed-in devices</dt>
+                  <dd className="font-medium tabular-nums">{data.security.activeSessions}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-body">Password last changed</dt>
+                  <dd className="font-medium">
+                    {data.security.passwordChangedAt
+                      ? dateFmt.format(new Date(data.security.passwordChangedAt))
+                      : '—'}
+                  </dd>
+                </div>
+              </dl>
+            </section>
           </div>
         </div>
 
-        <section className="rounded-xl border border-hairline p-5" aria-labelledby="security-h">
-          <h2 id="security-h" className="font-bold">
-            Account security
-          </h2>
-          <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-body">Recovery code</dt>
-              <dd className="font-medium">
-                {!data.security.recoveryCodeConfigured
-                  ? 'Missing'
-                  : data.security.recoveryCodeAcknowledged
-                    ? 'Configured'
-                    : 'Not confirmed as saved'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-body">Password last changed</dt>
-              <dd className="font-medium">
-                {data.security.passwordChangedAt
-                  ? dateFmt.format(new Date(data.security.passwordChangedAt))
-                  : '—'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-body">Account email</dt>
-              <dd className="break-all font-medium">{data.security.email ?? 'Not set'}</dd>
-            </div>
-          </dl>
-        </section>
-
-        {owned && (
-          <section aria-labelledby="helmets-h">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 id="helmets-h" className="text-display-sm font-bold">
-                My helmets
-              </h2>
-              <Link to="/activate" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
-                Add helmet
-              </Link>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {data.helmets.map((h) => (
-                <HelmetCard key={h.id} helmet={h} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section aria-labelledby="actions-h">
-          <h2 id="actions-h" className="mb-3 text-display-sm font-bold">
-            Quick actions
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <QuickLink to="/activate" title="Add helmet" body="Scan the QR and enter its PIN." />
-            <QuickLink
-              to="/app/profile"
-              title="Update emergency profile"
-              body="Blood group, allergies, conditions."
-            />
-            <QuickLink
-              to="/app/contacts"
-              title="Add emergency contact"
-              body="Who responders should call."
-            />
-            <QuickLink to="/app/privacy" title="Review privacy" body="Choose what a scan shows." />
-            <QuickLink
-              to="/app/warranty"
-              title="View warranty"
-              body="Register or check coverage."
-            />
-            <QuickLink
-              to="/app/account"
-              title="Manage account"
-              body="Password, sessions, recovery code."
-            />
-          </div>
-        </section>
-
         <section aria-labelledby="activity-h">
           <div className="mb-3 flex items-center justify-between">
-            <h2 id="activity-h" className="text-display-sm font-bold">
+            <h2 id="activity-h" className="font-bold">
               Recent account activity
             </h2>
             <Link
@@ -218,7 +261,9 @@ export function DashboardPage() {
             </Link>
           </div>
           {data.recentActivity.length === 0 ? (
-            <p className="text-body">No account activity yet.</p>
+            <p className="text-sm text-body">
+              No account activity yet. Sign-ins and security changes will appear here.
+            </p>
           ) : (
             <ul className="flex flex-col divide-y divide-hairline rounded-xl border border-hairline">
               {data.recentActivity.map((e) => (
@@ -284,23 +329,5 @@ function HealthList({ warnings }: { warnings: HealthWarningDto[] }) {
         })}
       </ul>
     </section>
-  );
-}
-
-function Stat({ label, value, to }: { label: string; value: number; to: string }) {
-  return (
-    <Link to={to} className="rounded-xl border border-hairline p-4 hover:bg-canvas-softer">
-      <p className="text-sm text-body">{label}</p>
-      <p className="text-display-md font-bold tabular-nums">{value}</p>
-    </Link>
-  );
-}
-
-function QuickLink({ to, title, body }: { to: string; title: string; body: string }) {
-  return (
-    <Link to={to} className="rounded-xl bg-canvas-soft p-5 hover:bg-surface-pressed">
-      <p className="font-bold">{title}</p>
-      <p className="text-sm text-body">{body}</p>
-    </Link>
   );
 }

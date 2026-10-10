@@ -95,10 +95,27 @@ export interface BatchDto {
   printStatus: BatchPrintStatus;
   printedAt: IsoDateString | null;
   pinsEscrowed: number;
+  /** Phase 8: manufacturing CSV exports, from the audit log. */
+  exportCount: number;
+  lastExportedAt: IsoDateString | null;
+  /** Phase 8: per-status helmet counts (batch detail only). */
+  stats?: BatchStatsDto;
   notes: string | null;
   createdBy: { id: string; name: string } | null;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
+}
+
+export interface BatchStatsDto {
+  generated: number;
+  printed: number;
+  /** Ever activated (activatedAt set). */
+  activated: number;
+  /** Currently ACTIVE (emergency sharing on). */
+  active: number;
+  lostOrStolen: number;
+  /** Generated but not yet activated. */
+  remaining: number;
 }
 
 export interface HelmetListItemDto {
@@ -137,6 +154,14 @@ export interface HelmetDetailDto extends HelmetListItemDto {
   qrUrl: string;
   activationPinUsed: boolean;
   pinEscrowed: boolean;
+  /**
+   * Phase 8: operator-facing Activation PIN state.
+   * AVAILABLE = plaintext in escrow, batch never exported · EXPORTED = in escrow, batch CSV
+   * exported at least once · PURGED = unused but plaintext destroyed (batch marked printed) ·
+   * CONSUMED = used to activate.
+   */
+  pinState: 'AVAILABLE' | 'EXPORTED' | 'PURGED' | 'CONSUMED';
+  batchLastExportedAt: IsoDateString | null;
   scanCount: number;
   allowedTransitions: HelmetStatus[];
   statusHistory: HelmetStatusHistoryDto[];

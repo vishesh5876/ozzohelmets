@@ -20,6 +20,7 @@ import {
 } from '@helmet/types';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
+import { AnalyticsScopeService } from './analytics-scope.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import type { AuthenticatedAdmin } from '../admin-auth/admin-auth.types';
 import { AuditService } from '../audit/audit.service';
@@ -77,6 +78,7 @@ export class AnalyticsQueryService {
     private readonly alerts: RiskAlertsService,
     private readonly audit: AuditService,
     private readonly cache: PublicEmergencyCacheService,
+    private readonly scope: AnalyticsScopeService,
   ) {}
 
   // ─────────────── Overview ───────────────
@@ -84,6 +86,7 @@ export class AnalyticsQueryService {
   async overview(range: DateRange, now = new Date()): Promise<AnalyticsOverviewDto> {
     const today = utcDay(now);
     const todayStart = new Date(`${today}T00:00:00Z`);
+    const ex = await this.scope.excludedModelIds();
     const [counts, warrantyRows, byModel, avgPrint, platform, recent, todayScans] =
       await Promise.all([
         this.prisma.$queryRaw<
@@ -100,9 +103,9 @@ export class AnalyticsQueryService {
           }[]
         >`
           SELECT
-            (SELECT count(*) FROM helmets) AS generated,
-            (SELECT count(*) FROM helmets WHERE activated_at IS NOT NULL) AS activated,
-            (SELECT count(*) FROM helmets WHERE status = 'ACTIVE') AS active,
+            (SELECT count(*) FROM helmets WHERE NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS generated,
+            (SELECT count(*) FROM helmets WHERE activated_at IS NOT NULL AND NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS activated,
+            (SELECT count(*) FROM helmets WHERE status = 'ACTIVE' AND NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS active,
             (SELECT count(*) FROM emergency_profiles WHERE helmet_id IS NULL) AS profiles,
             (SELECT count(*) FROM emergency_profiles WHERE helmet_id IS NULL AND emergency_profile_enabled) AS enabled,
             (SELECT count(*) FROM emergency_profiles p WHERE p.helmet_id IS NULL AND (
@@ -111,6 +114,7 @@ export class AnalyticsQueryService {
                 OR NOT EXISTS (SELECT 1 FROM emergency_visibility v WHERE v.user_id = p.user_id AND v.confirmed_at IS NOT NULL))
             ) AS incomplete,
             (SELECT count(*) FROM helmet_ownerships o WHERE o.status = 'ACTIVE'
+               AND o.helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))
                AND NOT EXISTS (SELECT 1 FROM emergency_contacts c WHERE c.user_id = o.user_id AND c.is_active)) AS no_contacts,
             (SELECT count(*) FROM product_reports WHERE status IN ('OPEN', 'REVIEWING')) AS reports,
             (SELECT count(*) FROM risk_alerts WHERE status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING')) AS alerts`,
@@ -129,7 +133,8 @@ export class AnalyticsQueryService {
             count(*) AS registered,
             count(*) FILTER (WHERE EXISTS (SELECT 1 FROM helmets h WHERE h.id = w.helmet_id AND h.activated_at IS NOT NULL)) AS on_activated,
             count(*) FILTER (WHERE proof_key IS NOT NULL) AS with_proof
-          FROM helmet_warranties w`,
+          FROM helmet_warranties w
+          WHERE w.helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))`,
         this.prisma.$queryRaw<
           { model: string; sku: string; activated: bigint; registered: bigint; active: bigint }[]
         >`
@@ -140,11 +145,13 @@ export class AnalyticsQueryService {
           FROM helmet_models m
           JOIN helmets h ON h.helmet_model_id = m.id
           LEFT JOIN helmet_warranties w ON w.helmet_id = h.id
+          WHERE NOT (m.id = ANY(${ex}::uuid[]))
           GROUP BY m.id ORDER BY activated DESC, m.name LIMIT 20`,
         this.prisma.$queryRaw<{ days: number | null }[]>`
           SELECT avg(extract(epoch FROM (h.activated_at - b.printed_at)) / 86400)::float AS days
           FROM helmets h JOIN helmet_batches b ON b.id = h.batch_id
-          WHERE h.activated_at IS NOT NULL AND b.printed_at IS NOT NULL AND h.activated_at >= b.printed_at`,
+          WHERE h.activated_at IS NOT NULL AND b.printed_at IS NOT NULL AND h.activated_at >= b.printed_at
+            AND NOT (h.helmet_model_id = ANY(${ex}::uuid[]))`,
         this.prisma.platformDailyStats.findMany({
           where: {
             date: {
@@ -155,7 +162,7 @@ export class AnalyticsQueryService {
           orderBy: { date: 'asc' },
         }),
         this.prisma.helmet.findMany({
-          where: { activatedAt: { not: null } },
+          where: { activatedAt: { not: null }, helmetModelId: { notIn: ex } },
           orderBy: { activatedAt: 'desc' },
           take: 8,
           select: { id: true, helmetCode: true, activatedAt: true },

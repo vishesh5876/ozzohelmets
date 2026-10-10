@@ -21,14 +21,21 @@ import { emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
+import { SetupProgress, type SetupStep } from './SetupProgress';
 
 type Target = { publicToken: string } | { helmetCode: string };
 type Step = 'identify' | 'pin' | 'account' | 'recovery' | 'done';
+const PROGRESS: Record<Exclude<Step, 'done'>, SetupStep> = {
+  identify: 'Verify helmet',
+  pin: 'Verify helmet',
+  account: 'Create account',
+  recovery: 'Create account',
+};
 
 /**
  * Activation with the concealed one-time PIN as proof of possession:
  *  QR (?t=token) or manual Helmet ID → PIN (validated) →
- *    new customer: email + password → account + ownership → recovery code shown once
+ *    new customer: email + password → account + ownership → Recovery Code shown once
  *    signed-in customer: helmet added to the existing account (no email/password needed)
  * The PIN is the proof of possession; the email is only the sign-in identifier. The PIN and
  * password live only in component state.
@@ -133,8 +140,11 @@ export function ActivatePage() {
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-10 sm:py-14">
         <h1 className="text-display-lg font-bold">{title}</h1>
-        {['identify', 'pin', 'account'].includes(step) && (
-          <Stepper step={step} signedIn={signedIn} />
+        {step !== 'done' && (
+          <SetupProgress
+            current={PROGRESS[step]}
+            skip={signedIn && !recoveryCode ? ['Create account'] : []}
+          />
         )}
 
         {(helmet || target) && ['pin', 'account'].includes(step) && (
@@ -270,18 +280,42 @@ export function ActivatePage() {
             )}
 
             {step === 'done' && activated && (
-              <div className="flex flex-col items-start gap-4">
+              <div className="flex flex-col items-start gap-4" data-testid="activation-done">
                 <CheckCircle2 className="h-10 w-10" aria-hidden />
                 <div>
-                  <p className="text-display-sm font-bold">{activated.helmetCode} is yours.</p>
+                  <p className="text-display-sm font-bold">
+                    <span className="font-mono">{activated.helmetCode}</span> is registered to you.
+                  </p>
                   <p className="mt-1 text-body">
-                    Next, set up the emergency information first responders will see when they scan
-                    your helmet.
+                    {activated.emergencyEnabled
+                      ? 'Your emergency profile is already shown on this helmet.'
+                      : 'Emergency information is not active on this helmet yet. Finish it now so first responders see it when they scan the QR code.'}
                   </p>
                 </div>
-                <Button size="lg" className="w-full" onClick={() => navigate('/app/onboarding')}>
-                  Set up emergency profile
-                </Button>
+                {activated.emergencyEnabled ||
+                activated.emergencyProfileStatus === 'ACTIVE' ||
+                activated.emergencyProfileStatus === 'DISABLED' ? (
+                  // Profile already set up (e.g. a second helmet): only this helmet's switch is left.
+                  <Button
+                    size="lg"
+                    className="w-full"
+                    onClick={() => navigate(`/app/helmets/${activated.id}`)}
+                  >
+                    {activated.emergencyEnabled
+                      ? 'View my helmet'
+                      : 'Turn on sharing for this helmet'}
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    className="w-full"
+                    onClick={() =>
+                      navigate(`/app/onboarding?helmet=${encodeURIComponent(activated.id)}`)
+                    }
+                  >
+                    Complete emergency setup
+                  </Button>
+                )}
                 <Link to="/app" className="font-medium underline underline-offset-4">
                   Do it later
                 </Link>
@@ -292,27 +326,5 @@ export function ActivatePage() {
         </Card>
       </div>
     </SiteFrame>
-  );
-}
-
-function Stepper({ step, signedIn }: { step: Step; signedIn: boolean }) {
-  const steps: { key: Step; label: string }[] = [
-    { key: 'identify', label: 'Helmet' },
-    { key: 'pin', label: 'PIN' },
-    ...(signedIn ? [] : [{ key: 'account' as Step, label: 'Account' }]),
-  ];
-  const index = steps.findIndex((s) => s.key === step);
-  return (
-    <ol className="mt-4 flex gap-2" aria-label="Activation steps">
-      {steps.map((s, i) => (
-        <li
-          key={s.key}
-          className={`flex-1 border-t-4 pt-2 text-sm font-medium ${i <= index ? 'border-ink text-ink' : 'border-hairline text-body'}`}
-          aria-current={i === index ? 'step' : undefined}
-        >
-          {s.label}
-        </li>
-      ))}
-    </ol>
   );
 }

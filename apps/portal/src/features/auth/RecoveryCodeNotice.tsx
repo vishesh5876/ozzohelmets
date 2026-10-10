@@ -3,7 +3,7 @@ import { Button } from '@helmet/ui';
 import { api } from '../../lib/api';
 
 /**
- * One-time display of a recovery code. It is never shown again (only a hash is stored), so the
+ * One-time display of a Recovery Code. It is never shown again (only a hash is stored), so the
  * customer must confirm they saved it before continuing. The confirmation is recorded so the
  * dashboard can remind customers who never confirmed (best effort; never blocks continuing).
  */
@@ -22,9 +22,10 @@ export function RecoveryCodeNotice({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-display-sm font-bold">Your recovery code</p>
+        <p className="text-display-sm font-bold">Your Recovery Code</p>
         <p className="mt-1 text-body">
-          Save this recovery code. It can be used if you forget your password.
+          This code can recover your account if you forget your password. It is not your helmet’s
+          Activation PIN.
         </p>
       </div>
       <p
@@ -63,7 +64,7 @@ export function RecoveryCodeNotice({
           onChange={(e) => setSaved(e.target.checked)}
           data-testid="recovery-saved"
         />
-        <span className="font-medium">I’ve saved my recovery code</span>
+        <span className="font-medium">I’ve saved my Recovery Code</span>
       </label>
       <Button
         size="lg"

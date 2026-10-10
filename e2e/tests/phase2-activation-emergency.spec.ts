@@ -126,7 +126,7 @@ test.describe
 
     // Recovery code shown once; must be acknowledged before continuing.
     await expect(
-      owner.getByText('Save this recovery code. It can be used if you forget your password.'),
+      owner.getByText('This code can recover your account if you forget your password.'),
     ).toBeVisible();
     recoveryCode = (await owner.getByTestId('recovery-code').innerText()).trim();
     expect(recoveryCode).toMatch(RECOVERY_CODE);
@@ -134,7 +134,9 @@ test.describe
     await expect(cont).toBeDisabled();
     await owner.getByTestId('recovery-saved').check();
     await cont.click();
-    await expect(owner.getByText(`${helmet.helmetCode} is yours.`)).toBeVisible();
+    await expect(owner.getByTestId('activation-done')).toContainText(
+      `${helmet.helmetCode} is registered to you.`,
+    );
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
 
     // The scan page now reports a registered helmet without a shared profile.
@@ -145,7 +147,7 @@ test.describe
   });
 
   test('customer completes onboarding and enables the emergency profile', async () => {
-    await owner.getByRole('button', { name: 'Set up emergency profile' }).click();
+    await owner.getByRole('button', { name: 'Complete emergency setup' }).click();
     await owner.fill('#p-name', OWNER);
     await owner.selectOption('#p-blood', 'O_POSITIVE');
     await owner.fill('#p-allergies', 'Penicillin');
@@ -172,11 +174,11 @@ test.describe
     await owner.getByRole('button', { name: 'Looks good' }).click();
     await owner.getByRole('button', { name: 'Turn on emergency profile' }).click();
     await expect(
-      owner.getByRole('heading', { name: 'Your helmet emergency profile is active.' }),
+      owner.getByRole('heading', { name: 'Emergency information is active' }),
     ).toBeVisible();
 
     await owner.getByRole('link', { name: 'Go to dashboard' }).click();
-    await expect(owner.getByTestId('helmet-card')).toContainText('Profile active');
+    await expect(owner.getByTestId('helmet-card')).toContainText('Emergency sharing on');
   });
 
   test('owner signs out and signs back in with Helmet ID + password', async () => {
@@ -187,7 +189,7 @@ test.describe
 
     await signIn(owner, PASSWORD);
     await expect(owner.getByTestId('helmet-card')).toContainText(helmet.helmetCode);
-    await expect(owner.getByTestId('helmet-card')).toContainText('Profile active');
+    await expect(owner.getByTestId('helmet-card')).toContainText('Emergency sharing on');
   });
 
   test('anonymous scan shows only the approved information', async ({ browser }) => {
@@ -198,11 +200,11 @@ test.describe
     await expect(scan.getByText('O+', { exact: true })).toBeVisible();
     await expect(scan.getByText('Penicillin')).toBeVisible();
     await expect(scan.getByText('Ravi Verma')).toBeVisible();
-    await expect(scan.getByRole('link', { name: 'Call Ravi' })).toHaveAttribute(
+    await expect(scan.getByRole('link', { name: /^Call Ravi/ })).toHaveAttribute(
       'href',
       'tel:+919812345678',
     );
-    await expect(scan.getByRole('heading', { name: 'Emergency Contact' })).toBeVisible();
+    await expect(scan.getByRole('heading', { name: /^Emergency contacts?$/ })).toBeVisible();
     await expect(
       scan.getByText(
         'Emergency information and contacts were provided by the helmet owner and are not verified.',
@@ -267,7 +269,7 @@ test.describe
     await device.fill('#rec-identifier', helmet.helmetCode);
     await device.fill('#rec-code', recoveryCode);
     await device.getByRole('button', { name: 'Continue' }).click();
-    await expect(device.getByText('The email, ID or recovery code is incorrect.')).toBeVisible();
+    await expect(device.getByText('The email, ID or Recovery Code is incorrect.')).toBeVisible();
     await device.context().close();
   });
 

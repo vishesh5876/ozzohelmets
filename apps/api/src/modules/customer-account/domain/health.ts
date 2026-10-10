@@ -145,7 +145,7 @@ export function evaluateHealth(input: HealthInput): HealthWarningDto[] {
     out.push({
       code: 'RECOVERY_CODE_MISSING',
       severity: 'warning',
-      message: 'You have no recovery code. Generate one so you can reset a forgotten password.',
+      message: 'You have no Recovery Code. Generate one so you can reset a forgotten password.',
       action: { label: 'Manage account', to: '/app/account' },
     });
   else if (!security.recoveryCodeAcknowledged)
@@ -153,7 +153,7 @@ export function evaluateHealth(input: HealthInput): HealthWarningDto[] {
       code: 'RECOVERY_CODE_NOT_ACKNOWLEDGED',
       severity: 'warning',
       message:
-        'You haven’t confirmed saving your recovery code. Generate a new one if you lost it.',
+        'You haven’t confirmed saving your Recovery Code. Generate a new one if you lost it.',
       action: { label: 'Manage account', to: '/app/account' },
     });
   if (!security.email)

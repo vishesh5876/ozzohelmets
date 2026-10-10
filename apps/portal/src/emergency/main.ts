@@ -131,17 +131,18 @@ function profileView(data: PublicEmergencyDto): Node[] {
         h('div', { class: 'blood' }, h('strong', {}, p.bloodGroupLabel)),
       ),
     );
-  nodes.push(listCard('Allergies', p.allergies, 'allergy'));
-  // Contacts come right after the most urgent medical facts: calling someone is the main action.
-  if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
+  // Phase 8 order: critical medical facts first, then who to call, then free-text notes.
+  // Product identity and warranty never appear above emergency facts.
   nodes.push(listCard('Medical conditions', p.medicalConditions));
+  nodes.push(listCard('Allergies', p.allergies, 'allergy'));
   nodes.push(listCard('Medications', p.medications));
+  if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
   if (p.emergencyNotes)
     nodes.push(
       h(
         'section',
         { class: 'card' },
-        h('h3', {}, 'Emergency notes'),
+        h('h3', {}, 'Other notes'),
         h('p', { class: 'notes' }, p.emergencyNotes),
       ),
     );
@@ -201,29 +202,40 @@ function summaryActions(summary: string): HTMLElement {
 function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
   return h(
     'section',
-    { class: 'card strong' },
-    h('h3', {}, 'Emergency Contact'),
+    { class: 'card strong', 'aria-labelledby': 'contacts-h' },
+    h('h3', { id: 'contacts-h' }, contacts.length > 1 ? 'Emergency contacts' : 'Emergency contact'),
     h('p', { class: 'muted' }, 'Provided by helmet owner'),
-    ...contacts.map((c, i) =>
-      h(
+    ...contacts.map((c, i) => {
+      const first = c.name.split(' ')[0] || c.name;
+      return h(
         'div',
         { class: 'contact' },
         h('p', { class: 'contact-name' }, c.name),
         h('p', { class: 'muted' }, c.relationship),
         h(
           'a',
-          { class: i === 0 ? 'btn btn-primary' : 'btn btn-secondary', href: tel(c.phone) },
-          `Call ${c.name.split(' ')[0] ?? c.name}`,
+          {
+            class: `btn call-btn ${i === 0 ? 'btn-primary' : 'btn-secondary'}`,
+            href: tel(c.phone),
+            'aria-label': `Call ${c.name} on ${c.phone}`,
+          },
+          h('span', {}, `Call ${first}`),
+          h('span', { class: 'call-number' }, c.phone),
         ),
         c.alternatePhone
           ? h(
               'a',
-              { class: 'btn btn-secondary', href: tel(c.alternatePhone) },
-              `Call alternate number`,
+              {
+                class: 'btn btn-secondary call-btn',
+                href: tel(c.alternatePhone),
+                'aria-label': `Call ${c.name} on alternate number ${c.alternatePhone}`,
+              },
+              h('span', {}, 'Call alternate number'),
+              h('span', { class: 'call-number' }, c.alternatePhone),
             )
           : null,
-      ),
-    ),
+      );
+    }),
   );
 }
 
@@ -268,7 +280,7 @@ function render(token: string, result: Lookup | null): void {
             h(
               'p',
               { class: 'muted' },
-              'Ready to activate. You’ll need the activation PIN that came with this helmet.',
+              'Ready to activate. You’ll need the Activation PIN that came with this helmet.',
             ),
             h(
               'a',
@@ -314,8 +326,8 @@ function render(token: string, result: Lookup | null): void {
   } else if (result.kind === 'not-found') {
     main.append(
       messageCard(
-        'QR code not recognised',
-        'We couldn’t find this code. It may be damaged or mistyped. In an emergency, call the number below.',
+        'We could not verify this Helmet ID',
+        'This QR code is not in the registry. It may be damaged or mistyped. In an emergency, call the number below.',
       ),
     );
   } else if (result.kind === 'rate-limited') {

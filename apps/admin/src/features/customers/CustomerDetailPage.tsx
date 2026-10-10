@@ -11,6 +11,7 @@ import {
 import {
   Badge,
   Button,
+  buttonVariants,
   Card,
   CardContent,
   CardHeader,
@@ -31,7 +32,7 @@ import { STATUS_TONE } from './customer-format';
 
 /**
  * Operational support view of one customer. Never shows medical data, emergency-contact details,
- * passwords, recovery codes or hashes — the emergency profile appears only as a state.
+ * passwords, Recovery Codes or hashes — the emergency profile appears only as a state.
  */
 export function CustomerDetailPage() {
   const { customerId = '' } = useParams();
@@ -52,6 +53,23 @@ export function CustomerDetailPage() {
         back={{ to: '/customers', label: 'Customers' }}
         actions={<Badge tone={STATUS_TONE[c.status]}>{humanizeEnum(c.status)}</Badge>}
       />
+      <nav aria-label="Customer sections" className="-mt-2 mb-4 flex flex-wrap gap-2 text-sm">
+        <a href="#helmets" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+          Helmets
+        </a>
+        <Link
+          to={`/warranties?search=${encodeURIComponent(c.customerId)}`}
+          className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+        >
+          Warranty
+        </Link>
+        <a href="#security-events" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+          Security events
+        </a>
+        <a href="#support-actions" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+          Support actions
+        </a>
+      </nav>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <Card>
@@ -90,7 +108,7 @@ export function CustomerDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="helmets" className="scroll-mt-20">
             <CardHeader>
               <CardTitle>Helmets</CardTitle>
             </CardHeader>
@@ -177,7 +195,7 @@ export function CustomerDetailPage() {
             <CardContent>
               <dl className="grid gap-3 text-sm" data-testid="recovery-state">
                 <Item
-                  label="Recovery code"
+                  label="Recovery Code"
                   value={
                     c.recovery.recoveryCodeConfigured
                       ? c.recovery.recoveryCodeAcknowledged
@@ -196,7 +214,7 @@ export function CustomerDetailPage() {
                 />
                 <Item label="Sign-in blocks (30 days)" value={String(c.security.loginBlocks30d)} />
                 <Item
-                  label="Open recovery grant"
+                  label="Open Recovery Grant"
                   value={
                     c.recovery.openGrantExpiresAt
                       ? `Expires ${formatDateTime(c.recovery.openGrantExpiresAt)}`
@@ -211,7 +229,7 @@ export function CustomerDetailPage() {
                 )}
               </dl>
               <p className="mt-3 text-xs text-body">
-                Support can never see or retrieve a recovery code.
+                Support can never see or retrieve a Recovery Code.
               </p>
             </CardContent>
           </Card>
@@ -292,7 +310,7 @@ function StatusActions({ customer }: { customer: AdminCustomerDetailDto }) {
         ? ['RESTORE', 'LOCK']
         : ['RESTORE', 'SUSPEND'];
   return (
-    <Card>
+    <Card id="support-actions" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>Support actions</CardTitle>
       </CardHeader>
@@ -308,18 +326,6 @@ function StatusActions({ customer }: { customer: AdminCustomerDetailDto }) {
             onChange={(e) => setReason(e.target.value)}
           />
         </Field>
-        {actions.map((a) => (
-          <Button
-            key={a}
-            variant={a === 'RESTORE' ? 'primary' : 'secondary'}
-            disabled={reason.trim().length < 5}
-            loading={change.isPending && change.variables === a}
-            onClick={() => change.mutate(a)}
-            title={ACTIONS[a].help}
-          >
-            {ACTIONS[a].label}
-          </Button>
-        ))}
         <Button
           variant="subtle"
           disabled={reason.trim().length < 5}
@@ -328,6 +334,41 @@ function StatusActions({ customer }: { customer: AdminCustomerDetailDto }) {
         >
           Sign out all sessions
         </Button>
+        {actions
+          .filter((a) => a === 'RESTORE')
+          .map((a) => (
+            <Button
+              key={a}
+              disabled={reason.trim().length < 5}
+              loading={change.isPending && change.variables === a}
+              onClick={() => change.mutate(a)}
+              title={ACTIONS[a].help}
+            >
+              {ACTIONS[a].label}
+            </Button>
+          ))}
+        {actions.some((a) => a !== 'RESTORE') && (
+          <div
+            className="mt-2 flex flex-col gap-2 rounded-md border border-danger/40 p-3"
+            data-testid="restrictive-actions"
+          >
+            <p className="text-xs font-medium text-danger">Restrictive actions</p>
+            {actions
+              .filter((a) => a !== 'RESTORE')
+              .map((a) => (
+                <Button
+                  key={a}
+                  variant="secondary"
+                  disabled={reason.trim().length < 5}
+                  loading={change.isPending && change.variables === a}
+                  onClick={() => change.mutate(a)}
+                  title={ACTIONS[a].help}
+                >
+                  {ACTIONS[a].label}
+                </Button>
+              ))}
+          </div>
+        )}
         <InlineError error={change.error ?? logout.error} />
         {logout.isSuccess && <p className="text-sm">All sessions ended.</p>}
       </CardContent>
@@ -335,7 +376,7 @@ function StatusActions({ customer }: { customer: AdminCustomerDetailDto }) {
   );
 }
 
-/** Last resort for a customer who lost password AND recovery code. SUPER_ADMIN only. */
+/** Last resort for a customer who lost password AND Recovery Code. SUPER_ADMIN only. */
 function RecoveryGrantCard({ customer }: { customer: AdminCustomerDetailDto }) {
   const refresh = useRefresh(customer.customerId);
   const [reason, setReason] = useState('');
@@ -375,7 +416,7 @@ function RecoveryGrantCard({ customer }: { customer: AdminCustomerDetailDto }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Account recovery grant</CardTitle>
+        <CardTitle>Account Recovery Grant</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {issued ? (
@@ -433,7 +474,7 @@ function RecoveryGrantCard({ customer }: { customer: AdminCustomerDetailDto }) {
               loading={issue.isPending}
               disabled={reason.trim().length < 10 || !confirm || !password}
             >
-              Issue recovery grant
+              Issue Recovery Grant
             </Button>
             {customer.recovery.openGrantExpiresAt && (
               <Button
@@ -520,7 +561,7 @@ function SecurityEventsCard({ customerId }: { customerId: string }) {
       api.get<AdminSecurityEventDto[]>(`/admin/customers/${customerId}/security-events`),
   });
   return (
-    <Card>
+    <Card id="security-events" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>Security events</CardTitle>
       </CardHeader>

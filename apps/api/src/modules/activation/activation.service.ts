@@ -351,7 +351,7 @@ export class ActivationService {
       throw this.attemptsExceeded(Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
     throw new AppException(
       ErrorCode.INVALID_ACTIVATION_PIN,
-      'That activation PIN is incorrect. Check the code on your activation card.',
+      'The Helmet ID or Activation PIN could not be verified. Check the PIN on your activation card.',
       HttpStatus.BAD_REQUEST,
     );
   }
@@ -388,7 +388,7 @@ export class ActivationService {
         ? this.notActivatable()
         : AppException.notFound(
             ErrorCode.HELMET_NOT_FOUND,
-            'Helmet not found. Check the Helmet ID.',
+            'We could not find this Helmet ID. Check the characters on your label.',
           );
     return helmet.id;
   }
@@ -424,7 +424,7 @@ export class ActivationService {
   private attemptsExceeded(retryAfter: number): AppException {
     return new AppException(
       ErrorCode.ACTIVATION_ATTEMPTS_EXCEEDED,
-      'Too many incorrect PIN attempts. Please wait before trying again.',
+      'Too many incorrect Activation PIN attempts. Please wait before trying again.',
       HttpStatus.TOO_MANY_REQUESTS,
       { retryAfter },
     );

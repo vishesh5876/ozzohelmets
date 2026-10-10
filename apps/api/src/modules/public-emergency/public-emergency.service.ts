@@ -314,6 +314,6 @@ export class PublicEmergencyService {
   }
 
   private notFound(): AppException {
-    return AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'This QR code is not recognised.');
+    return AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'We could not verify this Helmet ID.');
   }
 }

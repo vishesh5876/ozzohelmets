@@ -115,18 +115,20 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.getByRole('button', { name: 'Activate helmet' }).click();
 
     await expect(
-      owner.getByText('Save this recovery code. It can be used if you forget your password.'),
+      owner.getByText('This code can recover your account if you forget your password.'),
     ).toBeVisible();
     recoveryCode = (await owner.getByTestId('recovery-code').innerText()).trim();
     expect(recoveryCode).toMatch(RECOVERY_CODE);
     await owner.getByTestId('recovery-saved').check();
     await owner.getByRole('button', { name: 'Continue' }).click();
-    await expect(owner.getByText(`${first.helmetCode} is yours.`)).toBeVisible();
+    await expect(owner.getByTestId('activation-done')).toContainText(
+      `${first.helmetCode} is registered to you.`,
+    );
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
   });
 
   test('10–13: emergency profile, contact, privacy, enable', async () => {
-    await owner.getByRole('button', { name: 'Set up emergency profile' }).click();
+    await owner.getByRole('button', { name: 'Complete emergency setup' }).click();
     await owner.fill('#p-name', OWNER);
     await owner.selectOption('#p-blood', 'B_POSITIVE');
     await owner.fill('#p-allergies', 'Peanuts');
@@ -149,7 +151,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.getByRole('button', { name: 'Looks good' }).click();
     await owner.getByRole('button', { name: 'Turn on emergency profile' }).click();
     await expect(
-      owner.getByRole('heading', { name: 'Your helmet emergency profile is active.' }),
+      owner.getByRole('heading', { name: 'Emergency information is active' }),
     ).toBeVisible();
   });
 
@@ -174,7 +176,9 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.getByRole('link', { name: 'Activate helmet' }).click();
     await owner.fill('#pin', second.pin);
     await owner.getByRole('button', { name: 'Add helmet to my account' }).click();
-    await expect(owner.getByText(`${second.helmetCode} is yours.`)).toBeVisible();
+    await expect(owner.getByTestId('activation-done')).toContainText(
+      `${second.helmetCode} is registered to you.`,
+    );
     await owner.goto(portal('/app/helmets'));
     await expect(owner.getByTestId('helmet-card')).toHaveCount(2);
     for (const h of [first, second])

@@ -25,7 +25,7 @@ import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
 type Step = 'code' | 'confirm' | 'recovery';
 
 /**
- * Claim a helmet someone transferred to you: Helmet ID + one-time transfer code, then sign in
+ * Claim a helmet someone transferred to you: Helmet ID + one-time Transfer Code, then sign in
  * (existing customer) or create an account with email + password (new customer). The code stays in memory only.
  */
 export function ClaimPage() {
@@ -98,7 +98,7 @@ export function ClaimPage() {
     const h = normalizeHelmetCode(helmetCode);
     const t = normalizeTransferCode(transferCode);
     if (!h || !isValidHelmetCode(h)) return setFormError('Check the Helmet ID on the label.');
-    if (!t) return setFormError('A transfer code looks like TR-XXXX-XXXX-XXXX.');
+    if (!t) return setFormError('A Transfer Code looks like TR-XXXX-XXXX-XXXX.');
     setFormError(null);
     setHelmetCode(h);
     setTransferCode(t);
@@ -117,7 +117,7 @@ export function ClaimPage() {
         <h1 className="text-display-lg font-bold">Claim a helmet</h1>
         {step === 'code' && (
           <p className="mt-2 text-body">
-            Received a helmet from its previous owner? Enter its Helmet ID and the transfer code
+            Received a helmet from its previous owner? Enter its Helmet ID and the Transfer Code
             they gave you.
           </p>
         )}
@@ -134,7 +134,7 @@ export function ClaimPage() {
                   />
                 </Field>
                 <Field
-                  label="Transfer code"
+                  label="Transfer Code"
                   htmlFor="claim-code"
                   hint="Valid once, for a limited time."
                 >

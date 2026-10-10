@@ -18,8 +18,8 @@ import { RecoveryCodeNotice } from './RecoveryCodeNotice';
 type Step = 'verify' | 'reset' | 'code';
 
 /**
- * Forgot password: email, Customer ID or Helmet ID + recovery code → new password → new
- * recovery code (shown once). Works without access to the mailbox.
+ * Forgot password: email, Customer ID or Helmet ID + Recovery Code → new password → new
+ * Recovery Code (shown once). Works without access to the mailbox.
  */
 export function RecoverPage() {
   const navigate = useNavigate();
@@ -84,7 +84,7 @@ export function RecoverPage() {
         </h1>
         {step === 'verify' && (
           <p className="mt-2 text-body">
-            Enter your account email (or Customer ID / Helmet ID) and the recovery code you saved.
+            Enter your account email (or Customer ID / Helmet ID) and the Recovery Code you saved.
           </p>
         )}
         <Card className="mt-8">
@@ -107,7 +107,7 @@ export function RecoverPage() {
                   />
                 </Field>
                 <Field
-                  label="Recovery code"
+                  label="Recovery Code"
                   htmlFor="rec-code"
                   hint="Looks like RK-XXXX-XXXX-XXXX. If support gave you a one-time code (AR-…), enter it here with your Customer ID."
                 >
@@ -132,7 +132,7 @@ export function RecoverPage() {
                   Continue
                 </Button>
                 <p className="text-sm text-body">
-                  Lost your recovery code too? Contact support. After verifying your identity they
+                  Lost your Recovery Code too? Contact support. After verifying your identity they
                   can give you a one-time code by phone — never by email.
                 </p>
               </form>
@@ -146,7 +146,7 @@ export function RecoverPage() {
                   Set new password
                 </Button>
                 <p className="text-sm text-body">
-                  You’ll be signed out on every other device, and you’ll get a new recovery code.
+                  You’ll be signed out on every other device, and you’ll get a new Recovery Code.
                 </p>
               </form>
             )}

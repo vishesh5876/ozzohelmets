@@ -1,7 +1,12 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiProduces, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { type HelmetDetailDto, type HelmetListItemDto, Permission } from '@helmet/types';
+import {
+  type HelmetDetailDto,
+  type HelmetListItemDto,
+  Permission,
+  roleHasPermission,
+} from '@helmet/types';
 import type { PaginatedResult } from '../../common/http/api-response.interceptor';
 import { RawResponse } from '../../common/http/raw-response.decorator';
 import { ReqMeta, type RequestMeta } from '../../common/utils/request-context';
@@ -25,8 +30,11 @@ export class HelmetsController {
 
   @Get()
   @AdminAuth(Permission.HELMETS_READ)
-  list(@Query() query: HelmetQueryDto): Promise<PaginatedResult<HelmetListItemDto>> {
-    return this.helmets.list(query);
+  list(
+    @Query() query: HelmetQueryDto,
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+  ): Promise<PaginatedResult<HelmetListItemDto>> {
+    return this.helmets.list(query, roleHasPermission(admin.role, Permission.CUSTOMERS_READ));
   }
 
   @Get(':id')

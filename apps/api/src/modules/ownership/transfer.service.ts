@@ -363,7 +363,7 @@ export class TransferService {
     if (transfer.status === 'CLAIMED') {
       throw new TransferCodeFailure(
         ErrorCode.TRANSFER_ALREADY_USED,
-        'This transfer code has already been used.',
+        'This Transfer Code has already been used.',
         HttpStatus.CONFLICT,
       );
     }
@@ -371,7 +371,7 @@ export class TransferService {
     if (transfer.expires_at.getTime() <= Date.now()) {
       throw new TransferCodeFailure(
         ErrorCode.TRANSFER_CODE_EXPIRED,
-        'This transfer code has expired. Ask the owner for a new one.',
+        'This Transfer Code has expired. Ask the owner for a new one.',
         HttpStatus.GONE,
       );
     }
@@ -475,7 +475,7 @@ export class TransferService {
   private invalid(): TransferCodeFailure {
     return new TransferCodeFailure(
       ErrorCode.TRANSFER_CODE_INVALID,
-      'The Helmet ID or transfer code is incorrect.',
+      'The Helmet ID or Transfer Code is incorrect.',
       HttpStatus.BAD_REQUEST,
     );
   }

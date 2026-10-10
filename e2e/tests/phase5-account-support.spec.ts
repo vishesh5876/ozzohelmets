@@ -187,12 +187,12 @@ test.describe.serial('Phase 5: account management, support view and recovery gra
     await phone.goto(`${PORTAL}/app/account`);
     await expect(phone.getByTestId('recovery-status')).toContainText('Configured');
     await phone.fill('#rc-password', PASSWORD_2);
-    await phone.getByRole('button', { name: 'Generate new recovery code' }).click();
+    await phone.getByRole('button', { name: 'Generate new Recovery Code' }).click();
     await expect(phone.getByTestId('recovery-code')).toHaveText(/^RK-/);
     await phone.getByTestId('recovery-saved').check();
     await phone.getByRole('button', { name: 'Done' }).click();
     await expect(phone.getByTestId('recovery-code')).toHaveCount(0);
-    await expect(phone.getByTestId('recovery-status')).toHaveText('Recovery code: Configured');
+    await expect(phone.getByTestId('recovery-status')).toHaveText('Recovery Code: Configured');
   });
 
   test('10–12: update email; old email fails, new email works', async () => {
@@ -270,7 +270,7 @@ test.describe.serial('Phase 5: account management, support view and recovery gra
     );
     await admin.fill('#grant-confirm', customerId);
     await admin.fill('#grant-password', ADMIN_PASSWORD);
-    await admin.getByRole('button', { name: 'Issue recovery grant' }).click();
+    await admin.getByRole('button', { name: 'Issue Recovery Grant' }).click();
     grant = (await admin.getByTestId('grant-credential').innerText()).trim();
     expect(grant).toMatch(/^AR-[23456789A-HJ-NP-Z]{4}(-[23456789A-HJ-NP-Z]{4}){3}$/);
     await admin.getByRole('button', { name: /Done/ }).click();

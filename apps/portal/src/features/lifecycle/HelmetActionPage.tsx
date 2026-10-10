@@ -100,7 +100,7 @@ const COPY: Record<
           Scans will show “This helmet has been reported stolen” — your name, phone and medical
           information are hidden.
         </li>
-        <li>Transfers are blocked and any pending transfer code is cancelled.</li>
+        <li>Transfers are blocked and any pending Transfer Code is cancelled.</li>
         <li>You stay the owner and can mark it recovered later.</li>
       </ul>
     ),
@@ -302,7 +302,7 @@ function TransferPanel({ helmet }: { helmet: CustomerHelmetDetailDto }) {
         </div>
         {issued && active ? (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-body">Transfer code — shown only once</p>
+            <p className="text-sm text-body">Transfer Code — shown only once</p>
             <p
               className="rounded-xl border-2 border-dashed border-ink bg-canvas-softer px-4 py-5 text-center font-mono text-2xl font-bold tracking-wider"
               data-testid="transfer-code"
@@ -328,12 +328,12 @@ function TransferPanel({ helmet }: { helmet: CustomerHelmetDetailDto }) {
               </Button>
             </div>
             <p className="text-xs text-body">
-              This is not your recovery code. Never share your recovery code with anyone.
+              This is not your Recovery Code. Never share your Recovery Code with anyone.
             </p>
           </div>
         ) : active ? (
           <p className="rounded-md bg-canvas-soft px-4 py-3 text-sm">
-            A transfer code is active for another {countdown}. For security it can’t be shown again
+            A Transfer Code is active for another {countdown}. For security it can’t be shown again
             — generate a new one if needed (the old one stops working).
           </p>
         ) : null}
@@ -341,7 +341,7 @@ function TransferPanel({ helmet }: { helmet: CustomerHelmetDetailDto }) {
         <RecentAuthGate intro="Transferring ownership is sensitive. Confirm your password to continue.">
           <div className="flex flex-wrap gap-2">
             <Button loading={create.isPending} onClick={() => create.mutate()}>
-              {active ? 'Generate new code' : 'Generate transfer code'}
+              {active ? 'Generate new code' : 'Generate Transfer Code'}
             </Button>
             {active && (
               <Button
