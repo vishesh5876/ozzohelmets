@@ -33,8 +33,9 @@ mkdir -p "$OUT"
 } > "$tmp/geo.conf"
 install -m 644 "$tmp/realip.conf" "$OUT/realip.conf"
 install -m 644 "$tmp/geo.conf" "$OUT/geo.conf"
-if docker compose -f "$COMPOSE_DIR/docker-compose.prod.yml" --env-file "$COMPOSE_ENV_FILE" ps -q edge >/dev/null 2>&1; then
-  docker compose -f "$COMPOSE_DIR/docker-compose.prod.yml" --env-file "$COMPOSE_ENV_FILE" exec -T edge nginx -t
-  docker compose -f "$COMPOSE_DIR/docker-compose.prod.yml" --env-file "$COMPOSE_ENV_FILE" exec -T edge nginx -s reload
+export COMPOSE_ENV_FILE
+if [ -n "$("$COMPOSE_DIR/scripts/compose.sh" ps -q edge 2>/dev/null)" ]; then
+  "$COMPOSE_DIR/scripts/compose.sh" exec -T edge nginx -t
+  "$COMPOSE_DIR/scripts/compose.sh" exec -T edge nginx -s reload
 fi
 echo "Cloudflare ranges updated in $OUT"

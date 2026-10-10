@@ -42,8 +42,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body } = this.toFailure(exception);
     if (req?.id) body.error.requestId = String(req.id);
 
-    if (status === HttpStatus.SERVICE_UNAVAILABLE && !(exception instanceof AppException)) {
-      // Dependency outage: one compact line every 10 s instead of a stack trace per request.
+    // Dependency outages (including the readiness probe's expected 503): one compact line every
+    // 10 s instead of a stack trace per request/probe.
+    if (status === HttpStatus.SERVICE_UNAVAILABLE) {
       if (Date.now() - this.lastOutageLog > 10_000) {
         this.lastOutageLog = Date.now();
         const err = exception instanceof Error ? exception : new Error(String(exception));

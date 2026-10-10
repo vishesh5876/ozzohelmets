@@ -5,7 +5,7 @@
 //     -v $PWD/loadtest:/lt grafana/k6 run /lt/k6/scenarios.js
 //
 // SCENARIO: emergency_cached | emergency_uncached | verify | customer_login | customer_dashboard |
-//           admin_analytics | mixed. RATE and DURATION override the defaults.
+//           admin_analytics | mixed | login_flood. RATE and DURATION override the defaults.
 // All traffic comes from one IP, so staging must raise the per-IP limits for capacity runs
 // (docs/PHASE-7.md#load-test); production keeps them.
 import http from 'k6/http';
@@ -64,16 +64,23 @@ const ALL_SCENARIOS = {
 
 export const options = {
   scenarios:
-    SCENARIO === 'mixed'
+    SCENARIO === 'login_flood'
       ? {
+          // Emergency traffic while logins arrive faster than the API can hash passwords:
+          // emergency latency must stay low (Argon2 concurrency is capped).
           emergency_cached: scenario('emergency_cached', 'emergencyCached', 100),
-          emergency_uncached: scenario('emergency_uncached', 'emergencyUncached', 15),
-          verify: scenario('verify', 'verify', 20),
-          customer_login: scenario('customer_login', 'customerLogin', 2),
-          customer_dashboard: scenario('customer_dashboard', 'customerDashboard', 15),
-          admin_analytics: scenario('admin_analytics', 'adminAnalytics', 2),
+          customer_login: scenario('customer_login', 'customerLogin', 15),
         }
-      : { [SCENARIO]: ALL_SCENARIOS[SCENARIO] },
+      : SCENARIO === 'mixed'
+        ? {
+            emergency_cached: scenario('emergency_cached', 'emergencyCached', 100),
+            emergency_uncached: scenario('emergency_uncached', 'emergencyUncached', 15),
+            verify: scenario('verify', 'verify', 20),
+            customer_login: scenario('customer_login', 'customerLogin', 2),
+            customer_dashboard: scenario('customer_dashboard', 'customerDashboard', 15),
+            admin_analytics: scenario('admin_analytics', 'adminAnalytics', 2),
+          }
+        : { [SCENARIO]: ALL_SCENARIOS[SCENARIO] },
   thresholds: {
     http_req_failed: ['rate<0.01'],
     'http_req_duration{scenario:emergency_cached}': ['p(95)<300'],

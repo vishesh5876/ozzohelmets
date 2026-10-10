@@ -52,6 +52,8 @@ export const TEST_ENV: Record<string, string> = {
   RISK_VERIFY_DAILY: '10',
   RISK_MIN_SCANS_FOR_EVALUATION: '5',
   METRICS_TOKEN: 'test-metrics-token-0123456789abcdef',
+  // Some suites fire many concurrent logins on purpose (race tests).
+  ARGON2_MAX_QUEUE: '500',
   APP_VERSION: '1.0.0-test',
   GIT_SHA: 'abc1234',
 };

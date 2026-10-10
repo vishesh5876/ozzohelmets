@@ -138,4 +138,10 @@ export const metrics = {
   uploads: registry.register(
     new Counter('helmet_uploads_total', 'File uploads by kind and result'),
   ),
+  passwordHashRejected: registry.register(
+    new Counter(
+      'helmet_password_hash_rejected_total',
+      'Logins/activations refused with 503 because the Argon2 queue was full (protects emergency pages)',
+    ),
+  ),
 };

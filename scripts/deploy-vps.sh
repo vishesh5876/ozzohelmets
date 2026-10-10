@@ -16,7 +16,7 @@ set -Eeuo pipefail
 COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 COMPOSE_FILE="${COMPOSE_FILE:-$COMPOSE_DIR/docker-compose.prod.yml}"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-/etc/helmet-platform/compose.env}"
-STATE_DIR="${STATE_DIR:-/srv/helmet-platform/deploy-state}"
+STATE_DIR="${STATE_DIR:-}"
 REF=""; PULL=0; NO_BUILD=0; ROLLBACK=""; SKIP_BACKUP=0
 
 while [ $# -gt 0 ]; do
@@ -33,7 +33,8 @@ done
 
 log() { printf '\033[1m%s deploy:\033[0m %s\n' "$(date -u +%FT%TZ)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
-compose() { docker compose -f "$COMPOSE_FILE" --env-file "$COMPOSE_ENV_FILE" "$@"; }
+# APP_VERSION is exported below, so it overrides both env files for this run.
+compose() { "$COMPOSE_DIR/scripts/compose.sh" "$@"; }
 export COMPOSE_FILE COMPOSE_ENV_FILE COMPOSE_DIR
 
 # ── Preflight ─────────────────────────────────────────────────────────────────────────────────
@@ -54,6 +55,8 @@ for f in "${APP_ENV_FILE:-/etc/helmet-platform/app.env}" "${POSTGRES_ENV_FILE:-/
   [ "${perm: -1}" = 0 ] || die "$f is world-accessible (mode $perm); chmod 600 it"
 done
 DATA_ROOT="${DATA_ROOT:-/srv/helmet-platform}"
+STATE_DIR="${STATE_DIR:-$DATA_ROOT/deploy-state}"
+export RELEASE_ENV_FILE="$STATE_DIR/release.env"
 for d in postgres redis uploads backups; do [ -d "$DATA_ROOT/$d" ] || die "missing $DATA_ROOT/$d (run scripts/vps-prepare.sh)"; done
 compose config -q || die "docker-compose.prod.yml does not validate with $COMPOSE_ENV_FILE"
 mkdir -p "$STATE_DIR"
@@ -145,5 +148,7 @@ if [ $FAIL = 1 ]; then
   exit 1
 fi
 printf '%s %s %s\n' "$(date -u +%FT%TZ)" "$VERSION_RUNNING" "$SHA_RUNNING" >> "$STATE_DIR/releases.log"
+# Pin the deployed release for every later compose command (scripts/compose.sh reads it).
+printf 'APP_VERSION=%s\nGIT_SHA=%s\n' "$VERSION_RUNNING" "$SHA_RUNNING" > "$STATE_DIR/release.env"
 log "deployed $VERSION_RUNNING ($SHA_RUNNING). Previous: ${PREVIOUS:-none}."
 log "keep the previous images for rollback; prune older ones with: docker image prune --filter until=720h"

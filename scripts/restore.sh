@@ -21,9 +21,13 @@ umask 077
 CONFIG_FILE="${HELMET_BACKUP_CONFIG:-/etc/helmet-platform/backup.env}"
 # shellcheck disable=SC1090
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
-COMPOSE_DIR="${COMPOSE_DIR:-/opt/helmet-platform}"
+COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 COMPOSE_FILE="${COMPOSE_FILE:-$COMPOSE_DIR/docker-compose.prod.yml}"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-/etc/helmet-platform/compose.env}"
+# DATA_ROOT: explicit env > backup.env > compose.env > default.
+if [ -z "${DATA_ROOT:-}" ] && [ -r "$COMPOSE_ENV_FILE" ]; then
+  DATA_ROOT=$(sed -n 's/^DATA_ROOT=//p' "$COMPOSE_ENV_FILE" | tail -1)
+fi
 DATA_ROOT="${DATA_ROOT:-/srv/helmet-platform}"
 UPLOADS_DIR="${UPLOADS_DIR:-$DATA_ROOT/uploads}"
 APP_UID="${APP_UID:-1000}"
@@ -45,7 +49,7 @@ compose() {
     # shellcheck disable=SC2086
     $COMPOSE_CMD "$@"
   else
-    docker compose -f "$COMPOSE_FILE" --env-file "$COMPOSE_ENV_FILE" "$@"
+    COMPOSE_FILE="$COMPOSE_FILE" COMPOSE_ENV_FILE="$COMPOSE_ENV_FILE" "$COMPOSE_DIR/scripts/compose.sh" "$@"
   fi
 }
 log() { printf '%s restore: %s\n' "$(date -u +%FT%TZ)" "$*"; }

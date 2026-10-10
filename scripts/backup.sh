@@ -26,9 +26,13 @@ CONFIG_FILE="${HELMET_BACKUP_CONFIG:-/etc/helmet-platform/backup.env}"
 # shellcheck disable=SC1090
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 
-COMPOSE_DIR="${COMPOSE_DIR:-/opt/helmet-platform}"
+COMPOSE_DIR="${COMPOSE_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 COMPOSE_FILE="${COMPOSE_FILE:-$COMPOSE_DIR/docker-compose.prod.yml}"
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-/etc/helmet-platform/compose.env}"
+# DATA_ROOT: explicit env > backup.env > compose.env > default.
+if [ -z "${DATA_ROOT:-}" ] && [ -r "$COMPOSE_ENV_FILE" ]; then
+  DATA_ROOT=$(sed -n 's/^DATA_ROOT=//p' "$COMPOSE_ENV_FILE" | tail -1)
+fi
 DATA_ROOT="${DATA_ROOT:-/srv/helmet-platform}"
 UPLOADS_DIR="${UPLOADS_DIR:-$DATA_ROOT/uploads}"
 BACKUP_ROOT="${BACKUP_ROOT:-$DATA_ROOT/backups}"
@@ -43,7 +47,7 @@ compose() {
     # shellcheck disable=SC2086
     $COMPOSE_CMD "$@"
   else
-    docker compose -f "$COMPOSE_FILE" --env-file "$COMPOSE_ENV_FILE" "$@"
+    COMPOSE_FILE="$COMPOSE_FILE" COMPOSE_ENV_FILE="$COMPOSE_ENV_FILE" "$COMPOSE_DIR/scripts/compose.sh" "$@"
   fi
 }
 
@@ -94,6 +98,17 @@ DB_OBJECTS=$(grep -cv '^;' "$WORK/db-toc.txt" || true)
 LATEST_MIGRATION=$(compose exec -T postgres sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name DESC LIMIT 1"' | tr -d '\r')
 PG_VERSION=$(compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SHOW server_version"' | tr -d '\r')
+# Row counts of key tables (restore drills compare against these). Counts only — no data.
+ROW_COUNTS=$(compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT json_build_object(
+  '"'"'users'"'"', (SELECT count(*) FROM users),
+  '"'"'helmets'"'"', (SELECT count(*) FROM helmets),
+  '"'"'helmet_ownerships'"'"', (SELECT count(*) FROM helmet_ownerships),
+  '"'"'emergency_profiles'"'"', (SELECT count(*) FROM emergency_profiles),
+  '"'"'emergency_contacts'"'"', (SELECT count(*) FROM emergency_contacts),
+  '"'"'helmet_warranties'"'"', (SELECT count(*) FROM helmet_warranties),
+  '"'"'audit_logs'"'"', (SELECT count(*) FROM audit_logs),
+  '"'"'helmet_scan_daily'"'"', (SELECT count(*) FROM helmet_scan_daily),
+  '"'"'admin_users'"'"', (SELECT count(*) FROM admin_users))"' | tr -d '\r')
 
 # ── 2. Uploaded files (profile photos, warranty proofs) ───────────────────────────────────────
 if command -v zstd >/dev/null; then
@@ -119,6 +134,7 @@ cat > "$WORK/manifest.json" <<JSON
   "gitSha": "${GIT_SHA:-unknown}",
   "postgresVersion": "$PG_VERSION",
   "latestMigration": "$LATEST_MIGRATION",
+  "rowCounts": $ROW_COUNTS,
   "database": { "file": "$DB_FILE", "bytes": $(stat -c %s "$WORK/$DB_FILE"), "sha256": "$(cut -d' ' -f1 <(grep " $DB_FILE\$" "$WORK/SHA256SUMS"))", "archiveObjects": $DB_OBJECTS },
   "uploads": { "file": "$UP_FILE", "bytes": $(stat -c %s "$WORK/$UP_FILE"), "sha256": "$(cut -d' ' -f1 <(grep " $UP_FILE\$" "$WORK/SHA256SUMS"))", "files": $UP_FILES },
   "notIncluded": ["application env files and secrets", "encryption keys", "TLS keys", "Redis (ephemeral)"]

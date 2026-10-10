@@ -185,6 +185,12 @@ export const envSchema = z
     IP_HASH_SECRET: secret('IP_HASH_SECRET'),
     PIN_ARGON2_MEMORY_KIB: z.coerce.number().int().min(8192).default(19456),
     PIN_ARGON2_TIME_COST: z.coerce.number().int().min(1).default(2),
+    /**
+     * Phase 7: concurrent Argon2 operations per API process. Keep it below the container's CPU
+     * limit (1 for the default 1.5-CPU API container) so login floods can't starve emergency pages.
+     */
+    ARGON2_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(1),
+    ARGON2_MAX_QUEUE: z.coerce.number().int().min(1).max(1000).default(16),
 
     BATCH_MAX_QUANTITY: z.coerce.number().int().min(1).max(1_000_000).default(50_000),
     BATCH_GENERATION_CHUNK_SIZE: z.coerce.number().int().min(10).max(5000).default(500),

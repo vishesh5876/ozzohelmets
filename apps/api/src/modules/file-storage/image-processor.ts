@@ -1,5 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
-import sharp from 'sharp';
+import sharp, { type Metadata } from 'sharp';
 import { ErrorCode } from '@helmet/types';
 import { AppException } from '../../common/http/app.exception';
 
@@ -50,7 +50,7 @@ export async function processProfilePhoto(
     throw invalid(`Photos must be smaller than ${Math.floor(maxBytes / 1_048_576)} MB.`);
   if (!sniffImage(input)) throw invalid('Upload a JPEG, PNG or WebP image.');
 
-  let meta: sharp.Metadata;
+  let meta: Metadata;
   try {
     meta = await sharp(input, {
       limitInputPixels: MAX_INPUT_DIMENSION * MAX_INPUT_DIMENSION,
