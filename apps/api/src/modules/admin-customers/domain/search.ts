@@ -1,9 +1,10 @@
-import { parseAccountIdentifier } from '@helmet/types';
+import { normalizeSafetyCode, parseAccountIdentifier } from '@helmet/types';
 
 export type CustomerQuery =
   | { kind: 'all' }
   | { kind: 'customerId'; code: string }
   | { kind: 'helmetId'; code: string }
+  | { kind: 'safetyId'; code: string }
   | { kind: 'email'; fragment: string }
   | { kind: 'text'; fragment: string }
   | { kind: 'tooShort' };
@@ -12,7 +13,7 @@ export const MIN_PARTIAL_QUERY = 3;
 
 /**
  * Interprets an admin search box: exact Customer ID (`CU-…`, checksum-validated), exact Helmet ID
- * (`HM-…`), partial email (contains `@`) or partial name/email text (≥ 3 characters, so the
+ * (`HM-…`), exact Safety ID (`SI-…`, Phase 9), partial email (contains `@`) or partial name/email text (≥ 3 characters, so the
  * trigram index can serve it).
  */
 export function parseCustomerQuery(raw: string | undefined): CustomerQuery {
@@ -22,9 +23,12 @@ export function parseCustomerQuery(raw: string | undefined): CustomerQuery {
     const id = parseAccountIdentifier(q);
     if (id?.kind === 'customer') return { kind: 'customerId', code: id.code };
     if (id?.kind === 'helmet') return { kind: 'helmetId', code: id.code };
+    const safety = normalizeSafetyCode(q);
+    if (safety) return { kind: 'safetyId', code: safety };
     // An ID-shaped query with a typo gets an exact (empty) answer, never a fuzzy match.
     if (/^CU[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'customerId', code: q.toUpperCase() };
     if (/^HM[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'helmetId', code: q.toUpperCase() };
+    if (/^SI[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'safetyId', code: q.toUpperCase() };
   }
   const fragment = q.toLowerCase().slice(0, 254);
   if (fragment.length < MIN_PARTIAL_QUERY) return { kind: 'tooShort' };

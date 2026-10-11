@@ -417,7 +417,7 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
           'LOGIN_SUCCESS',
           'SESSION_REVOKED',
           'ALL_SESSIONS_REVOKED',
-          'HELMET_ACTIVATED',
+          'SAFETY_ID_ACTIVATED',
         ]),
       );
       for (const e of activity)
@@ -789,7 +789,8 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
         .send({ publicToken: h.publicToken, pin: 'ZZZZ9999' })
         .expect(400);
       expect(
-        (await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).activationAttempts,
+        (await ctx.prisma.safetyId.findUniqueOrThrow({ where: { id: h.safetyId } }))
+          .activationAttempts,
       ).toBe(1);
       await ctx
         .http()
@@ -801,13 +802,19 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
           password: TEST_PASSWORD,
         })
         .expect(200);
-      const row = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } });
+      const row = await ctx.prisma.safetyId.findUniqueOrThrow({ where: { id: h.safetyId } });
       expect(row).toMatchObject({
         activationAttempts: 0,
         activationLockedUntil: null,
         activationPinUsed: true,
       });
-      expect(await ctx.prisma.helmetActivationSecret.count({ where: { helmetId: h.id } })).toBe(0);
+      // The linked helmet's PIN flag is dual-written (Phase 8 rollback compatibility).
+      expect(
+        (await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).activationPinUsed,
+      ).toBe(true);
+      expect(
+        await ctx.prisma.safetyIdActivationSecret.count({ where: { safetyId: h.safetyId } }),
+      ).toBe(0);
       const everything = JSON.stringify([
         await ctx.prisma.auditLog.findMany(),
         await ctx.prisma.customerSecurityEvent.findMany(),

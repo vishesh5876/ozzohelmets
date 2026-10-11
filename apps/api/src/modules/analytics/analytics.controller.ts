@@ -4,8 +4,8 @@ import {
   type AnalyticsOverviewDto,
   type CursorPage,
   type CustomerScanSummaryDto,
-  type HelmetActivityItemDto,
-  type HelmetAnalyticsDetailDto,
+  type SafetyIdActivityItemDto,
+  type SafetyIdAnalyticsDetailDto,
   type HelmetScanEventDto,
   Permission,
   type RiskAlertDto,
@@ -45,57 +45,103 @@ export class AdminAnalyticsController {
 
   @Get('scans')
   @AdminAuth(Permission.ANALYTICS_VIEW)
-  @ApiOperation({ summary: 'Public QR scan analytics: totals, trend, top helmets.' })
+  @ApiOperation({ summary: 'Public QR scan analytics: totals, trend, top Safety IDs.' })
   scans(@Query() q: AnalyticsRangeQueryDto): Promise<ScanAnalyticsDto> {
     return this.analytics.scans(resolveRange(q.range, q.from, q.to));
   }
 
+  @Get('safety-ids')
+  @AdminAuth(Permission.ANALYTICS_VIEW)
+  @ApiOperation({
+    summary: 'Safety IDs with unusual QR activity (cursor-paginated by risk score).',
+  })
+  safetyIds(@Query() q: HelmetActivityQueryDto): Promise<CursorPage<SafetyIdActivityItemDto>> {
+    return this.analytics.safetyIdActivity(q);
+  }
+
+  /** Phase 8 path kept for older admin builds (same Safety-ID-centric list). */
   @Get('helmets')
   @AdminAuth(Permission.ANALYTICS_VIEW)
-  @ApiOperation({ summary: 'Helmets with unusual QR activity (cursor-paginated by risk score).' })
-  helmets(@Query() q: HelmetActivityQueryDto): Promise<CursorPage<HelmetActivityItemDto>> {
-    return this.analytics.helmetActivity(q);
+  @ApiOperation({ summary: 'Deprecated alias of /safety-ids.', deprecated: true })
+  helmets(@Query() q: HelmetActivityQueryDto): Promise<CursorPage<SafetyIdActivityItemDto>> {
+    return this.analytics.safetyIdActivity(q);
+  }
+
+  @Get('safety-ids/:code')
+  @AdminAuth(Permission.ANALYTICS_VIEW)
+  @ApiOperation({
+    summary:
+      'One Safety ID (SI-… or a linked HM-…): scan trend, explainable risk, alerts (if permitted), reports.',
+  })
+  safetyId(
+    @Param('code') code: string,
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+  ): Promise<SafetyIdAnalyticsDetailDto> {
+    return this.analytics.safetyIdDetail(
+      code,
+      roleHasPermission(admin.role, Permission.RISK_ALERT_VIEW),
+    );
   }
 
   @Get('helmets/:helmetCode')
   @AdminAuth(Permission.ANALYTICS_VIEW)
-  @ApiOperation({
-    summary: 'One helmet: scan trend, explainable risk, alerts (if permitted), reports.',
-  })
+  @ApiOperation({ summary: "Deprecated: the helmet's linked Safety ID.", deprecated: true })
   helmet(
     @Param('helmetCode') helmetCode: string,
     @CurrentAdmin() admin: AuthenticatedAdmin,
-  ): Promise<HelmetAnalyticsDetailDto> {
-    return this.analytics.helmetDetail(
+  ): Promise<SafetyIdAnalyticsDetailDto> {
+    return this.analytics.safetyIdDetail(
       helmetCode,
       roleHasPermission(admin.role, Permission.RISK_ALERT_VIEW),
     );
   }
 
-  @Get('helmets/:helmetCode/scans')
+  @Get('safety-ids/:code/scans')
   @AdminAuth(Permission.ANALYTICS_VIEW)
   @ApiOperation({
     summary: 'Scan events (type, time, device class, cache) — no IPs. Cursor-paginated.',
   })
+  safetyIdScans(
+    @Param('code') code: string,
+    @Query() q: CursorQueryDto,
+  ): Promise<CursorPage<HelmetScanEventDto>> {
+    return this.analytics.safetyIdScans(code, q.cursor, q.limit);
+  }
+
+  @Get('helmets/:helmetCode/scans')
+  @AdminAuth(Permission.ANALYTICS_VIEW)
+  @ApiOperation({ summary: 'Deprecated alias (linked Safety ID).', deprecated: true })
   helmetScans(
     @Param('helmetCode') helmetCode: string,
     @Query() q: CursorQueryDto,
   ): Promise<CursorPage<HelmetScanEventDto>> {
-    return this.analytics.helmetScans(helmetCode, q.cursor, q.limit);
+    return this.analytics.safetyIdScans(helmetCode, q.cursor, q.limit);
   }
 
-  @Patch('helmets/:helmetCode/qr-integrity')
+  @Patch('safety-ids/:code/qr-integrity')
   @AdminAuth(Permission.QR_INTEGRITY_MANAGE)
   @ApiOperation({
     summary:
       'Human decision: NORMAL / UNDER_REVIEW / COMPROMISED. Audited. Never changes lifecycle or emergency access.',
   })
   qrIntegrity(
+    @Param('code') code: string,
+    @Body() dto: QrIntegrityDto,
+    @CurrentAdmin() admin: AuthenticatedAdmin,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<SafetyIdAnalyticsDetailDto> {
+    return this.analytics.setQrIntegrity(admin, code, dto.status, dto.note, meta);
+  }
+
+  @Patch('helmets/:helmetCode/qr-integrity')
+  @AdminAuth(Permission.QR_INTEGRITY_MANAGE)
+  @ApiOperation({ summary: 'Deprecated alias (linked Safety ID).', deprecated: true })
+  helmetQrIntegrity(
     @Param('helmetCode') helmetCode: string,
     @Body() dto: QrIntegrityDto,
     @CurrentAdmin() admin: AuthenticatedAdmin,
     @ReqMeta() meta: RequestMeta,
-  ): Promise<HelmetAnalyticsDetailDto> {
+  ): Promise<SafetyIdAnalyticsDetailDto> {
     return this.analytics.setQrIntegrity(admin, helmetCode, dto.status, dto.note, meta);
   }
 }
@@ -134,17 +180,26 @@ export class AdminRiskAlertsController {
 }
 
 /** Owner-facing neutral scan counts. No IPs, devices, locations or risk internals. */
-@ApiTags('customer-helmets')
-@Controller('customer/helmets')
+@ApiTags('customer / safety IDs')
+@Controller('customer')
 @CustomerAuth()
 export class CustomerScanSummaryController {
   constructor(private readonly analytics: AnalyticsQueryService) {}
 
-  @Get(':id/scan-summary')
+  @Get('safety-ids/:id/scan-summary')
   summary(
     @CurrentCustomer() c: AuthenticatedCustomer,
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<CustomerScanSummaryDto> {
     return this.analytics.customerSummary(c.id, id);
+  }
+
+  /** Phase 8 path: the helmet's linked Safety ID. */
+  @Get('helmets/:id/scan-summary')
+  helmetSummary(
+    @CurrentCustomer() c: AuthenticatedCustomer,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<CustomerScanSummaryDto> {
+    return this.analytics.customerSummaryForHelmet(c.id, id);
   }
 }

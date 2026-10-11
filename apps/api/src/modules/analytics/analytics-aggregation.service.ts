@@ -33,7 +33,7 @@ export class AnalyticsAggregationService {
   async aggregateRecent(now = new Date(), backfillDays = 30): Promise<{ days: string[] }> {
     const today = utcDay(now);
     const days = [addDays(today, -1), today];
-    const existing = await this.prisma.helmetScanDaily.count({ take: 1 });
+    const existing = await this.prisma.safetyIdScanDaily.count({ take: 1 });
     if (existing === 0) {
       const first = await this.prisma.helmetScan.findFirst({
         where: { synthetic: false },
@@ -53,10 +53,44 @@ export class AnalyticsAggregationService {
   }
 
   async aggregateDay(day: string, today = utcDay(new Date())): Promise<void> {
+    await this.aggregateSafetyIdDay(day);
     await this.aggregateHelmetDay(day);
     await this.aggregatePlatformDay(day, day === today);
   }
 
+  /** Phase 9: per-Safety-ID (scanned QR) daily aggregates; standalone Safety IDs included. */
+  async aggregateSafetyIdDay(day: string): Promise<number> {
+    return this.prisma.$executeRaw`
+      INSERT INTO safety_id_scan_daily (
+        id, date, safety_id, total_scans, emergency_scans, verification_scans, activation_scans,
+        bot_scans, unique_ip_hashes, distinct_device_categories, last_scan_at, created_at, updated_at)
+      SELECT gen_random_uuid(), ${day}::date, safety_id,
+        count(*) FILTER (WHERE device_category IS DISTINCT FROM 'BOT'),
+        count(*) FILTER (WHERE device_category IS DISTINCT FROM 'BOT' AND scan_type = 'EMERGENCY_PAGE'),
+        count(*) FILTER (WHERE device_category IS DISTINCT FROM 'BOT' AND scan_type = 'VERIFY'),
+        count(*) FILTER (WHERE device_category IS DISTINCT FROM 'BOT' AND scan_type = 'ACTIVATION'),
+        count(*) FILTER (WHERE device_category = 'BOT'),
+        count(DISTINCT ip_hash) FILTER (WHERE device_category IS DISTINCT FROM 'BOT'),
+        count(DISTINCT device_category),
+        max(scanned_at), now(), now()
+      FROM helmet_scans
+      WHERE scanned_at >= (${day}::date::timestamp AT TIME ZONE 'UTC')
+        AND scanned_at < ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC')
+        AND synthetic = false AND safety_id IS NOT NULL
+      GROUP BY safety_id
+      ON CONFLICT (safety_id, date) DO UPDATE SET
+        total_scans = EXCLUDED.total_scans,
+        emergency_scans = EXCLUDED.emergency_scans,
+        verification_scans = EXCLUDED.verification_scans,
+        activation_scans = EXCLUDED.activation_scans,
+        bot_scans = EXCLUDED.bot_scans,
+        unique_ip_hashes = EXCLUDED.unique_ip_hashes,
+        distinct_device_categories = EXCLUDED.distinct_device_categories,
+        last_scan_at = EXCLUDED.last_scan_at,
+        updated_at = now()`;
+  }
+
+  /** Per-helmet aggregates of scans made while the QR was linked to that helmet (product view). */
   async aggregateHelmetDay(day: string): Promise<number> {
     return this.prisma.$executeRaw`
       INSERT INTO helmet_scan_daily (
@@ -74,7 +108,7 @@ export class AnalyticsAggregationService {
       FROM helmet_scans
       WHERE scanned_at >= (${day}::date::timestamp AT TIME ZONE 'UTC')
         AND scanned_at < ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC')
-        AND synthetic = false
+        AND synthetic = false AND helmet_id IS NOT NULL
       GROUP BY helmet_id
       ON CONFLICT (helmet_id, date) DO UPDATE SET
         total_scans = EXCLUDED.total_scans,
@@ -98,7 +132,11 @@ export class AnalyticsAggregationService {
     await this.prisma.$executeRaw`
       WITH r AS (
         SELECT (${day}::date::timestamp AT TIME ZONE 'UTC') AS s,
-               ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC') AS e)
+               ((${day}::date + 1)::timestamp AT TIME ZONE 'UTC') AS e),
+      -- Safety IDs linked to internal acceptance-test helmets (Phase 9: QR metrics are per Safety ID).
+      x AS (
+        SELECT l.safety_id FROM safety_id_helmet_links l JOIN helmets h ON h.id = l.helmet_id
+        WHERE l.ended_at IS NULL AND h.helmet_model_id = ANY(${ex}::uuid[]))
       INSERT INTO platform_daily_stats (
         date, helmets_generated, helmets_activated, new_customers, active_emergency_profiles,
         emergency_scans, verification_scans, unique_helmets_scanned, warranties_registered,
@@ -108,10 +146,10 @@ export class AnalyticsAggregationService {
         (SELECT count(*) FROM helmets, r WHERE created_at >= r.s AND created_at < r.e AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM helmets, r WHERE activated_at >= r.s AND activated_at < r.e AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM users, r WHERE created_at >= r.s AND created_at < r.e),
-        (SELECT count(*) FROM helmets WHERE status = 'ACTIVE' AND NOT (helmet_model_id = ANY(${ex}::uuid[]))),
-        (SELECT coalesce(sum(emergency_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
-        (SELECT coalesce(sum(verification_scans), 0) FROM helmet_scan_daily WHERE date = ${day}::date AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
-        (SELECT count(*) FROM helmet_scan_daily WHERE date = ${day}::date AND total_scans > 0 AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
+        (SELECT count(*) FROM safety_ids WHERE status = 'ACTIVE' AND id NOT IN (SELECT safety_id FROM x)),
+        (SELECT coalesce(sum(emergency_scans), 0) FROM safety_id_scan_daily WHERE date = ${day}::date AND safety_id NOT IN (SELECT safety_id FROM x)),
+        (SELECT coalesce(sum(verification_scans), 0) FROM safety_id_scan_daily WHERE date = ${day}::date AND safety_id NOT IN (SELECT safety_id FROM x)),
+        (SELECT count(*) FROM safety_id_scan_daily WHERE date = ${day}::date AND total_scans > 0 AND safety_id NOT IN (SELECT safety_id FROM x)),
         (SELECT count(*) FROM helmet_warranties, r WHERE registered_at >= r.s AND registered_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'LOST' AND created_at >= r.s AND created_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),
         (SELECT count(*) FROM helmet_status_history, r WHERE to_status = 'STOLEN' AND created_at >= r.s AND created_at < r.e AND helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))),

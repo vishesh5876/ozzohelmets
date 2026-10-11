@@ -45,8 +45,11 @@ export const SafetyIdStatus = {
 } as const;
 export type SafetyIdStatus = (typeof SafetyIdStatus)[keyof typeof SafetyIdStatus];
 
-/** Statuses from which a customer may activate with the Activation PIN. */
-export const SAFETY_ID_ACTIVATABLE: readonly SafetyIdStatus[] = ['GENERATED', 'PRINTED'];
+/**
+ * Statuses from which a customer may activate with the Activation PIN. GENERATED is excluded
+ * (labels not confirmed printed, PIN still in escrow), exactly like Phase 8 helmets.
+ */
+export const SAFETY_ID_ACTIVATABLE: readonly SafetyIdStatus[] = ['PRINTED'];
 
 /** Owned and in use: emergency sharing may be switched on or off. */
 export const SAFETY_ID_IN_USE: readonly SafetyIdStatus[] = ['ACTIVATED', 'ACTIVE'];
@@ -57,7 +60,7 @@ export const SAFETY_ID_IN_USE: readonly SafetyIdStatus[] = ['ACTIVATED', 'ACTIVE
  * (lost, stolen, damaged, recalled) belongs to a linked helmet, never to the Safety ID.
  */
 export const SAFETY_ID_TRANSITIONS: Readonly<Record<SafetyIdStatus, readonly SafetyIdStatus[]>> = {
-  GENERATED: ['PRINTED', 'ACTIVATED', 'DEACTIVATED'],
+  GENERATED: ['PRINTED', 'DEACTIVATED'],
   PRINTED: ['ACTIVATED', 'DEACTIVATED'],
   ACTIVATED: ['ACTIVE', 'DEACTIVATED', 'REPLACED'],
   ACTIVE: ['ACTIVATED', 'DEACTIVATED', 'REPLACED'],

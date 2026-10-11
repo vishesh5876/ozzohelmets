@@ -63,6 +63,11 @@ export class RetentionService {
             await this.prisma.helmetScanDaily.deleteMany({
               where: { date: { lt: new Date(now.getTime() - aggregateDays * DAY_MS) } },
             })
+          ).count +
+          (
+            await this.prisma.safetyIdScanDaily.deleteMany({
+              where: { date: { lt: new Date(now.getTime() - aggregateDays * DAY_MS) } },
+            })
           ).count
         : 0;
     return {

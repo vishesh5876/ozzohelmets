@@ -32,8 +32,8 @@ export interface EvaluationResult {
 
 /**
  * Deterministic risk evaluation over scan metadata, lifecycle and product reports — never medical
- * data. Writes explainable signals and assessments and raises deduplicated alerts. It never
- * changes HelmetStatus, QR integrity or public availability.
+ * data. Writes explainable signals and assessments per Safety ID (Phase 9) and raises
+ * deduplicated alerts. It never changes a status, QR integrity or public availability.
  */
 @Injectable()
 export class RiskEvaluationService {
@@ -57,12 +57,15 @@ export class RiskEvaluationService {
     };
   }
 
-  /** One-query metrics for helmets with enough recent public (non-bot, non-synthetic) scans. */
+  /**
+   * One-query metrics per Safety ID (the scanned QR) with enough recent public (non-bot,
+   * non-synthetic) scans. Phase 9: risk is Safety-ID-centric; standalone Safety IDs are covered.
+   */
   async collectMetrics(now: Date): Promise<Map<string, HelmetScanMetrics>> {
     const minScans = this.config.get('RISK_MIN_SCANS_FOR_EVALUATION');
     const rows = await this.prisma.$queryRaw<
       {
-        helmet_id: string;
+        safety_id: string;
         h1: bigint;
         d1: bigint;
         u1: bigint;
@@ -71,7 +74,7 @@ export class RiskEvaluationService {
         v1: bigint;
       }[]
     >`
-      SELECT helmet_id,
+      SELECT safety_id,
         count(*) FILTER (WHERE scanned_at >= ${new Date(now.getTime() - HOUR)}) AS h1,
         count(*) AS d1,
         count(DISTINCT ip_hash) FILTER (WHERE scanned_at >= ${new Date(now.getTime() - HOUR)}) AS u1,
@@ -80,34 +83,34 @@ export class RiskEvaluationService {
         count(*) FILTER (WHERE scan_type = 'VERIFY') AS v1
       FROM helmet_scans
       WHERE scanned_at >= ${new Date(now.getTime() - 24 * HOUR)} AND scanned_at <= ${now}
-        AND synthetic = false AND device_category IS DISTINCT FROM 'BOT'
-      GROUP BY helmet_id
+        AND synthetic = false AND device_category IS DISTINCT FROM 'BOT' AND safety_id IS NOT NULL
+      GROUP BY safety_id
       HAVING count(*) >= ${minScans}`;
-    const ids = rows.map((r) => r.helmet_id);
+    const ids = rows.map((r) => r.safety_id);
     const today = now.toISOString().slice(0, 10);
     const [baselines, reports] = ids.length
       ? await Promise.all([
-          this.prisma.$queryRaw<{ helmet_id: string; avg: number }[]>`
-            SELECT helmet_id, coalesce(sum(verification_scans), 0)::float / 7 AS avg
-            FROM helmet_scan_daily
-            WHERE helmet_id = ANY(${ids}::uuid[])
+          this.prisma.$queryRaw<{ safety_id: string; avg: number }[]>`
+            SELECT safety_id, coalesce(sum(verification_scans), 0)::float / 7 AS avg
+            FROM safety_id_scan_daily
+            WHERE safety_id = ANY(${ids}::uuid[])
               AND date >= (${today}::date - 7) AND date < ${today}::date
-            GROUP BY helmet_id`,
+            GROUP BY safety_id`,
           this.prisma.productReport.groupBy({
-            by: ['helmetId'],
+            by: ['safetyId'],
             where: {
-              helmetId: { in: ids },
+              safetyId: { in: ids },
               createdAt: { gte: new Date(now.getTime() - 30 * 24 * HOUR) },
             },
             _count: { _all: true },
           }),
         ])
       : [[], []];
-    const baseline = new Map(baselines.map((b) => [b.helmet_id, Number(b.avg)]));
-    const reportCount = new Map(reports.map((r) => [r.helmetId!, r._count._all]));
+    const baseline = new Map(baselines.map((b) => [b.safety_id, Number(b.avg)]));
+    const reportCount = new Map(reports.map((r) => [r.safetyId!, r._count._all]));
     return new Map(
       rows.map((r) => [
-        r.helmet_id,
+        r.safety_id,
         {
           scans1h: Number(r.h1),
           scans24h: Number(r.d1),
@@ -115,8 +118,8 @@ export class RiskEvaluationService {
           scans15m: Number(r.m15),
           uniqueIp15m: Number(r.u15),
           verify24h: Number(r.v1),
-          verifyBaselineDaily: baseline.get(r.helmet_id) ?? 0,
-          productReports30d: reportCount.get(r.helmet_id) ?? 0,
+          verifyBaselineDaily: baseline.get(r.safety_id) ?? 0,
+          productReports30d: reportCount.get(r.safety_id) ?? 0,
         },
       ]),
     );
@@ -134,12 +137,12 @@ export class RiskEvaluationService {
     };
     const touched = new Set<string>();
 
-    for (const [helmetId, m] of metrics) {
+    for (const [safetyId, m] of metrics) {
       const observed = evaluateHelmetSignals(m, t);
       if (observed.length === 0) continue;
-      touched.add(helmetId);
+      touched.add(safetyId);
       for (const s of observed) {
-        await this.upsertSignal(helmetId, s, now, m);
+        await this.upsertSignal(safetyId, s, now, m);
         result.signalsUpserted++;
       }
     }
@@ -148,29 +151,29 @@ export class RiskEvaluationService {
     const clearBefore = new Date(
       now.getTime() - this.config.get('RISK_SIGNAL_CLEAR_AFTER_HOURS') * HOUR,
     );
-    const stale = await this.prisma.helmetRiskSignal.findMany({
+    const stale = await this.prisma.safetyIdRiskSignal.findMany({
       where: { status: 'ACTIVE', lastDetectedAt: { lt: clearBefore } },
-      select: { id: true, helmetId: true },
+      select: { id: true, safetyId: true },
     });
     if (stale.length) {
-      await this.prisma.helmetRiskSignal.updateMany({
+      await this.prisma.safetyIdRiskSignal.updateMany({
         where: { id: { in: stale.map((s) => s.id) } },
         data: { status: 'CLEARED', clearedAt: now },
       });
       result.signalsCleared = stale.length;
-      for (const s of stale) touched.add(s.helmetId);
+      for (const s of stale) touched.add(s.safetyId);
     }
 
-    for (const helmetId of touched) {
-      const level = await this.refreshAssessment(helmetId, now);
+    for (const safetyId of touched) {
+      const level = await this.refreshAssessment(safetyId, now);
       result.assessmentsUpdated++;
-      if (await this.raiseHelmetAlert(helmetId, level, now)) result.alertsRaised++;
+      if (await this.raiseSafetyIdAlert(safetyId, level, now)) result.alertsRaised++;
     }
     return result;
   }
 
   private async upsertSignal(
-    helmetId: string,
+    safetyId: string,
     s: ObservedSignal,
     now: Date,
     m: HelmetScanMetrics,
@@ -184,8 +187,8 @@ export class RiskEvaluationService {
       verify24h: m.verify24h,
       detail: s.detail,
     } satisfies Prisma.InputJsonValue;
-    const updated = await this.prisma.helmetRiskSignal.updateMany({
-      where: { helmetId, type: s.type, status: 'ACTIVE' },
+    const updated = await this.prisma.safetyIdRiskSignal.updateMany({
+      where: { safetyId, type: s.type, status: 'ACTIVE' },
       data: {
         severity: s.severity,
         windowStart,
@@ -197,10 +200,10 @@ export class RiskEvaluationService {
       },
     });
     if (updated.count === 0) {
-      await this.prisma.helmetRiskSignal
+      await this.prisma.safetyIdRiskSignal
         .create({
           data: {
-            helmetId,
+            safetyId,
             type: s.type,
             severity: s.severity,
             windowStart,
@@ -216,10 +219,10 @@ export class RiskEvaluationService {
     }
   }
 
-  /** Recomputes the helmet's assessment from its ACTIVE signals. */
-  async refreshAssessment(helmetId: string, now: Date): Promise<RiskLevel> {
-    const active = await this.prisma.helmetRiskSignal.findMany({
-      where: { helmetId, status: 'ACTIVE' },
+  /** Recomputes the Safety ID's assessment from its ACTIVE signals. */
+  async refreshAssessment(safetyId: string, now: Date): Promise<RiskLevel> {
+    const active = await this.prisma.safetyIdRiskSignal.findMany({
+      where: { safetyId, status: 'ACTIVE' },
     });
     const score = scoreSignals(
       active.map((s) => ({
@@ -230,13 +233,13 @@ export class RiskEvaluationService {
         detail: ((s.metadata as { detail?: string } | null)?.detail ?? '') as string,
       })),
     );
-    const existing = await this.prisma.helmetRiskAssessment.findUnique({ where: { helmetId } });
+    const existing = await this.prisma.safetyIdRiskAssessment.findUnique({ where: { safetyId } });
     const detected = score.level !== 'NONE';
     const reasons = score.reasons as unknown as Prisma.InputJsonValue;
-    await this.prisma.helmetRiskAssessment.upsert({
-      where: { helmetId },
+    await this.prisma.safetyIdRiskAssessment.upsert({
+      where: { safetyId },
       create: {
-        helmetId,
+        safetyId,
         riskLevel: score.level,
         riskScore: score.score,
         reasons,
@@ -262,14 +265,26 @@ export class RiskEvaluationService {
   }
 
   /**
-   * Helmet alerts: volume-only patterns raise HIGH_PUBLIC_SCAN_VOLUME (LOW/MEDIUM); visitor or
-   * verification patterns raise HELMET_SCAN_ANOMALY. Deduplicated and suppressed by RiskAlertsService.
+   * QR alerts (per Safety ID): volume-only patterns raise HIGH_PUBLIC_SCAN_VOLUME (LOW/MEDIUM);
+   * visitor or verification patterns raise HELMET_SCAN_ANOMALY ("QR scan anomaly"). The linked
+   * helmet, if any, is attached for context. Deduplicated and suppressed by RiskAlertsService.
    */
-  private async raiseHelmetAlert(helmetId: string, level: RiskLevel, now: Date): Promise<boolean> {
+  private async raiseSafetyIdAlert(
+    safetyId: string,
+    level: RiskLevel,
+    now: Date,
+  ): Promise<boolean> {
     if (!levelAtLeast(level, 'LOW')) return false;
-    const assessment = await this.prisma.helmetRiskAssessment.findUniqueOrThrow({
-      where: { helmetId },
-      include: { helmet: { select: { helmetCode: true } } },
+    const assessment = await this.prisma.safetyIdRiskAssessment.findUniqueOrThrow({
+      where: { safetyId },
+      include: {
+        safetyIdRef: {
+          select: {
+            safetyCode: true,
+            helmetLinks: { where: { endedAt: null }, take: 1, select: { helmetId: true } },
+          },
+        },
+      },
     });
     const reasons = assessment.reasons as unknown as {
       type: RiskSignalType;
@@ -282,10 +297,11 @@ export class RiskEvaluationService {
     const alert = await this.alerts.raise(
       {
         type: volumeOnly ? 'HIGH_PUBLIC_SCAN_VOLUME' : 'HELMET_SCAN_ANOMALY',
-        dedupKey: `helmet:${helmetId}:${volumeOnly ? 'volume' : 'anomaly'}`,
+        dedupKey: `safety:${safetyId}:${volumeOnly ? 'volume' : 'anomaly'}`,
         priority: level,
-        helmetId,
-        summary: `${volumeOnly ? 'High public scan volume' : 'Unusual QR activity'} on ${assessment.helmet.helmetCode} — ${reasons
+        safetyId,
+        helmetId: assessment.safetyIdRef.helmetLinks[0]?.helmetId ?? null,
+        summary: `${volumeOnly ? 'High public scan volume' : 'Unusual QR activity'} on Safety ID ${assessment.safetyIdRef.safetyCode} — ${reasons
           .map((r) => r.label.toLowerCase())
           .join(', ')}. Review recommended.`,
         reasons: assessment.reasons as never,

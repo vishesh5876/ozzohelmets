@@ -26,6 +26,7 @@ const HOUR = 3600;
 
 const include = {
   helmet: { select: { id: true, helmetCode: true } },
+  safetyIdRef: { select: { id: true, safetyCode: true } },
   reviewedBy: { select: { name: true } },
   assignee: { select: { id: true, name: true } },
 } satisfies Prisma.ProductReportInclude;
@@ -61,14 +62,28 @@ export class ProductReportsService {
     }
     const token = dto.publicToken && isValidPublicToken(dto.publicToken) ? dto.publicToken : null;
     const code = dto.helmetCode ? normalizeHelmetCode(dto.helmetCode) : null;
-    const helmet = token
-      ? await this.prisma.helmet.findUnique({ where: { publicToken: token }, select: { id: true } })
+    // Phase 9: a QR token resolves to its Safety ID (QR-abuse reports relate to the Safety ID);
+    // the product report keeps the linked helmet when there is one.
+    const safety = token
+      ? await this.prisma.safetyId.findUnique({
+          where: { publicToken: token },
+          select: {
+            id: true,
+            helmetLinks: { where: { endedAt: null }, take: 1, select: { helmetId: true } },
+          },
+        })
+      : null;
+    const helmet = safety
+      ? safety.helmetLinks[0]
+        ? { id: safety.helmetLinks[0].helmetId }
+        : null
       : code && isValidHelmetCode(code)
         ? await this.prisma.helmet.findUnique({ where: { helmetCode: code }, select: { id: true } })
         : null;
     const report = await this.prisma.productReport.create({
       data: {
         helmetId: helmet?.id ?? null,
+        safetyId: safety?.id ?? null,
         // A token that doesn't resolve is still useful telemetry (possible copied/forged QR).
         publicToken: token,
         reason: dto.reason,
@@ -83,7 +98,12 @@ export class ProductReportsService {
       entityType: 'product_report',
       entityId: report.id,
       ipHash: meta.ipHash,
-      metadata: { reason: dto.reason, helmetId: helmet?.id ?? null, matched: helmet !== null },
+      metadata: {
+        reason: dto.reason,
+        helmetId: helmet?.id ?? null,
+        safetyId: safety?.id ?? null,
+        matched: helmet !== null || safety !== null,
+      },
     });
     return { received: true };
   }
@@ -235,6 +255,7 @@ function toDto(r: Prisma.ProductReportGetPayload<{ include: typeof include }>): 
     contactEmail: r.contactEmail,
     status: r.status,
     helmet: r.helmet,
+    safetyId: r.safetyIdRef,
     resolutionNote: r.resolutionNote,
     reviewedByName: r.reviewedBy?.name ?? null,
     priority: r.priority,

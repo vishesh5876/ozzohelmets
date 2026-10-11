@@ -5,16 +5,18 @@ import {
   type CursorPage,
   type CustomerScanSummaryDto,
   ErrorCode,
-  type HelmetActivityItemDto,
-  type HelmetAnalyticsDetailDto,
   type HelmetScanEventDto,
   normalizeHelmetCode,
+  normalizeSafetyCode,
   OPEN_RISK_ALERT_STATUSES,
   type PlatformDailyPointDto,
   type QrIntegrityStatus,
   RISK_SIGNAL_LABELS,
   type RiskLevel,
   type RiskReasonDto,
+  type SafetyIdActivityItemDto,
+  type SafetyIdAnalyticsDetailDto,
+  type SafetyIdStatus,
   type ScanAnalyticsDto,
   type ScanCountsDto,
 } from '@helmet/types';
@@ -93,6 +95,9 @@ export class AnalyticsQueryService {
           {
             generated: bigint;
             activated: bigint;
+            si_generated: bigint;
+            si_activated: bigint;
+            si_standalone: bigint;
             active: bigint;
             profiles: bigint;
             enabled: bigint;
@@ -102,10 +107,16 @@ export class AnalyticsQueryService {
             alerts: bigint;
           }[]
         >`
+          WITH x AS (
+            SELECT l.safety_id FROM safety_id_helmet_links l JOIN helmets h ON h.id = l.helmet_id
+            WHERE l.ended_at IS NULL AND h.helmet_model_id = ANY(${ex}::uuid[]))
           SELECT
             (SELECT count(*) FROM helmets WHERE NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS generated,
             (SELECT count(*) FROM helmets WHERE activated_at IS NOT NULL AND NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS activated,
-            (SELECT count(*) FROM helmets WHERE status = 'ACTIVE' AND NOT (helmet_model_id = ANY(${ex}::uuid[]))) AS active,
+            (SELECT count(*) FROM safety_ids WHERE id NOT IN (SELECT safety_id FROM x)) AS si_generated,
+            (SELECT count(*) FROM safety_ids WHERE status IN ('ACTIVATED', 'ACTIVE') AND id NOT IN (SELECT safety_id FROM x)) AS si_activated,
+            (SELECT count(*) FROM safety_ids s WHERE NOT EXISTS (SELECT 1 FROM safety_id_helmet_links l WHERE l.safety_id = s.id AND l.ended_at IS NULL)) AS si_standalone,
+            (SELECT count(*) FROM safety_ids WHERE status = 'ACTIVE' AND id NOT IN (SELECT safety_id FROM x)) AS active,
             (SELECT count(*) FROM emergency_profiles WHERE helmet_id IS NULL) AS profiles,
             (SELECT count(*) FROM emergency_profiles WHERE helmet_id IS NULL AND emergency_profile_enabled) AS enabled,
             (SELECT count(*) FROM emergency_profiles p WHERE p.helmet_id IS NULL AND (
@@ -113,8 +124,8 @@ export class AnalyticsQueryService {
                 OR NOT EXISTS (SELECT 1 FROM emergency_contacts c WHERE c.user_id = p.user_id AND c.is_active)
                 OR NOT EXISTS (SELECT 1 FROM emergency_visibility v WHERE v.user_id = p.user_id AND v.confirmed_at IS NOT NULL))
             ) AS incomplete,
-            (SELECT count(*) FROM helmet_ownerships o WHERE o.status = 'ACTIVE'
-               AND o.helmet_id NOT IN (SELECT id FROM helmets WHERE helmet_model_id = ANY(${ex}::uuid[]))
+            (SELECT count(*) FROM safety_id_ownerships o WHERE o.status = 'ACTIVE'
+               AND o.safety_id NOT IN (SELECT safety_id FROM x)
                AND NOT EXISTS (SELECT 1 FROM emergency_contacts c WHERE c.user_id = o.user_id AND c.is_active)) AS no_contacts,
             (SELECT count(*) FROM product_reports WHERE status IN ('OPEN', 'REVIEWING')) AS reports,
             (SELECT count(*) FROM risk_alerts WHERE status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING')) AS alerts`,
@@ -161,11 +172,25 @@ export class AnalyticsQueryService {
           },
           orderBy: { date: 'asc' },
         }),
-        this.prisma.helmet.findMany({
-          where: { activatedAt: { not: null }, helmetModelId: { notIn: ex } },
+        this.prisma.safetyId.findMany({
+          where: {
+            activatedAt: { not: null },
+            NOT: {
+              helmetLinks: { some: { endedAt: null, helmet: { helmetModelId: { in: ex } } } },
+            },
+          },
           orderBy: { activatedAt: 'desc' },
           take: 8,
-          select: { id: true, helmetCode: true, activatedAt: true },
+          select: {
+            id: true,
+            safetyCode: true,
+            activatedAt: true,
+            helmetLinks: {
+              where: { endedAt: null },
+              take: 1,
+              select: { helmet: { select: { helmetCode: true } } },
+            },
+          },
         }),
         this.rawScanCounts(todayStart, now),
       ]);
@@ -180,12 +205,15 @@ export class AnalyticsQueryService {
         helmetsGenerated: n(c.generated),
         helmetsActivated: n(c.activated),
         activationRate: rate(n(c.activated), n(c.generated)),
+        safetyIdsGenerated: n(c.si_generated),
+        safetyIdsActivated: n(c.si_activated),
+        standaloneSafetyIds: n(c.si_standalone),
         activeEmergencyProfiles: n(c.active),
-        emergencySharingRate: rate(n(c.active), n(c.activated)),
+        emergencySharingRate: rate(n(c.active), n(c.si_activated)),
         profilesCreated: n(c.profiles),
         profilesEnabled: n(c.enabled),
         profilesIncomplete: n(c.incomplete),
-        ownedHelmetsWithoutContacts: n(c.no_contacts),
+        ownedSafetyIdsWithoutContacts: n(c.no_contacts),
         warrantiesActive: n(w.active),
         warrantiesExpired: n(w.expired),
         warrantyRegistrationRate: rate(n(w.on_activated), n(c.activated)),
@@ -213,10 +241,11 @@ export class AnalyticsQueryService {
         registered: n(m.registered),
         active: n(m.active),
       })),
-      recentActivations: recent.map((h) => ({
-        helmetId: h.id,
-        helmetCode: h.helmetCode,
-        activatedAt: h.activatedAt!.toISOString(),
+      recentActivations: recent.map((s) => ({
+        safetyId: s.id,
+        safetyCode: s.safetyCode,
+        helmetCode: s.helmetLinks[0]?.helmet.helmetCode ?? null,
+        activatedAt: s.activatedAt!.toISOString(),
       })),
     };
   }
@@ -248,15 +277,15 @@ export class AnalyticsQueryService {
     return out;
   }
 
-  private async rawScanCounts(from: Date, to: Date, helmetId?: string): Promise<ScanCountsDto> {
-    const helmet = helmetId ? Prisma.sql`AND helmet_id = ${helmetId}::uuid` : Prisma.empty;
+  private async rawScanCounts(from: Date, to: Date, safetyId?: string): Promise<ScanCountsDto> {
+    const qr = safetyId ? Prisma.sql`AND safety_id = ${safetyId}::uuid` : Prisma.empty;
     const [r] = await this.prisma.$queryRaw<{ e: bigint; v: bigint; t: bigint }[]>`
       SELECT count(*) FILTER (WHERE scan_type = 'EMERGENCY_PAGE') AS e,
              count(*) FILTER (WHERE scan_type = 'VERIFY') AS v,
              count(*) AS t
       FROM helmet_scans
       WHERE scanned_at >= ${from} AND scanned_at <= ${to} AND synthetic = false
-        AND device_category IS DISTINCT FROM 'BOT' ${helmet}`;
+        AND device_category IS DISTINCT FROM 'BOT' ${qr}`;
     return { total: n(r?.t), emergency: n(r?.e), verify: n(r?.v) };
   }
 
@@ -273,7 +302,7 @@ export class AnalyticsQueryService {
         ? await this.prisma.$queryRaw<{ e: bigint; v: bigint; t: bigint }[]>`
             SELECT coalesce(sum(emergency_scans), 0) AS e, coalesce(sum(verification_scans), 0) AS v,
                    coalesce(sum(total_scans), 0) AS t
-            FROM helmet_scan_daily WHERE date >= ${from}::date AND date <= ${lastAggregated}::date`
+            FROM safety_id_scan_daily WHERE date >= ${from}::date AND date <= ${lastAggregated}::date`
         : [{ e: 0n, v: 0n, t: 0n }];
     const live =
       to >= today
@@ -296,14 +325,14 @@ export class AnalyticsQueryService {
       this.scanCounts(addDays(today, -29), today, today, now),
       this.scanCounts(range.from, range.to, today, now),
       this.prisma.$queryRaw<{ c: bigint }[]>`
-        SELECT count(DISTINCT helmet_id) AS c FROM (
-          SELECT helmet_id FROM helmet_scan_daily
+        SELECT count(DISTINCT safety_id) AS c FROM (
+          SELECT safety_id FROM safety_id_scan_daily
             WHERE date >= ${range.from}::date AND date <= ${range.to}::date AND date < ${today}::date AND total_scans > 0
           UNION
-          SELECT helmet_id FROM helmet_scans
+          SELECT safety_id FROM helmet_scans
             WHERE ${range.to}::date >= ${today}::date AND scanned_at >= ${new Date(`${today}T00:00:00Z`)}
-              AND synthetic = false AND device_category IS DISTINCT FROM 'BOT') s`,
-      this.prisma.helmetRiskAssessment.count({
+              AND safety_id IS NOT NULL AND synthetic = false AND device_category IS DISTINCT FROM 'BOT') s`,
+      this.prisma.safetyIdRiskAssessment.count({
         where: { riskLevel: { not: 'NONE' }, resolvedAt: null },
       }),
       this.prisma.platformDailyStats.findMany({
@@ -317,26 +346,29 @@ export class AnalyticsQueryService {
       }),
       this.prisma.$queryRaw<
         {
-          helmet_id: string;
+          safety_id: string;
           code: string;
-          model: string;
+          helmet_code: string | null;
+          model: string | null;
           t: bigint;
           e: bigint;
           v: bigint;
           level: RiskLevel | null;
         }[]
       >`
-        SELECT d.helmet_id, h.helmet_code AS code, m.name AS model,
+        SELECT d.safety_id, s.safety_code AS code, h.helmet_code, m.name AS model,
                sum(d.total_scans) AS t, sum(d.emergency_scans) AS e, sum(d.verification_scans) AS v,
                a.risk_level AS level
-        FROM helmet_scan_daily d
-        JOIN helmets h ON h.id = d.helmet_id
-        JOIN helmet_models m ON m.id = h.helmet_model_id
-        LEFT JOIN helmet_risk_assessments a ON a.helmet_id = d.helmet_id
+        FROM safety_id_scan_daily d
+        JOIN safety_ids s ON s.id = d.safety_id
+        LEFT JOIN safety_id_helmet_links l ON l.safety_id = s.id AND l.ended_at IS NULL
+        LEFT JOIN helmets h ON h.id = l.helmet_id
+        LEFT JOIN helmet_models m ON m.id = h.helmet_model_id
+        LEFT JOIN safety_id_risk_assessments a ON a.safety_id = d.safety_id
         WHERE d.date >= ${range.from}::date AND d.date <= ${range.to}::date
-        GROUP BY d.helmet_id, h.helmet_code, m.name, a.risk_level
+        GROUP BY d.safety_id, s.safety_code, h.helmet_code, m.name, a.risk_level
         HAVING sum(d.total_scans) > 0
-        ORDER BY t DESC, d.helmet_id LIMIT 10`,
+        ORDER BY t DESC, d.safety_id LIMIT 10`,
     ]);
     const series = this.fillSeries(range, platform, today, todayC).map((p) => ({
       date: p.date,
@@ -350,12 +382,13 @@ export class AnalyticsQueryService {
       last7d,
       last30d,
       period,
-      uniqueHelmetsScannedInPeriod: n(uniq[0]?.c),
-      helmetsWithUnusualActivity: unusual,
+      uniqueSafetyIdsScannedInPeriod: n(uniq[0]?.c),
+      safetyIdsWithUnusualActivity: unusual,
       invalidTokenRequestsInPeriod: platform.reduce((a, p) => a + p.invalidTokenRequests, 0),
-      topHelmets: top.map((t) => ({
-        helmetId: t.helmet_id,
-        helmetCode: t.code,
+      topSafetyIds: top.map((t) => ({
+        safetyId: t.safety_id,
+        safetyCode: t.code,
+        helmetCode: t.helmet_code,
         model: t.model,
         scans: n(t.t),
         emergency: n(t.e),
@@ -366,9 +399,9 @@ export class AnalyticsQueryService {
     };
   }
 
-  // ─────────────── Helmet activity (risk list) ───────────────
+  // ─────────────── QR activity (risk list, per Safety ID) ───────────────
 
-  async helmetActivity(
+  async safetyIdActivity(
     input: {
       minLevel?: RiskLevel;
       includeResolved?: boolean;
@@ -376,14 +409,14 @@ export class AnalyticsQueryService {
       limit?: number;
     },
     now = new Date(),
-  ): Promise<CursorPage<HelmetActivityItemDto>> {
+  ): Promise<CursorPage<SafetyIdActivityItemDto>> {
     const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
     const levels: RiskLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     const allowed = input.minLevel
       ? levels.slice(Math.max(levels.indexOf(input.minLevel), 0))
       : levels;
     const after = decodeAnyCursor(input.cursor);
-    const rows = await this.prisma.helmetRiskAssessment.findMany({
+    const rows = await this.prisma.safetyIdRiskAssessment.findMany({
       where: {
         riskLevel: { in: allowed },
         ...(input.includeResolved ? {} : { resolvedAt: null }),
@@ -391,109 +424,130 @@ export class AnalyticsQueryService {
           ? {
               OR: [
                 { riskScore: { lt: after.s } },
-                { riskScore: after.s, helmetId: { gt: after.id } },
+                { riskScore: after.s, safetyId: { gt: after.id } },
               ],
             }
           : {}),
       },
-      orderBy: [{ riskScore: 'desc' }, { helmetId: 'asc' }],
+      orderBy: [{ riskScore: 'desc' }, { safetyId: 'asc' }],
       take: limit + 1,
       include: {
-        helmet: {
+        safetyIdRef: {
           select: {
-            helmetCode: true,
+            safetyCode: true,
             status: true,
             qrIntegrityStatus: true,
-            helmetModel: { select: { name: true } },
+            helmetLinks: {
+              where: { endedAt: null },
+              take: 1,
+              select: {
+                helmet: {
+                  select: {
+                    id: true,
+                    helmetCode: true,
+                    status: true,
+                    helmetModel: { select: { name: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
     });
     const page = rows.slice(0, limit);
-    const ids = page.map((r) => r.helmetId);
+    const ids = page.map((r) => r.safetyId);
     const today = utcDay(now);
     const [recent, week, alerts] = ids.length
       ? await Promise.all([
-          this.prisma.$queryRaw<{ helmet_id: string; c: bigint; last: Date | null }[]>`
-            SELECT helmet_id, count(*) FILTER (WHERE scanned_at >= ${new Date(now.getTime() - DAY_MS)}) AS c,
+          this.prisma.$queryRaw<{ safety_id: string; c: bigint; last: Date | null }[]>`
+            SELECT safety_id, count(*) FILTER (WHERE scanned_at >= ${new Date(now.getTime() - DAY_MS)}) AS c,
                    max(scanned_at) AS last
             FROM helmet_scans
-            WHERE helmet_id = ANY(${ids}::uuid[]) AND scanned_at >= ${new Date(now.getTime() - 7 * DAY_MS)}
+            WHERE safety_id = ANY(${ids}::uuid[]) AND scanned_at >= ${new Date(now.getTime() - 7 * DAY_MS)}
               AND synthetic = false AND device_category IS DISTINCT FROM 'BOT'
-            GROUP BY helmet_id`,
-          this.prisma.$queryRaw<{ helmet_id: string; c: bigint; last: Date | null }[]>`
-            SELECT helmet_id, sum(total_scans) AS c, max(last_scan_at) AS last FROM helmet_scan_daily
-            WHERE helmet_id = ANY(${ids}::uuid[]) AND date >= ${addDays(today, -6)}::date
-            GROUP BY helmet_id`,
+            GROUP BY safety_id`,
+          this.prisma.$queryRaw<{ safety_id: string; c: bigint; last: Date | null }[]>`
+            SELECT safety_id, sum(total_scans) AS c, max(last_scan_at) AS last FROM safety_id_scan_daily
+            WHERE safety_id = ANY(${ids}::uuid[]) AND date >= ${addDays(today, -6)}::date
+            GROUP BY safety_id`,
           this.prisma.riskAlert.groupBy({
-            by: ['helmetId'],
-            where: { helmetId: { in: ids }, status: { in: [...OPEN_RISK_ALERT_STATUSES] } },
+            by: ['safetyId'],
+            where: { safetyId: { in: ids }, status: { in: [...OPEN_RISK_ALERT_STATUSES] } },
             _count: { _all: true },
           }),
         ])
       : [[], [], []];
-    const r24 = new Map(recent.map((r) => [r.helmet_id, r]));
-    const r7 = new Map(week.map((r) => [r.helmet_id, r]));
-    const open = new Map(alerts.map((a) => [a.helmetId!, a._count._all]));
+    const r24 = new Map(recent.map((r) => [r.safety_id, r]));
+    const r7 = new Map(week.map((r) => [r.safety_id, r]));
+    const open = new Map(alerts.map((a) => [a.safetyId!, a._count._all]));
     const last = page.at(-1);
     return {
       items: page.map((r) => {
-        const lastScan = [r24.get(r.helmetId)?.last, r7.get(r.helmetId)?.last]
+        const lastScan = [r24.get(r.safetyId)?.last, r7.get(r.safetyId)?.last]
           .filter((d): d is Date => !!d)
           .sort((a, b) => b.getTime() - a.getTime())[0];
+        const helmet = r.safetyIdRef.helmetLinks[0]?.helmet ?? null;
         return {
-          helmetId: r.helmetId,
-          helmetCode: r.helmet.helmetCode,
-          model: r.helmet.helmetModel.name,
-          status: r.helmet.status,
-          qrIntegrityStatus: r.helmet.qrIntegrityStatus,
-          scans24h: n(r24.get(r.helmetId)?.c),
-          scans7d: Math.max(n(r7.get(r.helmetId)?.c), n(r24.get(r.helmetId)?.c)),
+          safetyId: r.safetyId,
+          safetyCode: r.safetyIdRef.safetyCode,
+          status: r.safetyIdRef.status as SafetyIdStatus,
+          linkedHelmet: helmet
+            ? {
+                id: helmet.id,
+                helmetCode: helmet.helmetCode,
+                model: helmet.helmetModel.name,
+                status: helmet.status,
+              }
+            : null,
+          qrIntegrityStatus: r.safetyIdRef.qrIntegrityStatus,
+          scans24h: n(r24.get(r.safetyId)?.c),
+          scans7d: Math.max(n(r7.get(r.safetyId)?.c), n(r24.get(r.safetyId)?.c)),
           riskLevel: r.riskLevel,
           riskScore: r.riskScore,
           lastScanAt: lastScan?.toISOString() ?? null,
-          openAlerts: open.get(r.helmetId) ?? 0,
+          openAlerts: open.get(r.safetyId) ?? 0,
         };
       }),
       nextCursor:
-        rows.length > limit && last ? encodeCursor({ s: last.riskScore, id: last.helmetId }) : null,
+        rows.length > limit && last ? encodeCursor({ s: last.riskScore, id: last.safetyId }) : null,
     };
   }
 
-  // ─────────────── Helmet detail ───────────────
+  // ─────────────── Safety ID detail ───────────────
 
-  async helmetDetail(
+  async safetyIdDetail(
     rawCode: string,
     canViewAlerts: boolean,
     now = new Date(),
-  ): Promise<HelmetAnalyticsDetailDto> {
-    const helmet = await this.findHelmet(rawCode);
+  ): Promise<SafetyIdAnalyticsDetailDto> {
+    const safety = await this.findSafetyId(rawCode);
     const today = utcDay(now);
     const from30 = addDays(today, -29);
     const [daily, last24, risk, signals, alerts, reports, ownership, todayAgg] = await Promise.all([
-      this.prisma.helmetScanDaily.findMany({
+      this.prisma.safetyIdScanDaily.findMany({
         where: {
-          helmetId: helmet.id,
+          safetyId: safety.id,
           date: { gte: new Date(`${from30}T00:00:00Z`), lt: new Date(`${today}T00:00:00Z`) },
         },
         orderBy: { date: 'asc' },
       }),
-      this.rawScanCounts(new Date(now.getTime() - DAY_MS), now, helmet.id),
-      this.prisma.helmetRiskAssessment.findUnique({ where: { helmetId: helmet.id } }),
-      this.prisma.helmetRiskSignal.findMany({
-        where: { helmetId: helmet.id },
+      this.rawScanCounts(new Date(now.getTime() - DAY_MS), now, safety.id),
+      this.prisma.safetyIdRiskAssessment.findUnique({ where: { safetyId: safety.id } }),
+      this.prisma.safetyIdRiskSignal.findMany({
+        where: { safetyId: safety.id },
         orderBy: [{ status: 'asc' }, { lastDetectedAt: 'desc' }],
         take: 30,
       }),
-      canViewAlerts ? this.alerts.list({ helmetId: helmet.id, limit: 20 }) : Promise.resolve(null),
+      canViewAlerts ? this.alerts.list({ safetyId: safety.id, limit: 20 }) : Promise.resolve(null),
       this.prisma.productReport.findMany({
-        where: { helmetId: helmet.id },
+        where: { safetyId: safety.id },
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: { id: true, reason: true, status: true, createdAt: true },
       }),
-      this.prisma.helmetOwnership.findFirst({
-        where: { helmetId: helmet.id, status: 'ACTIVE' },
+      this.prisma.safetyIdOwnership.findFirst({
+        where: { safetyId: safety.id, status: 'ACTIVE' },
         select: { userId: true },
       }),
       this.prisma.$queryRaw<{ t: bigint; e: bigint; v: bigint; u: bigint; last: Date | null }[]>`
@@ -501,20 +555,20 @@ export class AnalyticsQueryService {
                count(*) FILTER (WHERE scan_type = 'VERIFY') AS v, count(DISTINCT ip_hash) AS u,
                max(scanned_at) AS last
         FROM helmet_scans
-        WHERE helmet_id = ${helmet.id}::uuid AND scanned_at >= ${new Date(`${today}T00:00:00Z`)}
+        WHERE safety_id = ${safety.id}::uuid AND scanned_at >= ${new Date(`${today}T00:00:00Z`)}
           AND synthetic = false AND device_category IS DISTINCT FROM 'BOT'`,
     ]);
     const sharing = ownership
       ? ((
-          await this.prisma.helmetEmergencySetting.findUnique({
-            where: { helmetId_userId: { helmetId: helmet.id, userId: ownership.userId } },
+          await this.prisma.safetyIdEmergencySetting.findUnique({
+            where: { safetyId_userId: { safetyId: safety.id, userId: ownership.userId } },
             select: { enabled: true },
           })
         )?.enabled ?? false)
       : false;
     const t = todayAgg[0];
     const byDate = new Map(daily.map((d) => [utcDay(d.date), d]));
-    const series: HelmetAnalyticsDetailDto['series'] = [];
+    const series: SafetyIdAnalyticsDetailDto['series'] = [];
     for (let d = from30; d <= today; d = addDays(d, 1)) {
       const r = byDate.get(d);
       series.push(
@@ -543,19 +597,27 @@ export class AnalyticsQueryService {
     const lastScan = [t?.last, daily.at(-1)?.lastScanAt]
       .filter((d): d is Date => !!d)
       .sort((a, b) => b.getTime() - a.getTime())[0];
+    const helmet = safety.helmetLinks[0]?.helmet ?? null;
     return {
-      helmet: {
-        id: helmet.id,
-        helmetCode: helmet.helmetCode,
-        model: helmet.helmetModel.name,
-        sku: helmet.helmetModel.sku,
-        status: helmet.status,
-        activatedAt: helmet.activatedAt?.toISOString() ?? null,
+      safetyId: {
+        id: safety.id,
+        safetyCode: safety.safetyCode,
+        status: safety.status as SafetyIdStatus,
+        activatedAt: safety.activatedAt?.toISOString() ?? null,
         emergencySharing: sharing,
-        warrantyStatus: effectiveStatus(helmet.warranty),
-        qrIntegrityStatus: helmet.qrIntegrityStatus,
-        qrIntegrityNote: helmet.qrIntegrityNote,
-        qrIntegrityChangedAt: helmet.qrIntegrityChangedAt?.toISOString() ?? null,
+        qrIntegrityStatus: safety.qrIntegrityStatus,
+        qrIntegrityNote: safety.qrIntegrityNote,
+        qrIntegrityChangedAt: safety.qrIntegrityChangedAt?.toISOString() ?? null,
+        linkedHelmet: helmet
+          ? {
+              id: helmet.id,
+              helmetCode: helmet.helmetCode,
+              model: helmet.helmetModel.name,
+              sku: helmet.helmetModel.sku,
+              status: helmet.status,
+              warrantyStatus: effectiveStatus(helmet.warranty),
+            }
+          : null,
       },
       totals: {
         scans24h: last24.total,
@@ -594,7 +656,7 @@ export class AnalyticsQueryService {
       })),
       ...(alerts ? { alerts: alerts.items } : {}),
       productReports: {
-        total: await this.prisma.productReport.count({ where: { helmetId: helmet.id } }),
+        total: await this.prisma.productReport.count({ where: { safetyId: safety.id } }),
         last30d: reports30d,
         recent: reports.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
       },
@@ -603,23 +665,23 @@ export class AnalyticsQueryService {
           ? `${reports30d} product report(s) and ${reasons
               .filter((r) => r.type !== 'PRODUCT_REPORT_CORRELATION')
               .map((r) => r.label.toLowerCase())
-              .join(', ')}. Review recommended — this does not prove the helmet is counterfeit.`
+              .join(', ')}. Review recommended — this does not prove the product is counterfeit.`
           : null,
     };
   }
 
   /** Scan events for forensic drill-down: type, time, device class, cache flag. No IPs. */
-  async helmetScans(
+  async safetyIdScans(
     rawCode: string,
     cursor?: string,
     limit = 50,
   ): Promise<CursorPage<HelmetScanEventDto>> {
-    const helmet = await this.findHelmet(rawCode);
+    const safety = await this.findSafetyId(rawCode);
     const take = Math.min(Math.max(limit, 1), 200);
     const after = decodeCursor(cursor);
     const rows = await this.prisma.helmetScan.findMany({
       where: {
-        helmetId: helmet.id,
+        safetyId: safety.id,
         synthetic: false,
         ...(after
           ? {
@@ -645,7 +707,7 @@ export class AnalyticsQueryService {
     };
   }
 
-  // ─────────────── QR integrity (human decision) ───────────────
+  // ─────────────── QR integrity (human decision, on the Safety ID) ───────────────
 
   async setQrIntegrity(
     admin: AuthenticatedAdmin,
@@ -653,45 +715,47 @@ export class AnalyticsQueryService {
     status: QrIntegrityStatus,
     note: string,
     meta: RequestMeta,
-  ): Promise<HelmetAnalyticsDetailDto> {
-    const helmet = await this.findHelmet(rawCode);
-    await this.prisma.helmet.update({
-      where: { id: helmet.id },
+  ): Promise<SafetyIdAnalyticsDetailDto> {
+    const safety = await this.findSafetyId(rawCode);
+    await this.prisma.safetyId.update({
+      where: { id: safety.id },
       data: { qrIntegrityStatus: status, qrIntegrityNote: note, qrIntegrityChangedAt: new Date() },
     });
     await this.audit.record({
-      action: AuditAction.QR_INTEGRITY_CHANGED,
-      entityType: 'helmet',
-      entityId: helmet.id,
+      action: AuditAction.SAFETY_ID_QR_INTEGRITY_CHANGED,
+      entityType: 'safety_id',
+      entityId: safety.id,
       adminId: admin.id,
       ipHash: meta.ipHash,
-      metadata: { from: helmet.qrIntegrityStatus, to: status },
+      metadata: { from: safety.qrIntegrityStatus, to: status },
     });
     // The verification page shows a neutral notice for COMPROMISED; emergency access is unchanged.
-    await this.cache.invalidate(helmet.publicToken);
-    return this.helmetDetail(helmet.helmetCode, true);
+    await this.cache.invalidate(safety.publicToken);
+    return this.safetyIdDetail(safety.safetyCode, true);
   }
 
   // ─────────────── Customer (owner) summary ───────────────
 
+  /** Neutral counts for the owner of a Safety ID, since their ownership began (max 30 days). */
   async customerSummary(
     userId: string,
-    helmetId: string,
+    safetyId: string,
     now = new Date(),
   ): Promise<CustomerScanSummaryDto> {
-    const ownership = await this.prisma.helmetOwnership.findFirst({
-      where: { userId, helmetId, status: 'ACTIVE' },
-      select: { activatedAt: true },
+    const ownership = await this.prisma.safetyIdOwnership.findFirst({
+      where: { userId, safetyId, status: 'ACTIVE' },
+      select: { startedAt: true },
     });
-    if (!ownership) throw AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.');
+    if (!ownership)
+      throw AppException.notFound(ErrorCode.SAFETY_ID_NOT_FOUND, 'Safety ID not found.');
     // Only scans since THIS owner's ownership began (a previous owner's period is not theirs).
-    const since = new Date(Math.max(ownership.activatedAt.getTime(), now.getTime() - 30 * DAY_MS));
+    const since = new Date(Math.max(ownership.startedAt.getTime(), now.getTime() - 30 * DAY_MS));
     const [r] = await this.prisma.$queryRaw<{ e: bigint; v: bigint; last: Date | null }[]>`
       SELECT count(*) FILTER (WHERE scan_type = 'EMERGENCY_PAGE') AS e,
              count(*) FILTER (WHERE scan_type = 'VERIFY') AS v,
              max(scanned_at) FILTER (WHERE scan_type = 'EMERGENCY_PAGE') AS last
       FROM helmet_scans
-      WHERE helmet_id = ${helmetId}::uuid AND scanned_at >= ${since} AND synthetic = false
+      WHERE safety_id = ${safetyId}::uuid AND scanned_at >= ${since} AND synthetic = false
         AND device_category IS DISTINCT FROM 'BOT'`;
     const total = n(r?.e) + n(r?.v);
     return {
@@ -701,24 +765,66 @@ export class AnalyticsQueryService {
       verificationScans30d: n(r?.v),
       message:
         total === 0
-          ? 'Your helmet QR has not been accessed in the last 30 days.'
-          : `Your helmet QR was accessed ${total} time${total === 1 ? '' : 's'} in the last 30 days.`,
+          ? 'Your Safety ID QR has not been accessed in the last 30 days.'
+          : `Your Safety ID QR was accessed ${total} time${total === 1 ? '' : 's'} in the last 30 days.`,
     };
   }
 
-  private async findHelmet(rawCode: string) {
-    const code = normalizeHelmetCode(rawCode);
-    const helmet = code
-      ? await this.prisma.helmet.findUnique({
-          where: { helmetCode: code },
-          include: {
-            helmetModel: { select: { name: true, sku: true } },
-            warranty: { select: { status: true, warrantyEndDate: true } },
+  /** Compatibility (Phase 8 helmet routes): the customer's helmet → its linked Safety ID. */
+  async customerSummaryForHelmet(
+    userId: string,
+    helmetId: string,
+  ): Promise<CustomerScanSummaryDto> {
+    const owned = await this.prisma.helmetOwnership.findFirst({
+      where: { userId, helmetId, status: 'ACTIVE' },
+      select: {
+        helmet: {
+          select: { safetyIdLinks: { where: { endedAt: null }, select: { safetyId: true } } },
+        },
+      },
+    });
+    const safetyId = owned?.helmet.safetyIdLinks[0]?.safetyId;
+    if (!owned) throw AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.');
+    if (!safetyId)
+      throw AppException.notFound(ErrorCode.SAFETY_ID_NOT_FOUND, 'This helmet has no Safety ID.');
+    return this.customerSummary(userId, safetyId);
+  }
+
+  /** Accepts a Safety ID (`SI-…`) or a Helmet ID (`HM-…`, resolved to its linked Safety ID). */
+  private async findSafetyId(rawCode: string) {
+    const include = {
+      helmetLinks: {
+        where: { endedAt: null },
+        take: 1,
+        select: {
+          helmet: {
+            select: {
+              id: true,
+              helmetCode: true,
+              status: true,
+              helmetModel: { select: { name: true, sku: true } },
+              warranty: { select: { status: true, warrantyEndDate: true } },
+            },
           },
-        })
-      : null;
-    if (!helmet)
-      throw new AppException(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.', HttpStatus.NOT_FOUND);
-    return helmet;
+        },
+      },
+    } satisfies Prisma.SafetyIdInclude;
+    const safetyCode = normalizeSafetyCode(rawCode);
+    const helmetCode = safetyCode ? null : normalizeHelmetCode(rawCode);
+    const safety = safetyCode
+      ? await this.prisma.safetyId.findUnique({ where: { safetyCode }, include })
+      : helmetCode
+        ? await this.prisma.safetyId.findFirst({
+            where: { helmetLinks: { some: { endedAt: null, helmet: { helmetCode } } } },
+            include,
+          })
+        : null;
+    if (!safety)
+      throw new AppException(
+        ErrorCode.SAFETY_ID_NOT_FOUND,
+        'Safety ID not found.',
+        HttpStatus.NOT_FOUND,
+      );
+    return safety;
   }
 }

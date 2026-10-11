@@ -132,7 +132,10 @@ describe('Helmet lifecycle, support actions & replacement (e2e)', () => {
       expect(lost.body.data).toMatchObject({ status: 'LOST', group: 'NEEDS_ATTENTION' });
       expect(lost.body.data.availableActions).toEqual(['MARK_FOUND', 'REPORT_STOLEN', 'RETIRE']);
       const view = await publicView(ctx, c.helmet.publicToken);
-      expect(view).toMatchObject({ state: 'LOST', message: 'This helmet has been reported lost.' });
+      expect(view).toMatchObject({
+        state: 'LOST',
+        message: 'The helmet carrying this Safety ID has been reported lost.',
+      });
       expect(JSON.stringify(view)).not.toMatch(/Lena|Bee stings|9812345678/);
       expect((await act(c.token, c.helmet.id, 'lost').expect(409)).body.error.code).toBe(
         'HELMET_ALREADY_LOST',
@@ -202,7 +205,7 @@ describe('Helmet lifecycle, support actions & replacement (e2e)', () => {
       const view = await publicView(ctx, c.helmet.publicToken);
       expect(view).toMatchObject({
         state: 'STOLEN',
-        message: 'This helmet has been reported stolen.',
+        message: 'The helmet carrying this Safety ID has been reported stolen.',
       });
       expect(JSON.stringify(view)).not.toContain('Omar');
       await ctx

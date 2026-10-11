@@ -100,6 +100,16 @@ export class ActivationService {
       this.checkPin(tx, safetyId, dto.pin, meta, null, { genericDenials: true }),
     );
     if (!check.ok) return this.failed(meta, null, check.lockedUntil);
+    // A linked helmet that is owned or not activatable: same generic answer (no oracle).
+    if (
+      this.policy.evaluateLink({
+        helmet: check.state.helmet
+          ? { status: check.state.helmet.status, ownerId: check.state.helmet.ownerId }
+          : null,
+        actingUserId: null,
+      })
+    )
+      throw this.notActivatable();
     const helmet = check.state.helmet
       ? await this.prisma.helmet.findUniqueOrThrow({
           where: { id: check.state.helmet.id },

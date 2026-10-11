@@ -28,7 +28,8 @@ export interface RaiseAlertInput {
   dedupKey: string;
   priority: RiskLevel;
   summary: string;
-  helmetId?: string;
+  helmetId?: string | null;
+  safetyId?: string | null;
   sourceRef?: string;
   reasons?: RiskReasonDto[];
   observedValue?: number;
@@ -42,6 +43,7 @@ export function sourceRefFor(ipHash: string): string {
 
 const include = {
   helmet: { select: { id: true, helmetCode: true } },
+  safetyIdRef: { select: { id: true, safetyCode: true } },
   assignee: { select: { id: true, name: true } },
   resolvedBy: { select: { name: true } },
 } satisfies Prisma.RiskAlertInclude;
@@ -115,6 +117,7 @@ export class RiskAlertsService {
             priority: input.priority,
             summary: input.summary,
             helmetId: input.helmetId ?? null,
+            safetyId: input.safetyId ?? null,
             sourceRef: input.sourceRef ?? null,
             reasons: (input.reasons ?? []) as unknown as Prisma.InputJsonValue,
             observedValue: input.observedValue ?? null,
@@ -142,6 +145,7 @@ export class RiskAlertsService {
     status?: RiskAlertStatus | 'OPEN_ANY';
     type?: RiskAlertType;
     helmetId?: string;
+    safetyId?: string;
     cursor?: string;
     limit?: number;
   }): Promise<CursorPage<RiskAlertDto>> {
@@ -155,6 +159,7 @@ export class RiskAlertsService {
           : {}),
       ...(filter.type ? { type: filter.type } : {}),
       ...(filter.helmetId ? { helmetId: filter.helmetId } : {}),
+      ...(filter.safetyId ? { safetyId: filter.safetyId } : {}),
       // Keyset pagination on (lastSeenAt, id) descending.
       ...(after
         ? {
@@ -239,9 +244,9 @@ export class RiskAlertsService {
     });
     if (count !== 1)
       throw AppException.conflict(ErrorCode.CONFLICT, 'The alert changed meanwhile. Reload.');
-    if (closing && alert.helmetId) {
-      await this.prisma.helmetRiskAssessment.updateMany({
-        where: { helmetId: alert.helmetId },
+    if (closing && alert.safetyId) {
+      await this.prisma.safetyIdRiskAssessment.updateMany({
+        where: { safetyId: alert.safetyId },
         data: { resolvedAt: now, resolutionReason: input.resolutionReason!.trim() },
       });
     }
@@ -280,6 +285,7 @@ export function toAlertDto(r: AlertRow): RiskAlertDto {
     status: r.status,
     priority: r.priority,
     helmet: r.helmet,
+    safetyId: r.safetyIdRef,
     sourceRef: r.sourceRef,
     summary: r.summary,
     reasons: (r.reasons as unknown as RiskReasonDto[]) ?? [],

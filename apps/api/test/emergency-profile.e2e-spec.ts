@@ -252,9 +252,11 @@ describe('Emergency profile & public boundary (e2e)', () => {
     const res = await pub();
     expect(res.body.data).toEqual({
       state: 'ACTIVE',
-      helmet: { modelName: 'Roadster X1', brand: 'Ozzo', helmetCode: helmet.helmetCode },
+      // Phase 9: person-focused — the Safety ID only, no product data.
+      safetyId: { code: helmet.safetyCode },
+      linkedProduct: true,
       message:
-        'Emergency information and contacts were provided by the helmet owner and are not verified.',
+        'Emergency information and contacts were provided by the owner and are not verified.',
       profile: {
         name: 'Rahul Sharma',
         bloodGroup: 'O_POSITIVE',

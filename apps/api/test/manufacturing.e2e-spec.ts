@@ -109,7 +109,7 @@ describe('Manufacturing flow (e2e)', () => {
     for (const h of helmets) {
       expect(isValidHelmetCode(h.helmetCode)).toBe(true);
       expect(h.publicToken).toMatch(/^[0-9A-Za-z]{22}$/);
-      expect(h.activationPinHash.startsWith('$argon2id$')).toBe(true);
+      expect(h.activationPinHash!.startsWith('$argon2id$')).toBe(true);
       expect(h.activationPinUsed).toBe(false);
       expect(h.status).toBe('GENERATED');
     }
@@ -117,6 +117,28 @@ describe('Manufacturing flow (e2e)', () => {
       where: { helmet: { batchId }, toStatus: 'GENERATED', actorType: 'SYSTEM' },
     });
     expect(history).toBe(QUANTITY);
+    // Phase 9 ("Generate a Safety ID for each helmet", default on): one linked Safety ID per
+    // helmet, generated in the same chunks, whose token + PIN hash the helmet mirrors.
+    const links = await ctx.prisma.safetyIdHelmetLink.findMany({
+      where: { helmet: { batchId }, endedAt: null },
+      include: { safetyIdRef: true, helmet: true },
+    });
+    expect(links).toHaveLength(QUANTITY);
+    for (const l of links) {
+      expect(l.safetyIdRef).toMatchObject({ status: 'GENERATED', activationPinUsed: false });
+      expect(l.safetyIdRef.safetyCode).toMatch(/^SI-/);
+      expect(l.helmet.publicToken).toBe(l.safetyIdRef.publicToken);
+      expect(l.helmet.activationPinHash).toBe(l.safetyIdRef.activationPinHash);
+    }
+    const companion = await ctx.prisma.safetyIdBatch.findFirstOrThrow({
+      where: { helmetBatchId: batchId },
+    });
+    expect(companion).toMatchObject({
+      mode: 'HELMET_LINKED',
+      generatedCount: QUANTITY,
+      generationStatus: 'COMPLETED',
+    });
+    expect(companion.batchCode).toMatch(/^SID-\d{4}-\d{5}$/);
   });
 
   it('lists, filters and searches helmets', async () => {
@@ -162,8 +184,10 @@ describe('Manufacturing flow (e2e)', () => {
     const helmet = await ctx.prisma.helmet.findFirstOrThrow({ where: { batchId } });
     const detail = await ctx.http().get(`/api/v1/admin/helmets/${helmet.id}`).set(auth).expect(200);
     expect(detail.body.data.qrUrl).toBe(`https://safe.example.test/e/${helmet.publicToken}`);
+    expect(detail.body.data.safetyId.safetyCode).toMatch(/^SI-/);
     expect(detail.body.data).toMatchObject({
       pinEscrowed: true,
+      pinState: 'AVAILABLE',
       activationPinUsed: false,
       allowedTransitions: ['PRINTED', 'DEACTIVATED'],
     });
@@ -198,20 +222,23 @@ describe('Manufacturing flow (e2e)', () => {
     );
     expect(res.headers['cache-control']).toBe('no-store');
     const lines = res.text.trim().split('\r\n');
-    expect(lines[0]).toBe('helmetCode,serialNumber,model,batchCode,qrUrl,activationPin');
+    // Phase 8 column order kept (print templates); the Safety ID is appended.
+    expect(lines[0]).toBe('helmetCode,serialNumber,model,batchCode,qrUrl,activationPin,safetyCode');
     expect(lines).toHaveLength(QUANTITY + 1);
 
-    const [helmetCode, , model, , qrUrl, pin] = lines[1]!.split(',');
+    const [helmetCode, , model, , qrUrl, pin, safetyCode] = lines[1]!.split(',');
     expect(model).toBe('Roadster X1');
     expect(pin).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
     const helmet = await ctx.prisma.helmet.findUniqueOrThrow({ where: { helmetCode } });
-    expect(qrUrl).toBe(`https://safe.example.test/e/${helmet.publicToken}`);
-    await expect(ctx.hashing.verifyPin(helmet.activationPinHash, pin!)).resolves.toBe(true);
+    const safety = await ctx.prisma.safetyId.findUniqueOrThrow({ where: { safetyCode } });
+    expect(qrUrl).toBe(`https://safe.example.test/e/${safety.publicToken}`);
+    await expect(ctx.hashing.verifyPin(safety.activationPinHash, pin!)).resolves.toBe(true);
 
-    // Escrow ciphertext is bound to its helmet: it cannot be decrypted for another row.
-    const secret = await ctx.prisma.helmetActivationSecret.findUniqueOrThrow({
-      where: { helmetId: helmet.id },
+    // Escrow ciphertext is bound to its Safety ID: it cannot be decrypted for another row.
+    const secret = await ctx.prisma.safetyIdActivationSecret.findUniqueOrThrow({
+      where: { safetyId: safety.id },
     });
+    expect(helmet.publicToken).toBe(safety.publicToken);
     expect(secret.pinCiphertext).not.toContain(pin);
     expect(() =>
       ctx.app.get(EncryptionService).pinEscrow.decrypt(secret.pinCiphertext, 'another-helmet'),
@@ -269,9 +296,16 @@ describe('Manufacturing flow (e2e)', () => {
       .expect(200);
     expect(res.body.data).toMatchObject({ printStatus: 'PRINTED', pinsEscrowed: 0 });
     expect(await ctx.prisma.helmetActivationSecret.count()).toBe(0);
+    expect(await ctx.prisma.safetyIdActivationSecret.count()).toBe(0);
     expect(await ctx.prisma.helmet.count({ where: { batchId, status: 'PRINTED' } })).toBe(
       QUANTITY - 1,
     );
+    // Linked Safety IDs move to PRINTED with their helmets (so their PINs become activatable).
+    expect(
+      await ctx.prisma.safetyId.count({
+        where: { helmetLinks: { some: { helmet: { batchId } } }, status: 'PRINTED' },
+      }),
+    ).toBe(QUANTITY);
     expect(await ctx.prisma.helmet.count({ where: { batchId, status: 'DEACTIVATED' } })).toBe(1);
     await ctx.http().post(`/api/v1/admin/batches/${batchId}/mark-printed`).set(auth).expect(409);
 
@@ -287,7 +321,7 @@ describe('Manufacturing flow (e2e)', () => {
         .trim()
         .split('\r\n')
         .slice(1)
-        .every((line) => line.endsWith(',')),
+        .every((line) => line.split(',')[5] === '' && line.split(',')[6]!.startsWith('SI-')),
     ).toBe(true);
     expect(await ctx.prisma.auditLog.count({ where: { action: 'batch.pin_escrow.purged' } })).toBe(
       1,

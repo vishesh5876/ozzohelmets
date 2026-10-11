@@ -51,8 +51,13 @@ export async function encryptionStatus(app: INestApplicationContext): Promise<Ke
     );
     data[f.column] = Object.fromEntries(rows.map((r) => [r.v, Number(r.n)]));
   }
+  // Phase 9: Safety ID escrow (the printed PINs) plus the legacy Phase 8 helmet escrow.
   const escrowRows = await prisma.$queryRaw<{ v: string; n: bigint }[]>`
-    SELECT split_part(pin_ciphertext, '.', 1) AS v, count(*) AS n FROM helmet_activation_secrets GROUP BY 1`;
+    SELECT v, sum(n)::bigint AS n FROM (
+      SELECT split_part(pin_ciphertext, '.', 1) AS v, count(*) AS n FROM safety_id_activation_secrets GROUP BY 1
+      UNION ALL
+      SELECT split_part(pin_ciphertext, '.', 1) AS v, count(*) AS n FROM helmet_activation_secrets GROUP BY 1
+    ) t GROUP BY v`;
   return [
     { keyring: 'data', activeVersion: enc.data.activeVersion, versions: data },
     {
@@ -146,6 +151,32 @@ export async function rotateEncryption(
       after = rows.at(-1)!.id;
     }
   } else {
+    // Phase 9: Safety ID escrow first (AAD = Safety ID id), then the legacy helmet escrow.
+    for (;;) {
+      const rows = await prisma.safetyIdActivationSecret.findMany({
+        where: { safetyId: { gt: after }, NOT: { pinCiphertext: { startsWith: prefix } } },
+        select: { safetyId: true, pinCiphertext: true },
+        orderBy: { safetyId: 'asc' },
+        take: opts.batchSize,
+      });
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        result.scanned++;
+        const next = cipher.encrypt(cipher.decrypt(row.pinCiphertext, row.safetyId), row.safetyId);
+        if (opts.dryRun) {
+          result.reEncrypted++;
+          continue;
+        }
+        const { count } = await prisma.safetyIdActivationSecret.updateMany({
+          where: { safetyId: row.safetyId, pinCiphertext: row.pinCiphertext },
+          data: { pinCiphertext: next },
+        });
+        if (count === 1) result.reEncrypted++;
+        else result.skippedConcurrentChange++;
+      }
+      after = rows.at(-1)!.safetyId;
+    }
+    after = '00000000-0000-0000-0000-000000000000';
     for (;;) {
       const rows = await prisma.helmetActivationSecret.findMany({
         where: { helmetId: { gt: after }, NOT: { pinCiphertext: { startsWith: prefix } } },

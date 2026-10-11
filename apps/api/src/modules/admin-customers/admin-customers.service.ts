@@ -66,7 +66,7 @@ export class AdminCustomersService {
     if (query.kind === 'tooShort')
       throw new AppException(
         ErrorCode.VALIDATION_ERROR,
-        'Enter at least 3 characters, a full Customer ID or a full Helmet ID.',
+        'Enter at least 3 characters, a full Customer ID, Helmet ID or Safety ID.',
         HttpStatus.BAD_REQUEST,
       );
 
@@ -98,6 +98,13 @@ export class AdminCustomersService {
         ...(query.kind === 'customerId' ? { customerCode: query.code } : {}),
         ...(query.kind === 'helmetId'
           ? { ownerships: { some: { status: 'ACTIVE', helmet: { helmetCode: query.code } } } }
+          : {}),
+        ...(query.kind === 'safetyId'
+          ? {
+              safetyIdOwnerships: {
+                some: { status: 'ACTIVE', safetyIdRef: { safetyCode: query.code } },
+              },
+            }
           : {}),
       };
       const [rows, count] = await Promise.all([
@@ -176,6 +183,7 @@ export class AdminCustomersService {
     const since30d = new Date(Date.now() - 30 * DAY_MS);
     const [
       activeSessions,
+      ownedSafetyIds,
       owned,
       history,
       warrantyCount,
@@ -188,6 +196,26 @@ export class AdminCustomersService {
       deletion,
     ] = await Promise.all([
       this.tokens.activeSessionCount(userId),
+      this.prisma.safetyIdOwnership.findMany({
+        where: { userId, status: 'ACTIVE' },
+        orderBy: { startedAt: 'desc' },
+        select: {
+          startedAt: true,
+          safetyIdRef: {
+            select: {
+              id: true,
+              safetyCode: true,
+              status: true,
+              emergencySettings: { where: { userId }, select: { enabled: true } },
+              helmetLinks: {
+                where: { endedAt: null },
+                take: 1,
+                select: { helmet: { select: { helmetCode: true } } },
+              },
+            },
+          },
+        },
+      }),
       this.prisma.helmetOwnership.findMany({
         where: { userId, status: 'ACTIVE' },
         orderBy: { activatedAt: 'desc' },
@@ -272,8 +300,17 @@ export class AdminCustomersService {
         modelName: helmet.helmetModel.name,
         status: helmet.status,
         ownedSince: activatedAt.toISOString(),
+        // Sharing belongs to the linked Safety ID (dual-written onto the helmet setting).
         emergencySharing: helmet.emergencySettings[0]?.enabled ?? false,
         warrantyStatus: effectiveStatus(helmet.warranty),
+      })),
+      safetyIds: ownedSafetyIds.map(({ safetyIdRef: s, startedAt }) => ({
+        id: s.id,
+        safetyCode: s.safetyCode,
+        status: s.status,
+        emergencySharing: s.emergencySettings[0]?.enabled ?? false,
+        linkedHelmetCode: s.helmetLinks[0]?.helmet.helmetCode ?? null,
+        ownedSince: startedAt.toISOString(),
       })),
       ownershipHistory: history.map((o) => ({
         helmetId: o.helmet.id,

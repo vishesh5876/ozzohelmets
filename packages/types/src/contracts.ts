@@ -669,6 +669,8 @@ export interface ProductReportDto {
   contactEmail: string | null;
   status: ProductReportStatus;
   helmet: { id: string; helmetCode: string } | null;
+  /** Phase 9: the scanned Safety ID when the report came from a QR. */
+  safetyId: { id: string; safetyCode: string } | null;
   resolutionNote: string | null;
   reviewedByName: string | null;
   /** Phase 5 triage */

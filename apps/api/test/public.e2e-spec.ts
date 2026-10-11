@@ -32,8 +32,12 @@ describe('Public emergency endpoint (e2e)', () => {
       () => ctx.prisma.helmetBatch.findUniqueOrThrow({ where: { id: batch.body.data.id } }),
       (b) => b.generationStatus === 'COMPLETED',
     );
-    const helmet = await ctx.prisma.helmet.findFirstOrThrow();
-    token = helmet.publicToken;
+    // Phase 9: a helmet batch generates one linked Safety ID per helmet; the QR is the Safety ID's.
+    const helmet = await ctx.prisma.helmet.findFirstOrThrow({
+      include: { safetyIdLinks: { include: { safetyIdRef: true } } },
+    });
+    token = helmet.safetyIdLinks[0]!.safetyIdRef.publicToken;
+    expect(helmet.publicToken).toBe(token); // mirrored for rollback compatibility
     helmetId = helmet.id;
   });
   afterAll(async () => {
@@ -46,18 +50,27 @@ describe('Public emergency endpoint (e2e)', () => {
       success: true,
       data: {
         state: 'NOT_ACTIVATED',
-        helmet: { modelName: 'Urban Jet', brand: 'Ozzo' },
-        message: 'This helmet has not yet been activated.',
+        safetyId: {},
+        linkedProduct: true,
+        message: 'This Safety ID has not been activated yet.',
       },
     });
     const raw = JSON.stringify(res.body);
-    const helmet = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: helmetId } });
+    const helmet = await ctx.prisma.helmet.findUniqueOrThrow({
+      where: { id: helmetId },
+      include: { safetyIdLinks: { include: { safetyIdRef: true } } },
+    });
+    const safety = helmet.safetyIdLinks[0]!.safetyIdRef;
+    // No product data on the person-focused page, and nothing internal.
     for (const secret of [
       helmet.id,
       helmet.helmetCode,
       helmet.serialNumber,
-      helmet.activationPinHash,
       helmet.batchId,
+      safety.id,
+      safety.activationPinHash,
+      'Urban Jet',
+      'UJ-1',
     ]) {
       expect(raw).not.toContain(secret);
     }
@@ -75,10 +88,13 @@ describe('Public emergency endpoint (e2e)', () => {
       () =>
         ctx.prisma.helmetScan.findFirst({
           where: { helmetId, scanType: 'EMERGENCY_PAGE', deviceCategory: { not: null } },
+          include: { safetyIdRef: { select: { publicToken: true } } },
         }),
       (s) => s !== null,
     );
     expect(scan!.scanType).toBe('EMERGENCY_PAGE');
+    // Phase 9: every scan records the Safety ID and the helmet linked at scan time.
+    expect(scan!.safetyIdRef?.publicToken).toBe(token);
     // Only a coarse summary and device class are kept, never the raw User-Agent string.
     expect(scan!.userAgent).not.toBe('EmergencyTest/1.0');
     expect(scan!.deviceCategory).toBe('OTHER');
@@ -89,8 +105,8 @@ describe('Public emergency endpoint (e2e)', () => {
   it('returns the same 404 for malformed and unknown tokens', async () => {
     const a = await ctx.http().get('/api/v1/public/emergency/short').expect(404);
     const b = await ctx.http().get('/api/v1/public/emergency/AAAAAAAAAAAAAAAAAAAAAA').expect(404);
-    expect(a.body.error.code).toBe('HELMET_NOT_FOUND');
-    expect(b.body.error.code).toBe('HELMET_NOT_FOUND');
+    expect(a.body.error.code).toBe('SAFETY_ID_NOT_FOUND');
+    expect(b.body.error.code).toBe('SAFETY_ID_NOT_FOUND');
     expect(a.body.error.message).toBe(b.body.error.message);
   });
 

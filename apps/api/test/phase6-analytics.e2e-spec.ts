@@ -56,8 +56,9 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
   };
 
   /** Inserts scans directly (no HTTP dedup) so scenarios are exact and deterministic. */
+  /** Phase 9: scans record the Safety ID (the scanned QR) and the helmet linked at scan time. */
   const insertScans = (
-    helmetId: string,
+    qr: { id: string; safetyId: string },
     n: number,
     opts: {
       at?: (i: number) => Date;
@@ -69,7 +70,8 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
   ) =>
     ctx.prisma.helmetScan.createMany({
       data: Array.from({ length: n }, (_, i) => ({
-        helmetId,
+        helmetId: qr.id,
+        safetyId: qr.safetyId,
         scanType: opts.type ?? 'EMERGENCY_PAGE',
         scannedAt: opts.at?.(i) ?? new Date(Date.now() - (i % 50) * 1000),
         ipHash: opts.ip?.(i) ?? ipHash(1),
@@ -82,13 +84,13 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
   describe('aggregation', () => {
     it('builds idempotent daily aggregates that exclude bots and synthetic rows', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 6, { ip: (i) => ipHash(i % 3) });
-      await insertScans(h.id, 3, { type: 'VERIFY' });
-      await insertScans(h.id, 4, { device: 'BOT' });
-      await insertScans(h.id, 7, { synthetic: true });
+      await insertScans(h, 6, { ip: (i) => ipHash(i % 3) });
+      await insertScans(h, 3, { type: 'VERIFY' });
+      await insertScans(h, 4, { device: 'BOT' });
+      await insertScans(h, 7, { synthetic: true });
       await aggregation.aggregateRecent();
       await aggregation.aggregateRecent(); // re-run converges to the same rows
-      const rows = await ctx.prisma.helmetScanDaily.findMany({ where: { helmetId: h.id } });
+      const rows = await ctx.prisma.safetyIdScanDaily.findMany({ where: { safetyId: h.safetyId } });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         totalScans: 9,
@@ -104,6 +106,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       expect(days[0]).toMatchObject({
         emergencyScans: 6,
         verificationScans: 3,
+        // Column kept from Phase 6; since Phase 9 it counts unique Safety IDs scanned.
         uniqueHelmetsScanned: 1,
       });
     });
@@ -111,8 +114,8 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
     it('serves scan analytics and overview from aggregates + today', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
       const yesterday = new Date(Date.now() - 24 * 3600_000);
-      await insertScans(h.id, 5, { at: () => yesterday });
-      await insertScans(h.id, 2);
+      await insertScans(h, 5, { at: () => yesterday });
+      await insertScans(h, 2);
       await aggregation.aggregateRecent();
       const viewer = await asAdmin('ANALYTICS_VIEWER');
       const scans = await ctx
@@ -122,7 +125,11 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
         .expect(200);
       expect(scans.body.data.today.total).toBe(2);
       expect(scans.body.data.last7d.total).toBe(7);
-      expect(scans.body.data.topHelmets[0]).toMatchObject({ helmetCode: h.helmetCode, scans: 7 });
+      expect(scans.body.data.topSafetyIds[0]).toMatchObject({
+        safetyCode: h.safetyCode,
+        helmetCode: h.helmetCode,
+        scans: 7,
+      });
       const overview = await ctx
         .http()
         .get('/api/v1/admin/analytics/overview?range=30d')
@@ -137,21 +144,21 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
   describe('risk evaluation', () => {
     it('a normally used helmet gets no signals, assessment or alert', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 6, { ip: (i) => ipHash(i % 2) });
+      await insertScans(h, 6, { ip: (i) => ipHash(i % 2) });
       const r = await risk.evaluate();
       expect(r.signalsUpserted).toBe(0);
-      expect(await ctx.prisma.helmetRiskSignal.count()).toBe(0);
+      expect(await ctx.prisma.safetyIdRiskSignal.count()).toBe(0);
       expect(await ctx.prisma.riskAlert.count()).toBe(0);
     });
 
     it('high volume alone → LOW/MEDIUM signal and one deduplicated alert across repeated runs', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 25); // > 20/h from one source
+      await insertScans(h, 25); // > 20/h from one source
       await risk.evaluate();
       await risk.evaluate();
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
-        where: { helmetId: h.id },
+      const a = await ctx.prisma.safetyIdRiskAssessment.findUniqueOrThrow({
+        where: { safetyId: h.safetyId },
       });
       expect(['LOW', 'MEDIUM']).toContain(a.riskLevel);
       const alerts = await ctx.prisma.riskAlert.findMany();
@@ -159,7 +166,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       expect(alerts[0]).toMatchObject({ type: 'HIGH_PUBLIC_SCAN_VOLUME', occurrences: 3 });
       expect(alerts[0]!.summary).toContain('Review recommended');
       expect(alerts[0]!.summary).not.toMatch(/counterfeit|fake|fraud/i);
-      expect(await ctx.prisma.helmetRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(1);
+      expect(await ctx.prisma.safetyIdRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(1);
       // Lifecycle status is never changed by analytics.
       expect((await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).status).toBe(
         'SOLD',
@@ -168,24 +175,24 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
 
     it('false-positive safety: crash scene with many scans from few phones stays below HIGH', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 60, { ip: (i) => ipHash(i % 4) });
+      await insertScans(h, 60, { ip: (i) => ipHash(i % 4) });
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
-        where: { helmetId: h.id },
+      const a = await ctx.prisma.safetyIdRiskAssessment.findUniqueOrThrow({
+        where: { safetyId: h.safetyId },
       });
       expect(['LOW', 'MEDIUM']).toContain(a.riskLevel);
     });
 
     it('many distinct visitors + unusual verification → possible copied QR, HIGH or above, explained', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 30, {
+      await insertScans(h, 30, {
         ip: (i) => ipHash(`v${i}`),
         at: (i) => new Date(Date.now() - i * 20_000),
       });
-      await insertScans(h.id, 15, { type: 'VERIFY', ip: (i) => ipHash(`w${i}`) });
+      await insertScans(h, 15, { type: 'VERIFY', ip: (i) => ipHash(`w${i}`) });
       await risk.evaluate();
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
-        where: { helmetId: h.id },
+      const a = await ctx.prisma.safetyIdRiskAssessment.findUniqueOrThrow({
+        where: { safetyId: h.safetyId },
       });
       expect(['HIGH', 'CRITICAL']).toContain(a.riskLevel);
       const reasons = a.reasons as {
@@ -202,22 +209,29 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
         ]),
       );
       for (const r of reasons) expect(r.detail.length).toBeGreaterThan(0);
-      const alert = await ctx.prisma.riskAlert.findFirstOrThrow({ where: { helmetId: h.id } });
+      const alert = await ctx.prisma.riskAlert.findFirstOrThrow({
+        where: { safetyId: h.safetyId },
+      });
       expect(alert.type).toBe('HELMET_SCAN_ANOMALY');
+      // Phase 9: alerts are about the Safety ID (QR); the linked helmet is attached for context.
+      expect(alert.helmetId).toBe(h.id);
+      expect(alert.dedupKey).toBe(`safety:${h.safetyId}:anomaly`);
       // Signal metadata holds counts only — never IP hashes.
-      const signals = await ctx.prisma.helmetRiskSignal.findMany({ where: { helmetId: h.id } });
+      const signals = await ctx.prisma.safetyIdRiskSignal.findMany({
+        where: { safetyId: h.safetyId },
+      });
       expect(JSON.stringify(signals)).not.toContain(ipHash('v1'));
     });
 
     it('stale signals clear and the assessment drops back to NONE', async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 25);
+      await insertScans(h, 25);
       await risk.evaluate();
       await ctx.prisma.helmetScan.deleteMany({});
       await risk.evaluate(new Date(Date.now() + 25 * 3600_000));
-      expect(await ctx.prisma.helmetRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(0);
-      const a = await ctx.prisma.helmetRiskAssessment.findUniqueOrThrow({
-        where: { helmetId: h.id },
+      expect(await ctx.prisma.safetyIdRiskSignal.count({ where: { status: 'ACTIVE' } })).toBe(0);
+      const a = await ctx.prisma.safetyIdRiskAssessment.findUniqueOrThrow({
+        where: { safetyId: h.safetyId },
       });
       expect(a).toMatchObject({ riskLevel: 'NONE', riskScore: 0 });
     });
@@ -228,13 +242,13 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const c = await newCustomer(ctx);
       await completeProfile(ctx, c.token, 'Still Reachable');
       await enableOnHelmet(ctx, c.token, c.helmet.id);
-      await insertScans(c.helmet.id, 30, { ip: (i) => ipHash(`p${i}`) });
-      await insertScans(c.helmet.id, 15, { type: 'VERIFY', ip: (i) => ipHash(`q${i}`) });
+      await insertScans(c.helmet, 30, { ip: (i) => ipHash(`p${i}`) });
+      await insertScans(c.helmet, 15, { type: 'VERIFY', ip: (i) => ipHash(`q${i}`) });
       await risk.evaluate();
       const admin = await asAdmin('ADMIN');
       await ctx
         .http()
-        .patch(`/api/v1/admin/analytics/helmets/${c.helmet.helmetCode}/qr-integrity`)
+        .patch(`/api/v1/admin/analytics/safety-ids/${c.helmet.safetyCode}/qr-integrity`)
         .set(bearer(admin.token))
         .send({ status: 'COMPROMISED', note: 'Owner reported a copied sticker' })
         .expect(200);
@@ -252,7 +266,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       expect(helmet.status).toBe('ACTIVE');
       expect(
         await ctx.prisma.auditLog.count({
-          where: { action: 'helmet.qr_integrity.changed', entityId: c.helmet.id },
+          where: { action: 'safety_id.qr_integrity.changed', entityId: c.helmet.safetyId },
         }),
       ).toBe(1);
       // Back to NORMAL removes the notice (cache invalidated).
@@ -312,7 +326,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
   describe('alert workflow, RBAC and privacy', () => {
     const setupAlert = async () => {
       const h = await createTestHelmet(ctx, 'SOLD');
-      await insertScans(h.id, 25);
+      await insertScans(h, 25);
       await risk.evaluate();
       const alert = await ctx.prisma.riskAlert.findFirstOrThrow();
       return { h, alert };
@@ -342,7 +356,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
           where: { action: { startsWith: 'risk_alert.' }, entityId: alert.id },
         }),
       ).toBe(3);
-      await insertScans(h.id, 5);
+      await insertScans(h, 5);
       await risk.evaluate();
       expect(await ctx.prisma.riskAlert.count()).toBe(1);
       const list = await ctx
@@ -357,7 +371,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const support = await asAdmin('SUPPORT');
       for (let i = 0; i < 5; i++) {
         const h = await createTestHelmet(ctx, 'SOLD');
-        await insertScans(h.id, 25);
+        await insertScans(h, 25);
       }
       await risk.evaluate();
       const seen: string[] = [];
@@ -382,14 +396,25 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const mfg = await asAdmin('MANUFACTURING');
       const detail = await ctx
         .http()
-        .get(`/api/v1/admin/analytics/helmets/${h.helmetCode}`)
+        .get(`/api/v1/admin/analytics/safety-ids/${h.safetyCode}`)
         .set(bearer(viewer.token))
         .expect(200);
       expect(detail.body.data.alerts).toBeUndefined();
+      expect(detail.body.data.safetyId).toMatchObject({
+        safetyCode: h.safetyCode,
+        linkedHelmet: { helmetCode: h.helmetCode },
+      });
+      // The Phase 8 helmet route resolves the linked Safety ID.
+      const viaHelmet = await ctx
+        .http()
+        .get(`/api/v1/admin/analytics/helmets/${h.helmetCode}`)
+        .set(bearer(viewer.token))
+        .expect(200);
+      expect(viaHelmet.body.data.safetyId.id).toBe(h.safetyId);
       expect(detail.body.data.signals.length).toBeGreaterThan(0);
       const events = await ctx
         .http()
-        .get(`/api/v1/admin/analytics/helmets/${h.helmetCode}/scans?limit=5`)
+        .get(`/api/v1/admin/analytics/safety-ids/${h.safetyCode}/scans?limit=5`)
         .set(bearer(viewer.token))
         .expect(200);
       expect(events.body.data.items).toHaveLength(5);
@@ -432,20 +457,30 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const c = await newCustomer(ctx);
       const other = await newCustomer(ctx);
       // Scans before this owner's activation (e.g. at the factory or a previous owner) don't count.
-      await insertScans(c.helmet.id, 3, { at: () => new Date(Date.now() - 3600_000) });
+      await insertScans(c.helmet, 3, { at: () => new Date(Date.now() - 3600_000) });
       const after = () => new Date(Date.now() + 1000);
-      await insertScans(c.helmet.id, 2, { at: after });
-      await insertScans(c.helmet.id, 1, { type: 'VERIFY', at: after });
-      await insertScans(c.helmet.id, 4, { device: 'BOT', at: after });
-      await insertScans(c.helmet.id, 5, { at: () => new Date(Date.now() - 40 * 24 * 3600_000) });
+      await insertScans(c.helmet, 2, { at: after });
+      await insertScans(c.helmet, 1, { type: 'VERIFY', at: after });
+      await insertScans(c.helmet, 4, { device: 'BOT', at: after });
+      await insertScans(c.helmet, 5, { at: () => new Date(Date.now() - 40 * 24 * 3600_000) });
       const res = await ctx
         .http()
-        .get(`/api/v1/customer/helmets/${c.helmet.id}/scan-summary`)
+        .get(`/api/v1/customer/safety-ids/${c.helmet.safetyId}/scan-summary`)
         .set(bearer(c.token))
         .expect(200);
       expect(res.body.data.message).toBe(
-        'Your helmet QR was accessed 3 times in the last 30 days.',
+        'Your Safety ID QR was accessed 3 times in the last 30 days.',
       );
+      // Phase 8 helmet route: same counts through the linked Safety ID.
+      expect(
+        (
+          await ctx
+            .http()
+            .get(`/api/v1/customer/helmets/${c.helmet.id}/scan-summary`)
+            .set(bearer(c.token))
+            .expect(200)
+        ).body.data,
+      ).toEqual(res.body.data);
       expect(Object.keys(res.body.data).sort()).toEqual(
         [
           'emergencyScans30d',
@@ -457,7 +492,7 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       );
       await ctx
         .http()
-        .get(`/api/v1/customer/helmets/${c.helmet.id}/scan-summary`)
+        .get(`/api/v1/customer/safety-ids/${c.helmet.safetyId}/scan-summary`)
         .set(bearer(other.token))
         .expect(404);
     });
@@ -468,22 +503,27 @@ describe('Phase 6 — analytics & QR abuse detection (e2e)', () => {
       const c = await newCustomer(ctx);
       const now = new Date('2026-10-04T12:00:00Z');
       const old = new Date('2026-03-01T10:00:00Z'); // > 180 days before `now`
-      await insertScans(c.helmet.id, 6, { at: () => old });
-      await insertScans(c.helmet.id, 2, { at: () => new Date('2026-10-03T10:00:00Z') });
+      await insertScans(c.helmet, 6, { at: () => old });
+      await insertScans(c.helmet, 2, { at: () => new Date('2026-10-03T10:00:00Z') });
       await aggregation.aggregateDay('2026-03-01', '2026-10-04');
       const auditBefore = await ctx.prisma.auditLog.count();
       const ownershipBefore = await ctx.prisma.helmetOwnership.count();
       const result = await retention.run(now);
       expect(result.scansDeleted).toBe(6);
       expect(await ctx.prisma.helmetScan.count()).toBe(2);
-      const agg = await ctx.prisma.helmetScanDaily.findFirstOrThrow({
-        where: { helmetId: c.helmet.id },
+      const agg = await ctx.prisma.safetyIdScanDaily.findFirstOrThrow({
+        where: { safetyId: c.helmet.safetyId },
       });
+      // The helmet-level (product) aggregate is kept too.
+      expect(
+        (await ctx.prisma.helmetScanDaily.findFirstOrThrow({ where: { helmetId: c.helmet.id } }))
+          .totalScans,
+      ).toBe(6);
       expect(agg.totalScans).toBe(6);
       // Re-aggregating a purged day never zeroes it.
       await aggregation.aggregateDay('2026-03-01', '2026-10-04');
       expect(
-        (await ctx.prisma.helmetScanDaily.findFirstOrThrow({ where: { id: agg.id } })).totalScans,
+        (await ctx.prisma.safetyIdScanDaily.findFirstOrThrow({ where: { id: agg.id } })).totalScans,
       ).toBe(6);
       expect(await ctx.prisma.auditLog.count()).toBe(auditBefore);
       expect(await ctx.prisma.helmetOwnership.count()).toBe(ownershipBefore);

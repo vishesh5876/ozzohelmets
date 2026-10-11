@@ -31,15 +31,18 @@ const policy = () =>
   } as unknown as AppConfigService);
 
 describe('Safety ID activation eligibility', () => {
-  it('allows GENERATED and PRINTED only (PIN possession is the proof)', () => {
+  it('allows PRINTED only (PIN possession is the proof; GENERATED = not printed yet)', () => {
     const p = policy();
     const allowed = Object.values(SafetyIdStatus).filter((s) => p.evaluate(fresh(s), now) === null);
-    expect([...allowed].sort()).toEqual(['GENERATED', 'PRINTED']);
+    expect([...allowed].sort()).toEqual(['PRINTED']);
   });
 
-  it.each<SafetyIdStatusT>(['DEACTIVATED', 'REPLACED'])('rejects %s as not activatable', (s) => {
-    expect(policy().evaluate(fresh(s), now)?.code).toBe(ErrorCode.SAFETY_ID_NOT_ACTIVATABLE);
-  });
+  it.each<SafetyIdStatusT>(['GENERATED', 'DEACTIVATED', 'REPLACED'])(
+    'rejects %s as not activatable',
+    (s) => {
+      expect(policy().evaluate(fresh(s), now)?.code).toBe(ErrorCode.SAFETY_ID_NOT_ACTIVATABLE);
+    },
+  );
 
   it('rejects double activation (used PIN or post-activation status)', () => {
     expect(

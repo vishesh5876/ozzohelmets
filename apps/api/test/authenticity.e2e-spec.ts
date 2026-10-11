@@ -76,6 +76,7 @@ describe('Product authenticity, product reports & public lifecycle rules (e2e)',
       lifecycle: { label: 'In service', warning: null },
       activated: true,
       warranty: { status: 'ACTIVE' },
+      safetyId: { code: c.helmet.safetyCode },
     });
     expect(data.message).toMatch(/registered identity, not the physical helmet/);
     const json = JSON.stringify(data);
@@ -88,7 +89,8 @@ describe('Product authenticity, product reports & public lifecycle rules (e2e)',
       c.userId,
       helmet.id,
       helmet.serialNumber,
-      helmet.activationPinHash,
+      helmet.activationPinHash!,
+      c.helmet.safetyId,
       c.helmet.pin,
       c.recoveryCode,
     ])
@@ -107,7 +109,7 @@ describe('Product authenticity, product reports & public lifecycle rules (e2e)',
       const data = await verify(token);
       expect(data).toEqual({
         state: 'NOT_VERIFIED',
-        message: 'We could not verify this Helmet ID. Check the QR code or contact support.',
+        message: 'We could not verify this Safety ID. Check the QR code or contact support.',
       });
       expect(JSON.stringify(data).toLowerCase()).not.toContain('counterfeit');
     }
@@ -247,7 +249,11 @@ describe('Product authenticity, product reports & public lifecycle rules (e2e)',
         status: 'OPEN',
       });
       expect(rows[0]!.description).not.toContain('\u0000');
-      expect(rows[1]).toMatchObject({ helmetId: null, publicToken: 'ZZZZZZZZZZZZZZZZZZZZZZ' });
+      expect(rows[1]).toMatchObject({
+        helmetId: null,
+        safetyId: null,
+        publicToken: 'ZZZZZZZZZZZZZZZZZZZZZZ',
+      });
       const audit = await ctx.prisma.auditLog.findMany({
         where: { action: 'product_report.created' },
       });

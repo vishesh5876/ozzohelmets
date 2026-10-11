@@ -14,6 +14,7 @@ import type {
   WarrantyStatus,
 } from './enums';
 import type { PublicEmergencyDto } from './contracts';
+import type { SafetyIdStatus } from './safety-id';
 
 type IsoDateString = string;
 
@@ -263,7 +264,7 @@ export interface AdminCustomerSearchResponse {
   page: number;
   pageSize: number;
   /** How the query was interpreted. */
-  matchedBy: 'customerId' | 'helmetId' | 'email' | 'text' | 'all';
+  matchedBy: 'customerId' | 'helmetId' | 'safetyId' | 'email' | 'text' | 'all';
 }
 
 /** Operational account summary. Never medical data, contacts' details, hashes or tokens. */
@@ -287,6 +288,15 @@ export interface AdminCustomerDetailDto {
     ownedSince: IsoDateString;
     emergencySharing: boolean;
     warrantyStatus: WarrantyStatus;
+  }[];
+  /** Phase 9: Safety IDs owned (separate from helmets; a linked one shows its helmet). */
+  safetyIds: {
+    id: string;
+    safetyCode: string;
+    status: SafetyIdStatus;
+    emergencySharing: boolean;
+    linkedHelmetCode: string | null;
+    ownedSince: IsoDateString;
   }[];
   ownershipHistory: {
     helmetId: string;

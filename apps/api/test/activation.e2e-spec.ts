@@ -11,7 +11,7 @@ import {
   uniqueEmail,
 } from './utils';
 
-describe('Helmet activation — PIN as proof of possession (e2e)', () => {
+describe('Safety ID activation — PIN as proof of possession (e2e)', () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
@@ -32,26 +32,42 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
       .post('/api/v1/customer/activation/register')
       .send({ email: uniqueEmail(), ...body });
   const addHelmet = (token: string, body: Record<string, unknown>) =>
-    ctx.http().post('/api/v1/customer/activation/add-helmet').set(bearer(token)).send(body);
+    ctx.http().post('/api/v1/customer/activation/add-safety-id').set(bearer(token)).send(body);
+  const safetyRow = (id: string) => ctx.prisma.safetyId.findUniqueOrThrow({ where: { id } });
 
   it('validate checks eligibility AND the PIN without consuming anything', async () => {
     const h = await createTestHelmet(ctx, 'SOLD');
     const ok = await validate({ publicToken: h.publicToken, pin: h.pin.toLowerCase() }).expect(200);
     expect(ok.body.data).toEqual({
       activatable: true,
-      helmet: { modelName: 'Roadster X1', brand: 'Ozzo', helmetCode: h.helmetCode },
+      safetyId: { safetyCode: h.safetyCode },
+      linkedHelmet: { modelName: 'Roadster X1', brand: 'Ozzo', helmetCode: h.helmetCode },
     });
+    // Phase 8 cards print the Helmet ID: it still selects the linked Safety ID.
     const byCode = await validate({
       helmetCode: h.helmetCode.replace(/-/g, ''),
       pin: h.pin,
     }).expect(200);
-    expect(byCode.body.data.helmet.helmetCode).toBe(h.helmetCode);
+    expect(byCode.body.data.linkedHelmet.helmetCode).toBe(h.helmetCode);
+    const bySafetyCode = await validate({
+      safetyCode: h.safetyCode.toLowerCase(),
+      pin: h.pin,
+    }).expect(200);
+    expect(bySafetyCode.body.data.safetyId.safetyCode).toBe(h.safetyCode);
     expect(
       (await validate({ publicToken: h.publicToken, pin: 'ZZZZ9999' }).expect(400)).body.error.code,
     ).toBe('INVALID_ACTIVATION_PIN');
-    const row = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } });
-    expect(row).toMatchObject({ status: 'SOLD', activationPinUsed: false, activationAttempts: 1 });
-    expect(await ctx.prisma.helmetActivationSecret.count({ where: { helmetId: h.id } })).toBe(1);
+    expect(await safetyRow(h.safetyId)).toMatchObject({
+      status: 'PRINTED',
+      activationPinUsed: false,
+      activationAttempts: 1,
+    });
+    expect((await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } })).status).toBe(
+      'SOLD',
+    );
+    expect(
+      await ctx.prisma.safetyIdActivationSecret.count({ where: { safetyId: h.safetyId } }),
+    ).toBe(1);
   });
 
   it('validate gives one answer for unknown, ineligible and already-owned helmets', async () => {
@@ -69,7 +85,7 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
     for (const r of [unknown, ineligible, taken])
       expect(r.body.error).toEqual(
         expect.objectContaining({
-          code: 'HELMET_NOT_ACTIVATABLE',
+          code: 'SAFETY_ID_NOT_ACTIVATABLE',
           message: unknown.body.error.message,
         }),
       );
@@ -84,6 +100,13 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
       name: 'Asha',
     }).expect(200);
     expect(res.body.data).toMatchObject({
+      safetyId: {
+        id: h.safetyId,
+        safetyCode: h.safetyCode,
+        status: 'ACTIVATED',
+        emergencySharing: false,
+        linkedHelmet: { id: h.id, helmetCode: h.helmetCode },
+      },
       helmet: { id: h.id, status: 'ACTIVATED', emergencyProfileStatus: 'NOT_CONFIGURED' },
       customer: { name: 'Asha' },
     });
@@ -102,13 +125,35 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
     const owners = await ctx.prisma.helmetOwnership.findMany({ where: { helmetId: h.id } });
     expect(owners).toHaveLength(1);
     expect(owners[0]).toMatchObject({ userId: res.body.data.customer.id, status: 'ACTIVE' });
-    expect(await ctx.prisma.helmetActivationSecret.count({ where: { helmetId: h.id } })).toBe(0);
+    // The Safety ID and its linked helmet have the same owner, in the same transaction.
+    expect(
+      await ctx.prisma.safetyIdOwnership.findMany({ where: { safetyId: h.safetyId } }),
+    ).toEqual([
+      expect.objectContaining({
+        userId: res.body.data.customer.id,
+        status: 'ACTIVE',
+        source: 'ACTIVATION',
+      }),
+    ]);
+    expect(await safetyRow(h.safetyId)).toMatchObject({
+      status: 'ACTIVATED',
+      activationPinUsed: true,
+      activationAttempts: 0,
+    });
+    expect(
+      await ctx.prisma.safetyIdActivationSecret.count({ where: { safetyId: h.safetyId } }),
+    ).toBe(0);
     expect(
       await ctx.prisma.helmetStatusHistory.count({
         where: { helmetId: h.id, fromStatus: 'SOLD', toStatus: 'ACTIVATED' },
       }),
     ).toBe(1);
-    for (const action of ['customer.created', 'helmet.activated', 'helmet.activation_pin.consumed'])
+    for (const action of [
+      'customer.created',
+      'helmet.activated',
+      'safety_id.activated',
+      'safety_id.activation_pin.consumed',
+    ])
       expect(await ctx.prisma.auditLog.count({ where: { action } })).toBe(1);
     expect(
       (await ctx.http().get(`/api/v1/public/emergency/${h.publicToken}`).expect(200)).body.data
@@ -162,7 +207,7 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
           password: 'another passphrase here',
         }).expect(409)
       ).body.error.code,
-    ).toBe('HELMET_ALREADY_ACTIVATED');
+    ).toBe('SAFETY_ID_ALREADY_ACTIVATED');
     const other = await newCustomer(ctx);
     expect(
       (
@@ -171,25 +216,34 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
           pin: c.helmet.pin,
         }).expect(409)
       ).body.error.code,
-    ).toBe('HELMET_ALREADY_ACTIVATED');
+    ).toBe('SAFETY_ID_ALREADY_ACTIVATED');
     expect(await ctx.prisma.helmetOwnership.count({ where: { helmetId: c.helmet.id } })).toBe(1);
   });
 
-  it('an existing customer adds another helmet without creating a new account', async () => {
+  it('an existing customer adds another Safety ID (with its helmet) without a new account', async () => {
     const c = await newCustomer(ctx);
     const second = await createTestHelmet(ctx, 'SOLD', 'WXYZ6789');
     const res = await addHelmet(c.token, { helmetCode: second.helmetCode, pin: second.pin }).expect(
       200,
     );
     expect(res.body.data.helmet).toMatchObject({ id: second.id, status: 'ACTIVATED' });
-    expect(await ctx.prisma.user.count()).toBe(1);
-    const mine = await ctx.http().get('/api/v1/customer/helmets').set(bearer(c.token)).expect(200);
-    expect(mine.body.data.map((h: { id: string }) => h.id).sort()).toEqual(
-      [c.helmet.id, second.id].sort(),
-    );
+    expect(res.body.data.safetyId).toMatchObject({ id: second.safetyId, status: 'ACTIVATED' });
+    // The Phase 8 path stays available as an alias during the deploy window.
+    const third = await createTestHelmet(ctx, 'SOLD', 'QRST2345');
     await ctx
       .http()
       .post('/api/v1/customer/activation/add-helmet')
+      .set(bearer(c.token))
+      .send({ publicToken: third.publicToken, pin: third.pin })
+      .expect(200);
+    expect(await ctx.prisma.user.count()).toBe(1);
+    const mine = await ctx.http().get('/api/v1/customer/helmets').set(bearer(c.token)).expect(200);
+    expect(mine.body.data.map((h: { id: string }) => h.id).sort()).toEqual(
+      [c.helmet.id, second.id, third.id].sort(),
+    );
+    await ctx
+      .http()
+      .post('/api/v1/customer/activation/add-safety-id')
       .send({ helmetCode: second.helmetCode, pin: second.pin })
       .expect(401);
   });
@@ -201,7 +255,9 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
       register({ publicToken: h.publicToken, pin: h.pin, password: 'second racer passphrase' }),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('HELMET_ALREADY_ACTIVATED');
+    expect(results.find((r) => r.status === 409)!.body.error.code).toBe(
+      'SAFETY_ID_ALREADY_ACTIVATED',
+    );
     expect(
       await ctx.prisma.helmetOwnership.count({ where: { helmetId: h.id, status: 'ACTIVE' } }),
     ).toBe(1);
@@ -228,7 +284,7 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
     ).toBe(1);
   });
 
-  it('brute-forcing the PIN triggers escalating per-helmet lockouts (never permanent)', async () => {
+  it('brute-forcing the PIN triggers escalating per-Safety-ID lockouts (never permanent)', async () => {
     const h = await createTestHelmet(ctx, 'SOLD');
     for (let i = 0; i < 2; i++)
       expect(
@@ -244,19 +300,19 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
       password: TEST_PASSWORD,
     }).expect(429);
     expect(locked.body.error.details.retryAfter).toBeGreaterThan(0);
-    const row = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: h.id } });
+    const row = await safetyRow(h.safetyId);
     expect(row.activationLockedUntil!.getTime()).toBeLessThanOrEqual(
       Date.now() + 15 * 60_000 + 1000,
     );
     expect(
       await ctx.prisma.auditLog.count({
-        where: { action: 'helmet.activation.locked', entityId: h.id },
+        where: { action: 'safety_id.activation.locked', entityId: h.safetyId },
       }),
     ).toBe(1);
     expect(JSON.stringify(await ctx.prisma.auditLog.findMany())).not.toContain('ZZZZ9999');
     // Once the cooldown ends the real owner can still activate.
-    await ctx.prisma.helmet.update({
-      where: { id: h.id },
+    await ctx.prisma.safetyId.update({
+      where: { id: h.safetyId },
       data: { activationLockedUntil: new Date(Date.now() - 1000) },
     });
     await registerCustomer(ctx, h);
@@ -301,8 +357,11 @@ describe('Helmet activation — PIN as proof of possession (e2e)', () => {
             password: TEST_PASSWORD,
           }).expect(409)
         ).body.error.code,
-      ).toBe('HELMET_NOT_ACTIVATABLE');
+      ).toBe('SAFETY_ID_NOT_ACTIVATABLE');
     }
+    // Neither attempt consumed anything.
+    expect(await ctx.prisma.user.count()).toBe(0);
+    expect(await ctx.prisma.safetyIdOwnership.count()).toBe(0);
   });
 
   it('the newly created account can sign in with its Helmet ID + password', async () => {

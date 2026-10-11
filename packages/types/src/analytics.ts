@@ -16,6 +16,8 @@ import type {
   WarrantyStatus,
 } from './enums';
 
+import type { SafetyIdStatus } from './safety-id';
+
 type IsoDateString = string;
 /** `YYYY-MM-DD` (UTC). */
 type DateOnly = string;
@@ -49,13 +51,19 @@ export interface AnalyticsOverviewDto {
     helmetsActivated: number;
     /** activated / generated, 0–1. */
     activationRate: number;
+    /** Phase 9: Safety IDs (emergency QR identities), linked or standalone. */
+    safetyIdsGenerated: number;
+    safetyIdsActivated: number;
+    standaloneSafetyIds: number;
+    /** Safety IDs currently sharing emergency information (status ACTIVE). */
     activeEmergencyProfiles: number;
-    /** Helmets sharing emergency information / activated helmets, 0–1. */
+    /** Safety IDs sharing / activated Safety IDs, 0–1. */
     emergencySharingRate: number;
     profilesCreated: number;
     profilesEnabled: number;
     profilesIncomplete: number;
-    ownedHelmetsWithoutContacts: number;
+    /** Owned Safety IDs whose owner has no active emergency contact. */
+    ownedSafetyIdsWithoutContacts: number;
     warrantiesActive: number;
     warrantiesExpired: number;
     /** Activated helmets with a registered warranty, 0–1. */
@@ -86,7 +94,13 @@ export interface AnalyticsOverviewDto {
     registered: number;
     active: number;
   }[];
-  recentActivations: { helmetId: string; helmetCode: string; activatedAt: IsoDateString }[];
+  /** Phase 9: latest Safety ID activations (with the linked helmet, if any). */
+  recentActivations: {
+    safetyId: string;
+    safetyCode: string;
+    helmetCode: string | null;
+    activatedAt: IsoDateString;
+  }[];
 }
 
 export interface ScanCountsDto {
@@ -101,13 +115,16 @@ export interface ScanAnalyticsDto {
   last7d: ScanCountsDto;
   last30d: ScanCountsDto;
   period: ScanCountsDto;
-  uniqueHelmetsScannedInPeriod: number;
-  helmetsWithUnusualActivity: number;
+  /** Phase 9: QR metrics are per Safety ID (standalone ones included). */
+  uniqueSafetyIdsScannedInPeriod: number;
+  safetyIdsWithUnusualActivity: number;
   invalidTokenRequestsInPeriod: number;
-  topHelmets: {
-    helmetId: string;
-    helmetCode: string;
-    model: string;
+  topSafetyIds: {
+    safetyId: string;
+    safetyCode: string;
+    /** Linked helmet (null for standalone Safety IDs). */
+    helmetCode: string | null;
+    model: string | null;
     scans: number;
     emergency: number;
     verify: number;
@@ -116,11 +133,12 @@ export interface ScanAnalyticsDto {
   series: { date: DateOnly; total: number; emergency: number; verify: number }[];
 }
 
-export interface HelmetActivityItemDto {
-  helmetId: string;
-  helmetCode: string;
-  model: string;
-  status: HelmetStatus;
+/** Phase 9: QR activity / risk list item, per Safety ID. */
+export interface SafetyIdActivityItemDto {
+  safetyId: string;
+  safetyCode: string;
+  status: SafetyIdStatus;
+  linkedHelmet: { id: string; helmetCode: string; model: string; status: HelmetStatus } | null;
   qrIntegrityStatus: QrIntegrityStatus;
   scans24h: number;
   scans7d: number;
@@ -161,6 +179,8 @@ export interface RiskAlertDto {
   status: RiskAlertStatus;
   priority: RiskLevel;
   helmet: { id: string; helmetCode: string } | null;
+  /** Phase 9: the Safety ID (scanned QR) the alert is about. */
+  safetyId: { id: string; safetyCode: string } | null;
   /** Opaque source reference for source-level alerts (not an IP or IP hash). */
   sourceRef: string | null;
   summary: string;
@@ -189,19 +209,25 @@ export interface HelmetRiskDto {
   resolutionReason: string | null;
 }
 
-export interface HelmetAnalyticsDetailDto {
-  helmet: {
+/** Phase 9: QR analytics detail of one Safety ID (scans, risk, alerts, reports). */
+export interface SafetyIdAnalyticsDetailDto {
+  safetyId: {
     id: string;
-    helmetCode: string;
-    model: string;
-    sku: string;
-    status: HelmetStatus;
+    safetyCode: string;
+    status: SafetyIdStatus;
     activatedAt: IsoDateString | null;
     emergencySharing: boolean;
-    warrantyStatus: WarrantyStatus;
     qrIntegrityStatus: QrIntegrityStatus;
     qrIntegrityNote: string | null;
     qrIntegrityChangedAt: IsoDateString | null;
+    linkedHelmet: {
+      id: string;
+      helmetCode: string;
+      model: string;
+      sku: string;
+      status: HelmetStatus;
+      warrantyStatus: WarrantyStatus;
+    } | null;
   };
   totals: {
     scans24h: number;

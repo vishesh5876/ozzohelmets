@@ -39,8 +39,19 @@ describe('Customer account email (e2e)', () => {
   const expectPinUnconsumed = async (helmetId: string) => {
     const row = await ctx.prisma.helmet.findUniqueOrThrow({ where: { id: helmetId } });
     expect(row).toMatchObject({ status: 'SOLD', activationPinUsed: false, activatedAt: null });
-    expect(await ctx.prisma.helmetActivationSecret.count({ where: { helmetId } })).toBe(1);
     expect(await ctx.prisma.helmetOwnership.count({ where: { helmetId } })).toBe(0);
+    // Phase 9: the PIN and its escrow live on the linked Safety ID.
+    const link = await ctx.prisma.safetyIdHelmetLink.findFirstOrThrow({
+      where: { helmetId, endedAt: null },
+      select: { safetyIdRef: { select: { id: true, status: true, activationPinUsed: true } } },
+    });
+    expect(link.safetyIdRef).toMatchObject({ status: 'PRINTED', activationPinUsed: false });
+    expect(
+      await ctx.prisma.safetyIdActivationSecret.count({ where: { safetyId: link.safetyIdRef.id } }),
+    ).toBe(1);
+    expect(
+      await ctx.prisma.safetyIdOwnership.count({ where: { safetyId: link.safetyIdRef.id } }),
+    ).toBe(0);
   };
 
   describe('first activation', () => {

@@ -52,7 +52,7 @@ export async function resetState(ctx: TestContext): Promise<void> {
   if (!dbName.endsWith('_test'))
     throw new Error(`Refusing to truncate non-test database "${dbName}"`);
   await ctx.prisma.$executeRawUnsafe(
-    'TRUNCATE risk_alerts, platform_daily_stats, worker_job_runs, worker_heartbeats, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_scans, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
+    'TRUNCATE helmet_scans, safety_id_batches, safety_ids, risk_alerts, platform_daily_stats, worker_job_runs, worker_heartbeats, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
   );
   await ctx.redis.flushdb();
 }
@@ -159,15 +159,17 @@ export async function loginCustomer(
   };
 }
 
-/** Creates one helmet directly in the given status with a known PIN (and escrow row). */
+/**
+ * Creates one helmet directly in the given status, with its linked Safety ID (Phase 9: the QR
+ * token, Activation PIN and escrow belong to the Safety ID; the helmet mirrors token + PIN hash,
+ * exactly as a Phase 9 helmet batch generates them).
+ */
 export async function createTestHelmet(
   ctx: TestContext,
   status: 'SOLD' | 'IN_INVENTORY' | 'PRINTED' | 'GENERATED' | 'RECALLED' = 'SOLD',
   pin = 'ABCD2345',
 ) {
-  const { generateHelmetCode, generatePublicToken } =
-    await import('../src/security/helmet-identity.generator');
-  const { EncryptionService } = await import('../src/security/encryption.service');
+  const { generateHelmetCode } = await import('../src/security/helmet-identity.generator');
   const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
   const model = await ctx.prisma.helmetModel.upsert({
     where: { sku: 'TEST-MODEL' },
@@ -182,26 +184,61 @@ export async function createTestHelmet(
       quantity: 1,
       generatedCount: 1,
       generationStatus: 'COMPLETED',
+      withSafetyIds: true,
     },
   });
+  const safety = await createTestSafetyId(
+    ctx,
+    status === 'GENERATED' ? 'GENERATED' : 'PRINTED',
+    pin,
+  );
   const helmet = await ctx.prisma.helmet.create({
     data: {
       helmetCode: generateHelmetCode(),
-      publicToken: generatePublicToken(),
-      activationPinHash: await ctx.hashing.hashPin(pin),
+      publicToken: safety.publicToken,
+      activationPinHash: safety.activationPinHash,
       serialNumber: `${batch.batchCode}-000001`,
       helmetModelId: model.id,
       batchId: batch.id,
       status,
     },
   });
-  await ctx.prisma.helmetActivationSecret.create({
+  await ctx.prisma.safetyIdHelmetLink.create({
+    data: { safetyId: safety.id, helmetId: helmet.id, reason: 'TEST' },
+  });
+  return {
+    ...helmet,
+    publicToken: safety.publicToken,
+    pin,
+    safetyId: safety.id,
+    safetyCode: safety.safetyCode,
+  };
+}
+
+/** Creates one standalone Safety ID (no helmet) with a known PIN and escrow row. */
+export async function createTestSafetyId(
+  ctx: TestContext,
+  status: 'GENERATED' | 'PRINTED' = 'PRINTED',
+  pin = 'ABCD2345',
+) {
+  const { generatePublicToken, generateSafetyCode } =
+    await import('../src/security/helmet-identity.generator');
+  const { EncryptionService } = await import('../src/security/encryption.service');
+  const safety = await ctx.prisma.safetyId.create({
     data: {
-      helmetId: helmet.id,
-      pinCiphertext: ctx.app.get(EncryptionService).pinEscrow.encrypt(pin, helmet.id),
+      safetyCode: generateSafetyCode(),
+      publicToken: generatePublicToken(),
+      activationPinHash: await ctx.hashing.hashPin(pin),
+      status,
     },
   });
-  return { ...helmet, pin };
+  await ctx.prisma.safetyIdActivationSecret.create({
+    data: {
+      safetyId: safety.id,
+      pinCiphertext: ctx.app.get(EncryptionService).pinEscrow.encrypt(pin, safety.id),
+    },
+  });
+  return { ...safety, pin };
 }
 
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -247,6 +284,14 @@ export async function completeProfile(
     .expect(200);
 }
 
+export async function enableOnSafetyId(ctx: TestContext, token: string, safetyId: string) {
+  await ctx
+    .http()
+    .post(`/api/v1/customer/safety-ids/${safetyId}/emergency/enable`)
+    .set(bearer(token))
+    .expect(200);
+}
+
 export async function enableOnHelmet(ctx: TestContext, token: string, helmetId: string) {
   await ctx
     .http()
@@ -273,7 +318,9 @@ export async function publicView(ctx: TestContext, publicToken: string) {
     message: string;
     profile?: Record<string, unknown>;
     contacts?: unknown[];
-    helmet: Record<string, unknown>;
+    safetyId: { code?: string };
+    linkedProduct: boolean;
+    warning?: string;
   };
 }
 

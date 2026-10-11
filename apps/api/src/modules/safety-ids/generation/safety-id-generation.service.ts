@@ -72,13 +72,10 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
   /** Marks batches abandoned by a crashed/restarted process as FAILED so they can be resumed. */
   async onApplicationBootstrap(): Promise<void> {
     const cutoff = new Date(Date.now() - STALE_SAFETY_GENERATION_MS);
+    // Single-table update (no join): a companion batch of a helmet batch is reset to GENERATING
+    // again when its helmet batch generation is resumed.
     const { count } = await this.prisma.safetyIdBatch.updateMany({
-      where: {
-        generationStatus: 'GENERATING',
-        updatedAt: { lt: cutoff },
-        // Companion batches of helmet batches are driven by the helmet batch job.
-        NOT: { mode: 'HELMET_LINKED', helmetBatch: { withSafetyIds: true } },
-      },
+      where: { generationStatus: 'GENERATING', updatedAt: { lt: cutoff } },
       data: {
         generationStatus: 'FAILED',
         generationError: 'Generation was interrupted. Resume to continue.',
