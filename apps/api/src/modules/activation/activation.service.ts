@@ -3,12 +3,14 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   ACTIVATION_PIN_ALPHABET,
   ACTIVATION_PIN_LENGTH,
-  type ActivationAddHelmetResponse,
+  type ActivationAddSafetyIdResponse,
   type ActivationRegisterResponse,
   type ActivationValidateResponse,
   ActorType,
   ErrorCode,
   isValidPublicToken,
+  isValidSafetyCode,
+  normalizeSafetyCode,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
@@ -32,6 +34,11 @@ import { CustomerCredentialsService } from '../customer-auth/customer-credential
 import { CustomerHelmetsService } from '../customer-helmets/customer-helmets.service';
 import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
+import { CustomerSafetyIdsService } from '../safety-ids/customer-safety-ids.service';
+import {
+  type LockedSafetyIdState,
+  SafetyIdCoreService,
+} from '../safety-ids/domain/safety-id-core.service';
 import { ActivationPolicy } from './domain/activation-policy';
 import type {
   ActivationPinDto,
@@ -42,27 +49,25 @@ import type {
 const PIN_REGEX = new RegExp(`^[${ACTIVATION_PIN_ALPHABET}]{${ACTIVATION_PIN_LENGTH}}$`);
 const HOUR = 3600;
 
-interface LockedHelmet {
-  id: string;
-  helmet_code: string;
-  status: ActivationAddHelmetResponse['helmet']['status'];
-  activation_pin_used: boolean;
-  activation_pin_hash: string;
-  activation_attempts: number;
-  activation_locked_until: Date | null;
-  public_token: string;
-}
-
 /** Who becomes the owner: a brand-new account (first activation) or an existing customer. */
 type NewOwner =
   { kind: 'new-account'; account: PreparedAccount } | { kind: 'existing'; userId: string };
 
-type PinCheck = { ok: true; helmet: LockedHelmet } | { ok: false; lockedUntil: Date | null };
+type PinCheck = { ok: true; state: LockedSafetyIdState } | { ok: false; lockedUntil: Date | null };
+
+interface ActivationOutcome {
+  userId: string;
+  safetyId: string;
+  helmetId: string | null;
+  publicToken: string;
+}
 
 /**
- * Activation: the concealed one-time Activation PIN is the proof of possession.
- * Every PIN check — preliminary or final — runs under a row lock and records failures for the
- * progressive per-helmet lockout, plus per-IP (and per-customer) failure budgets.
+ * Activation (Phase 9): starts from the Safety ID. The one-time Activation PIN printed with the
+ * Safety ID is the proof of possession. Every PIN check — preliminary or final — runs under row
+ * locks (linked helmet → Safety ID) and records failures for the progressive per-Safety-ID
+ * lockout, plus per-IP (and per-customer) failure budgets. A linked, unowned helmet becomes the
+ * same customer's in the same transaction; a linked helmet owned by someone else blocks it.
  */
 @Injectable()
 export class ActivationService {
@@ -71,10 +76,12 @@ export class ActivationService {
     private readonly policy: ActivationPolicy,
     private readonly hashing: HashingService,
     private readonly statuses: HelmetStatusService,
+    private readonly core: SafetyIdCoreService,
     private readonly audit: AuditService,
     private readonly limiter: RedisRateLimiter,
     private readonly publicCache: PublicEmergencyCacheService,
     private readonly customerHelmets: CustomerHelmetsService,
+    private readonly customerSafetyIds: CustomerSafetyIdsService,
     private readonly customerAuth: CustomerAuthService,
     private readonly credentials: CustomerCredentialsService,
     private readonly accounts: CustomerAccountsService,
@@ -83,37 +90,41 @@ export class ActivationService {
   ) {}
 
   /**
-   * Preliminary check before asking for a password: helmet eligible AND PIN correct. Does not
-   * consume anything. Ineligible and unknown helmets get the same HELMET_NOT_ACTIVATABLE.
+   * Preliminary check before asking for a password: Safety ID eligible AND PIN correct. Does not
+   * consume anything. Ineligible and unknown Safety IDs get the same SAFETY_ID_NOT_ACTIVATABLE.
    */
   async validate(dto: ActivationPinDto, meta: RequestMeta): Promise<ActivationValidateResponse> {
     await this.assertBudget(meta, null);
-    const helmetId = await this.resolveTarget(dto, { genericNotFound: true });
+    const safetyId = await this.resolveTarget(dto, { genericNotFound: true });
     const check = await this.prisma.$transaction((tx) =>
-      this.checkPin(tx, helmetId, dto.pin, meta, null, { genericDenials: true }),
+      this.checkPin(tx, safetyId, dto.pin, meta, null, { genericDenials: true }),
     );
     if (!check.ok) return this.failed(meta, null, check.lockedUntil);
-    const helmet = await this.prisma.helmet.findUniqueOrThrow({
-      where: { id: helmetId },
-      select: { helmetCode: true, helmetModel: { select: { name: true, brand: true } } },
-    });
+    const helmet = check.state.helmet
+      ? await this.prisma.helmet.findUniqueOrThrow({
+          where: { id: check.state.helmet.id },
+          select: { helmetCode: true, helmetModel: { select: { name: true, brand: true } } },
+        })
+      : null;
     return {
       activatable: true,
-      helmet: {
-        modelName: helmet.helmetModel.name,
-        brand: helmet.helmetModel.brand,
-        helmetCode: helmet.helmetCode,
-      },
+      safetyId: { safetyCode: check.state.safetyId.safetyCode },
+      linkedHelmet: helmet
+        ? {
+            modelName: helmet.helmetModel.name,
+            brand: helmet.helmetModel.brand,
+            helmetCode: helmet.helmetCode,
+          }
+        : null,
     };
   }
 
   /**
-   * First activation: PIN + account email + new password. In ONE transaction (helmet row
-   * locked): check eligibility, re-verify the PIN, confirm the email is free, create the account
-   * (Customer ID, password + recovery code hashes), create ownership, consume the PIN, purge
-   * escrow, move to ACTIVATED, write history and audits. Any failure rolls everything back, so a
-   * taken email never consumes the PIN. Returns a session and the
-   * plaintext recovery code (shown once).
+   * First activation: PIN + account email + new password. In ONE transaction (rows locked):
+   * check eligibility, re-verify the PIN, confirm the email is free, create the account, create
+   * the Safety ID ownership (and the linked helmet's, if unowned), consume the PIN, purge escrow,
+   * move to ACTIVATED, write audits. Any failure rolls everything back, so a taken email never
+   * consumes the PIN. Returns a session and the plaintext recovery code (shown once).
    */
   async register(
     dto: RegisterActivationDto,
@@ -123,179 +134,237 @@ export class ActivationService {
     refresh: Awaited<ReturnType<CustomerAuthService['startSession']>>['refresh'];
   }> {
     await this.assertBudget(meta, null);
-    const helmetId = await this.resolveTarget(dto, { genericNotFound: false });
-    const { helmetCode } = await this.prisma.helmet.findUniqueOrThrow({
-      where: { id: helmetId },
-      select: { helmetCode: true },
+    const safetyId = await this.resolveTarget(dto, { genericNotFound: false });
+    const { safetyCode } = await this.prisma.safetyId.findUniqueOrThrow({
+      where: { id: safetyId },
+      select: { safetyCode: true },
     });
-    // Policy check + expensive hashing happen before taking the row lock.
+    // Policy check + expensive hashing happen before taking the row locks.
     const account = await this.accounts.prepare(dto.password, {
       email: dto.email,
-      helmetCode,
+      helmetCode: safetyCode,
       activationPin: dto.pin,
       name: dto.name,
     });
-    const { userId, publicToken } = await this.activate(helmetId, dto.pin, meta, {
+    const outcome = await this.activate(safetyId, dto.pin, meta, {
       kind: 'new-account',
       account,
     });
 
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: outcome.userId } });
     const session = await this.customerAuth.startSession(user, meta);
-    await this.publicCache.invalidate(publicToken);
-    const helmet = await this.customerHelmets.get(userId, helmetId);
+    await this.publicCache.invalidate(outcome.publicToken);
     return {
-      result: { ...session.response, recoveryCode: account.recoveryCode, helmet },
+      result: {
+        ...session.response,
+        recoveryCode: account.recoveryCode,
+        ...(await this.activated(outcome)),
+      },
       refresh: session.refresh,
     };
   }
 
-  /** Existing (signed-in) customer activates another helmet; no new account is created. */
-  async addHelmet(
+  /** Existing (signed-in) customer activates another Safety ID; no new account is created. */
+  async addSafetyId(
     customer: AuthenticatedCustomer,
     dto: ActivationPinDto,
     meta: RequestMeta,
-  ): Promise<ActivationAddHelmetResponse> {
+  ): Promise<ActivationAddSafetyIdResponse> {
     await this.assertBudget(meta, customer.id);
-    const helmetId = await this.resolveTarget(dto, { genericNotFound: false });
-    const { publicToken } = await this.activate(helmetId, dto.pin, meta, {
+    const safetyId = await this.resolveTarget(dto, { genericNotFound: false });
+    const outcome = await this.activate(safetyId, dto.pin, meta, {
       kind: 'existing',
       userId: customer.id,
     });
-    await this.publicCache.invalidate(publicToken);
-    return { helmet: await this.customerHelmets.get(customer.id, helmetId) };
+    await this.publicCache.invalidate(outcome.publicToken);
+    return this.activated(outcome);
+  }
+
+  private async activated(outcome: ActivationOutcome): Promise<ActivationAddSafetyIdResponse> {
+    const [safetyId, helmet] = await Promise.all([
+      this.customerSafetyIds.get(outcome.userId, outcome.safetyId),
+      outcome.helmetId ? this.customerHelmets.get(outcome.userId, outcome.helmetId) : null,
+    ]);
+    return { safetyId, helmet };
   }
 
   private async activate(
-    helmetId: string,
+    safetyId: string,
     pin: string,
     meta: RequestMeta,
     owner: NewOwner,
-  ): Promise<{ userId: string; publicToken: string }> {
+  ): Promise<ActivationOutcome> {
     const actingUser = owner.kind === 'existing' ? owner.userId : null;
-    let outcome:
-      { ok: true; userId: string; publicToken: string } | { ok: false; lockedUntil: Date | null };
+    let outcome: (ActivationOutcome & { ok: true }) | { ok: false; lockedUntil: Date | null };
     try {
       outcome = await this.prisma.$transaction(
         async (tx) => {
-          const check = await this.checkPin(tx, helmetId, pin, meta, actingUser, {
+          const check = await this.checkPin(tx, safetyId, pin, meta, actingUser, {
             genericDenials: false,
           });
           if (!check.ok) return check;
-          const helmet = check.helmet;
+          const { safetyId: sid, helmet } = check.state;
+          // After the PIN: the linked helmet must not belong to someone else.
+          const linkDenial = this.policy.evaluateLink({
+            helmet: helmet ? { status: helmet.status, ownerId: helmet.ownerId } : null,
+            actingUserId: actingUser,
+          });
+          if (linkDenial)
+            throw new AppException(
+              linkDenial.code,
+              linkDenial.message,
+              linkDenial.status,
+              linkDenial.details,
+            );
           const now = new Date();
-
           const userId =
             owner.kind === 'new-account'
               ? await this.accounts.create(tx, owner.account, meta, 'activation')
               : owner.userId;
 
-          await tx.helmetOwnership.create({
-            data: {
+          await this.core.startOwnership(tx, sid.id, userId, 'ACTIVATION', now);
+          const purged = await tx.safetyIdActivationSecret.deleteMany({
+            where: { safetyId: sid.id },
+          });
+          await this.core.setStatus(tx, sid.id, sid.status, 'ACTIVATED', {
+            activatedAt: now,
+            activationPinUsed: true,
+            activationAttempts: 0,
+            activationLockedUntil: null,
+          });
+
+          let boundHelmet = false;
+          if (helmet && !helmet.ownerId) {
+            // The helmet this Safety ID came with becomes the same customer's.
+            await tx.helmetOwnership.create({
+              data: {
+                helmetId: helmet.id,
+                userId,
+                status: 'ACTIVE',
+                acquiredVia: 'ACTIVATION',
+                activatedAt: now,
+              },
+            });
+            // Phase 8 helmet escrow (same id for migrated rows) and PIN flag stay consistent.
+            await tx.helmetActivationSecret.deleteMany({ where: { helmetId: helmet.id } });
+            await this.statuses.apply(tx, {
               helmetId: helmet.id,
-              userId,
-              status: 'ACTIVE',
-              acquiredVia: 'ACTIVATION',
-              activatedAt: now,
-            },
-          });
-          const purged = await tx.helmetActivationSecret.deleteMany({
-            where: { helmetId: helmet.id },
-          });
-          await this.statuses.apply(tx, {
-            helmetId: helmet.id,
-            from: helmet.status,
-            to: 'ACTIVATED',
-            actor: { type: ActorType.SYSTEM, id: userId },
-            reason:
-              owner.kind === 'new-account'
-                ? 'Activated with PIN (new account)'
-                : 'Activated with PIN (existing account)',
-            extra: {
-              activatedAt: now,
-              activationPinUsed: true,
-              activationAttempts: 0,
-              activationLockedUntil: null,
-            },
-          });
+              from: helmet.status,
+              to: 'ACTIVATED',
+              actor: { type: ActorType.SYSTEM, id: userId },
+              reason: `Activated with Safety ID ${sid.safetyCode}`,
+              extra: {
+                activatedAt: now,
+                activationPinUsed: true,
+                activationAttempts: 0,
+                activationLockedUntil: null,
+              },
+            });
+            boundHelmet = true;
+            await this.audit.record(
+              {
+                action: AuditAction.HELMET_ACTIVATED,
+                entityType: 'helmet',
+                entityId: helmet.id,
+                userId,
+                ipHash: meta.ipHash,
+                metadata: {
+                  fromStatus: helmet.status,
+                  newAccount: owner.kind === 'new-account',
+                  safetyId: sid.id,
+                },
+              },
+              tx,
+            );
+          }
           await this.audit.record(
             {
-              action: AuditAction.HELMET_ACTIVATED,
-              entityType: 'helmet',
-              entityId: helmet.id,
+              action: AuditAction.SAFETY_ID_ACTIVATED,
+              entityType: 'safety_id',
+              entityId: sid.id,
               userId,
               ipHash: meta.ipHash,
-              metadata: { fromStatus: helmet.status, newAccount: owner.kind === 'new-account' },
+              metadata: {
+                fromStatus: sid.status,
+                newAccount: owner.kind === 'new-account',
+                linkedHelmetId: helmet?.id ?? null,
+                helmetBound: boundHelmet,
+              },
             },
             tx,
           );
           await this.audit.record(
             {
-              action: AuditAction.ACTIVATION_PIN_CONSUMED,
-              entityType: 'helmet',
-              entityId: helmet.id,
+              action: AuditAction.SAFETY_ID_PIN_CONSUMED,
+              entityType: 'safety_id',
+              entityId: sid.id,
               userId,
               ipHash: meta.ipHash,
               metadata: { escrowPurged: purged.count > 0 },
             },
             tx,
           );
-          return { ok: true as const, userId, publicToken: helmet.public_token };
+          return {
+            ok: true as const,
+            userId,
+            safetyId: sid.id,
+            helmetId: helmet?.id ?? null,
+            publicToken: sid.publicToken,
+          };
         },
         { timeout: 20_000, maxWait: 10_000 },
       );
     } catch (err) {
       // Defence in depth: partial unique indexes allow one live account per email and one ACTIVE
-      // ownership per helmet.
+      // ownership per Safety ID / helmet.
       if (isEmailUniqueViolation(err)) throw this.accounts.emailTaken();
       if (isUniqueViolation(err))
         throw AppException.conflict(
-          ErrorCode.HELMET_ALREADY_ACTIVATED,
-          'This helmet has already been activated.',
+          ErrorCode.SAFETY_ID_ALREADY_ACTIVATED,
+          'This Safety ID has already been activated.',
         );
       throw err;
     }
     if (!outcome.ok) return this.failed(meta, actingUser, outcome.lockedUntil);
-    await this.events.record(outcome.userId, 'HELMET_ACTIVATED', meta);
-    return { userId: outcome.userId, publicToken: outcome.publicToken };
+    await this.events.record(outcome.userId, 'SAFETY_ID_ACTIVATED', meta);
+    const { ok: _ok, ...result } = outcome;
+    return result;
   }
 
   /**
-   * Locks the helmet row, applies the eligibility policy and verifies the PIN. A wrong PIN
-   * increments the persistent counter (and may start an escalating lock) — this write commits
-   * because the caller returns normally instead of throwing inside the transaction.
+   * Locks the Safety ID (and its linked helmet), applies the eligibility policy and verifies the
+   * PIN. A wrong PIN increments the persistent counter (and may start an escalating lock) — this
+   * write commits because the caller returns normally instead of throwing inside the transaction.
    */
   private async checkPin(
     tx: PrismaTx,
-    helmetId: string,
+    safetyId: string,
     pin: string,
     meta: RequestMeta,
     userId: string | null,
     opts: { genericDenials: boolean },
   ): Promise<PinCheck> {
-    const [helmet] = await tx.$queryRaw<LockedHelmet[]>`
-      SELECT id, helmet_code, status, activation_pin_used, activation_pin_hash, activation_attempts, activation_locked_until, public_token
-      FROM helmets WHERE id = ${helmetId}::uuid FOR UPDATE`;
-    if (!helmet) throw this.notActivatable();
-    const activeOwners = await tx.helmetOwnership.count({ where: { helmetId, status: 'ACTIVE' } });
+    const state = await this.core.lock(tx, { id: safetyId });
+    if (!state) throw this.notActivatable();
+    const sid = state.safetyId;
     const denial = this.policy.evaluate({
-      status: helmet.status,
-      activationPinUsed: helmet.activation_pin_used,
-      hasActiveOwner: activeOwners > 0,
-      activationLockedUntil: helmet.activation_locked_until,
+      status: sid.status,
+      activationPinUsed: sid.activationPinUsed,
+      hasActiveOwner: state.ownership !== null,
+      activationLockedUntil: sid.activationLockedUntil,
     });
     if (denial) {
       if (opts.genericDenials && denial.code !== ErrorCode.ACTIVATION_ATTEMPTS_EXCEEDED)
         throw this.notActivatable();
       throw new AppException(denial.code, denial.message, denial.status, denial.details);
     }
-    if (PIN_REGEX.test(pin) && (await this.hashing.verifyPin(helmet.activation_pin_hash, pin)))
-      return { ok: true, helmet };
+    if (PIN_REGEX.test(pin) && (await this.hashing.verifyPin(sid.activationPinHash, pin)))
+      return { ok: true, state };
 
-    const attempts = helmet.activation_attempts + 1;
+    const attempts = sid.activationAttempts + 1;
     const lockedUntil = this.policy.lockoutAfterFailure(attempts);
-    await tx.helmet.update({
-      where: { id: helmet.id },
+    await tx.safetyId.update({
+      where: { id: sid.id },
       data: {
         activationAttempts: attempts,
         ...(lockedUntil ? { activationLockedUntil: lockedUntil } : {}),
@@ -304,9 +373,9 @@ export class ActivationService {
     // The attempted PIN is never recorded.
     await this.audit.record(
       {
-        action: AuditAction.ACTIVATION_FAILED,
-        entityType: 'helmet',
-        entityId: helmet.id,
+        action: AuditAction.SAFETY_ID_ACTIVATION_FAILED,
+        entityType: 'safety_id',
+        entityId: sid.id,
         userId,
         ipHash: meta.ipHash,
         metadata: { attempts },
@@ -316,9 +385,9 @@ export class ActivationService {
     if (lockedUntil) {
       await this.audit.record(
         {
-          action: AuditAction.ACTIVATION_LOCKED,
-          entityType: 'helmet',
-          entityId: helmet.id,
+          action: AuditAction.SAFETY_ID_ACTIVATION_LOCKED,
+          entityType: 'safety_id',
+          entityId: sid.id,
           userId,
           ipHash: meta.ipHash,
           metadata: { attempts, lockedUntil: lockedUntil.toISOString() },
@@ -351,46 +420,58 @@ export class ActivationService {
       throw this.attemptsExceeded(Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
     throw new AppException(
       ErrorCode.INVALID_ACTIVATION_PIN,
-      'The Helmet ID or Activation PIN could not be verified. Check the PIN on your activation card.',
+      'The Activation PIN could not be verified. Check the PIN printed with your Safety ID.',
       HttpStatus.BAD_REQUEST,
     );
   }
 
+  /**
+   * Resolves the Safety ID from the QR token (scan flow), the printed Safety ID code, or — for
+   * Phase 8 activation cards that print the Helmet ID — the helmet's linked Safety ID.
+   */
   private async resolveTarget(
     target: ActivationTargetDto,
     opts: { genericNotFound: boolean },
   ): Promise<string> {
-    if (Boolean(target.publicToken) === Boolean(target.helmetCode)) {
+    const given = [target.publicToken, target.safetyCode, target.helmetCode].filter(Boolean);
+    if (given.length !== 1) {
       throw new AppException(
         ErrorCode.VALIDATION_ERROR,
-        'Provide either the QR token or the Helmet ID.',
+        'Provide the QR token, the Safety ID or the Helmet ID.',
         HttpStatus.BAD_REQUEST,
       );
     }
-    let helmet: { id: string } | null = null;
+    let id: string | null = null;
     if (target.publicToken) {
-      helmet = isValidPublicToken(target.publicToken)
-        ? await this.prisma.helmet.findUnique({
-            where: { publicToken: target.publicToken },
-            select: { id: true },
-          })
+      id = isValidPublicToken(target.publicToken)
+        ? await this.core.findId(this.prisma, { publicToken: target.publicToken })
         : null;
+    } else if (target.safetyCode) {
+      const code = normalizeSafetyCode(target.safetyCode);
+      if (!code || !isValidSafetyCode(code))
+        throw new AppException(
+          ErrorCode.VALIDATION_ERROR,
+          'That Safety ID is not valid. Check the characters printed next to the QR code.',
+          HttpStatus.BAD_REQUEST,
+        );
+      id = await this.core.findId(this.prisma, { safetyCode: code });
     } else {
       // Checksum validation rejects typos before touching the database.
       const code = this.credentials.canonicalHelmetCode(target.helmetCode ?? '');
-      helmet = await this.prisma.helmet.findUnique({
+      const helmet = await this.prisma.helmet.findUnique({
         where: { helmetCode: code },
         select: { id: true },
       });
+      id = helmet ? ((await this.core.linkedSafetyId(this.prisma, helmet.id))?.id ?? null) : null;
     }
-    if (!helmet)
+    if (!id)
       throw opts.genericNotFound
         ? this.notActivatable()
         : AppException.notFound(
-            ErrorCode.HELMET_NOT_FOUND,
-            'We could not find this Helmet ID. Check the characters on your label.',
+            ErrorCode.SAFETY_ID_NOT_FOUND,
+            'We could not find this Safety ID. Check the characters printed next to the QR code.',
           );
-    return helmet.id;
+    return id;
   }
 
   private async assertBudget(meta: RequestMeta, userId: string | null): Promise<void> {
@@ -415,8 +496,8 @@ export class ActivationService {
 
   private notActivatable(): AppException {
     return new AppException(
-      ErrorCode.HELMET_NOT_ACTIVATABLE,
-      'This helmet cannot be activated. Check the Helmet ID, or contact support.',
+      ErrorCode.SAFETY_ID_NOT_ACTIVATABLE,
+      'This Safety ID cannot be activated. Check the Safety ID, or contact support.',
       HttpStatus.CONFLICT,
     );
   }

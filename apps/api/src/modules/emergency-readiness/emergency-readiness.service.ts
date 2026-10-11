@@ -23,10 +23,10 @@ export class EmergencyReadinessService {
       }),
       db.emergencyContact.count({ where: { userId, isActive: true } }),
       db.emergencyVisibility.findUnique({ where: { userId }, select: { confirmedAt: true } }),
-      db.helmetOwnership.count({ where: { userId, status: 'ACTIVE' } }),
+      db.safetyIdOwnership.count({ where: { userId, status: 'ACTIVE' } }),
     ]);
     return {
-      ownsHelmet: owned > 0,
+      ownsSafetyId: owned > 0,
       hasProfile: profile !== null,
       name: profile?.name ?? null,
       activeContactCount: contacts,
@@ -47,6 +47,23 @@ export class EmergencyReadinessService {
   async helmetEnabled(helmetId: string, userId: string, tx?: PrismaTx): Promise<boolean> {
     const row = await (tx ?? this.prisma).helmetEmergencySetting.findUnique({
       where: { helmetId_userId: { helmetId, userId } },
+      select: { enabled: true },
+    });
+    return row?.enabled ?? false;
+  }
+
+  /** Per-Safety-ID switches of a customer (safetyId → enabled), loaded once for listings. */
+  async safetyIdSwitches(userId: string): Promise<Map<string, boolean>> {
+    const rows = await this.prisma.safetyIdEmergencySetting.findMany({
+      where: { userId },
+      select: { safetyId: true, enabled: true },
+    });
+    return new Map(rows.map((r) => [r.safetyId, r.enabled]));
+  }
+
+  async safetyIdEnabled(safetyId: string, userId: string, tx?: PrismaTx): Promise<boolean> {
+    const row = await (tx ?? this.prisma).safetyIdEmergencySetting.findUnique({
+      where: { safetyId_userId: { safetyId, userId } },
       select: { enabled: true },
     });
     return row?.enabled ?? false;

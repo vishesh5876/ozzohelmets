@@ -121,15 +121,15 @@ export class PublicAbuseService {
    * Records a lookup of a valid helmet for scraping detection. Never blocks the current request;
    * at most a few Redis operations (PFADD, and PFCOUNT only when the set changed).
    */
-  recordValidAccess(ipHash: string | null, helmetId: string): Promise<void> {
+  recordValidAccess(ipHash: string | null, qrId: string): Promise<void> {
     if (!ipHash) return Promise.resolve();
-    return this.failOpen(undefined, () => this.recordValidAccessInner(ipHash, helmetId));
+    return this.failOpen(undefined, () => this.recordValidAccessInner(ipHash, qrId));
   }
 
-  private async recordValidAccessInner(ipHash: string, helmetId: string): Promise<void> {
+  private async recordValidAccessInner(ipHash: string, qrId: string): Promise<void> {
     const window = this.config.get('VALID_TOKEN_SCRAPE_WINDOW_SECONDS');
     const key = `scrape:ip:${ipHash}`;
-    const added = await this.redis.pfadd(key, helmetId);
+    const added = await this.redis.pfadd(key, qrId);
     if (added !== 1) return;
     const [[, ttl], [, count]] = (await this.redis.multi().ttl(key).pfcount(key).exec()) as [
       [unknown, number],

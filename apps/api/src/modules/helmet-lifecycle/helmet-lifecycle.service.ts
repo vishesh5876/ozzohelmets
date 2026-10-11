@@ -22,6 +22,7 @@ import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { type LockedHelmet, OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
 import { assertOwnerAction, restoreTarget, SUPPORT_RESTORABLE } from './domain/lifecycle-policy';
+import { SafetyIdCoreService } from '../safety-ids/domain/safety-id-core.service';
 
 interface OwnerStep {
   action: OwnerHelmetAction;
@@ -88,6 +89,7 @@ export class HelmetLifecycleService {
     private readonly cache: PublicEmergencyCacheService,
     private readonly recentAuth: RecentAuthService,
     private readonly customerHelmets: CustomerHelmetsService,
+    private readonly safetyIds: SafetyIdCoreService,
   ) {}
 
   reportLost(c: AuthenticatedCustomer, helmetId: string, meta: RequestMeta) {
@@ -227,6 +229,7 @@ export class HelmetLifecycleService {
       return helmet.publicToken;
     });
     await this.cache.invalidate(token);
+    await this.cache.invalidateForHelmet(helmetId);
   }
 
   /** Support forces DEACTIVATED (requires a recent admin password confirmation). */
@@ -253,6 +256,7 @@ export class HelmetLifecycleService {
           where: { helmetId, userId: ownerId },
           data: { enabled: false },
         });
+        await this.safetyIds.mirrorHelmetSharingOff(tx, helmetId, ownerId);
       }
       await this.audit.record(
         {
@@ -268,6 +272,7 @@ export class HelmetLifecycleService {
       return helmet.publicToken;
     });
     await this.cache.invalidate(publicToken);
+    await this.cache.invalidateForHelmet(helmetId);
   }
 
   /** What a support restore would set right now (for the admin UI), or null. */
@@ -319,6 +324,7 @@ export class HelmetLifecycleService {
           where: { helmetId, userId: customer.id },
           data: { enabled: false },
         });
+        await this.safetyIds.mirrorHelmetSharingOff(tx, helmetId, customer.id);
       }
       await this.audit.record(
         {
@@ -335,6 +341,7 @@ export class HelmetLifecycleService {
     });
     // Safety-critical: the public page must reflect the new state on the very next scan.
     await this.cache.invalidate(token);
+    await this.cache.invalidateForHelmet(helmetId);
     return this.customerHelmets.get(customer.id, helmetId);
   }
 

@@ -101,4 +101,15 @@ export class EnableEmergencyProfileDto {
   @ArrayMaxSize(50)
   @IsUUID('all', { each: true })
   helmetIds?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Safety IDs to switch emergency sharing on for. Omit (with helmetIds) to use the only Safety ID in use.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  safetyIds?: string[];
 }

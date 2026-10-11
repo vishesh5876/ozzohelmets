@@ -1,5 +1,6 @@
 import type {
   CustomerHelmetDto,
+  CustomerSafetyIdDto,
   CustomerSecurityStatusDto,
   EmergencyReadinessDto,
   HealthWarningDto,
@@ -19,8 +20,8 @@ export interface CompletionFacts {
   hasMedications: boolean;
   activeContactCount: number;
   privacyConfirmed: boolean;
-  /** Profile enabled AND at least one helmet's switch on. */
-  sharingOnAnyHelmet: boolean;
+  /** Profile enabled AND at least one Safety ID's switch on. */
+  sharingOnAnySafetyId: boolean;
 }
 
 /**
@@ -37,7 +38,7 @@ export function evaluateCompletion(f: CompletionFacts): ProfileCompletionDto {
     { key: 'MEDICATIONS', done: f.hasMedications, required: false },
     { key: 'EMERGENCY_CONTACT', done: f.activeContactCount > 0, required: true },
     { key: 'PRIVACY_REVIEW', done: f.privacyConfirmed, required: true },
-    { key: 'HELMET_ENABLED', done: f.sharingOnAnyHelmet, required: true },
+    { key: 'SAFETY_ID_ENABLED', done: f.sharingOnAnySafetyId, required: true },
   ];
   return {
     percent: Math.round((items.filter((i) => i.done).length / items.length) * 100),
@@ -47,6 +48,7 @@ export function evaluateCompletion(f: CompletionFacts): ProfileCompletionDto {
 
 export interface HealthInput {
   helmets: CustomerHelmetDto[];
+  safetyIds: CustomerSafetyIdDto[];
   readiness: EmergencyReadinessDto;
   contactCount: number;
   security: CustomerSecurityStatusDto;
@@ -60,7 +62,7 @@ export interface HealthInput {
 export function evaluateHealth(input: HealthInput): HealthWarningDto[] {
   const out: HealthWarningDto[] = [];
   const { helmets, readiness, security } = input;
-  const owned = helmets.length > 0;
+  const owned = helmets.length > 0 || input.safetyIds.length > 0;
 
   for (const h of helmets) {
     const at = { helmetId: h.id, helmetCode: h.helmetCode };
@@ -126,19 +128,23 @@ export function evaluateHealth(input: HealthInput): HealthWarningDto[] {
       code: 'PROFILE_DISABLED',
       severity: 'warning',
       message:
-        'Your emergency profile is turned off. Scanning your helmet shows no emergency information.',
+        'Your emergency profile is turned off. Scanning your Safety ID shows no emergency information.',
       action: { label: 'Review privacy', to: '/app/privacy' },
     });
   if (readiness.enabled)
-    for (const h of helmets)
-      if ((IN_SERVICE as readonly string[]).includes(h.status) && !h.emergencyEnabled)
+    for (const s of input.safetyIds)
+      if (
+        (IN_SERVICE as readonly string[]).includes(s.status) &&
+        !s.emergencySharing &&
+        (!s.linkedHelmet || (IN_SERVICE as readonly string[]).includes(s.linkedHelmet.status))
+      )
         out.push({
-          code: 'HELMET_SHARING_OFF',
+          code: 'SAFETY_ID_SHARING_OFF',
           severity: 'warning',
-          message: `Emergency information is off on ${h.helmetCode}.`,
-          helmetId: h.id,
-          helmetCode: h.helmetCode,
-          action: { label: 'Turn on for this helmet', to: `/app/helmets/${h.id}` },
+          message: `Emergency sharing is off on Safety ID ${s.safetyCode}.`,
+          safetyId: s.id,
+          safetyCode: s.safetyCode,
+          action: { label: 'Turn on for this Safety ID', to: `/app/safety-ids/${s.id}` },
         });
 
   if (!security.recoveryCodeConfigured)

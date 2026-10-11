@@ -4,10 +4,12 @@ import type { Response } from 'express';
 import {
   type HelmetDetailDto,
   type HelmetListItemDto,
+  ErrorCode,
   Permission,
   roleHasPermission,
 } from '@helmet/types';
 import type { PaginatedResult } from '../../common/http/api-response.interceptor';
+import { AppException } from '../../common/http/app.exception';
 import { RawResponse } from '../../common/http/raw-response.decorator';
 import { ReqMeta, type RequestMeta } from '../../common/utils/request-context';
 import type { AuthenticatedAdmin } from '../admin-auth/admin-auth.types';
@@ -66,6 +68,8 @@ export class HelmetsController {
     @Res() res: Response,
   ): Promise<void> {
     const helmet = await this.helmets.get(id);
+    if (!helmet.qrUrl)
+      throw AppException.notFound(ErrorCode.SAFETY_ID_NOT_FOUND, 'This helmet has no Safety ID.');
     res.setHeader('Cache-Control', 'private, max-age=300');
     if (parseFormat(format) === 'png') {
       res.type('image/png').send(await this.labels.qrPng(helmet.qrUrl));

@@ -1,5 +1,6 @@
 import type {
   CustomerHelmetDto,
+  CustomerSafetyIdDto,
   CustomerSecurityStatusDto,
   EmergencyReadinessDto,
 } from '@helmet/types';
@@ -15,7 +16,7 @@ const facts = {
   hasMedications: false,
   activeContactCount: 0,
   privacyConfirmed: false,
-  sharingOnAnyHelmet: false,
+  sharingOnAnySafetyId: false,
 };
 
 describe('profile completion', () => {
@@ -29,7 +30,7 @@ describe('profile completion', () => {
       hasMedications: true,
       activeContactCount: 1,
       privacyConfirmed: true,
-      sharingOnAnyHelmet: true,
+      sharingOnAnySafetyId: true,
     });
     expect(full.percent).toBe(100);
     expect(full.items).toHaveLength(8);
@@ -38,7 +39,7 @@ describe('profile completion', () => {
       'IDENTITY',
       'EMERGENCY_CONTACT',
       'PRIVACY_REVIEW',
-      'HELMET_ENABLED',
+      'SAFETY_ID_ENABLED',
     ]);
   });
 
@@ -48,7 +49,7 @@ describe('profile completion', () => {
       bloodGroup: 'A_NEGATIVE',
       activeContactCount: 2,
       privacyConfirmed: true,
-      sharingOnAnyHelmet: true,
+      sharingOnAnySafetyId: true,
     });
     expect(c.percent).toBe(63);
     expect(c.items.filter((i) => i.required).every((i) => i.done)).toBe(true);
@@ -65,6 +66,15 @@ const helmet = (over: Partial<CustomerHelmetDto>): CustomerHelmetDto =>
     warranty: { status: 'ACTIVE', endDate: null },
     ...over,
   }) as CustomerHelmetDto;
+const safety = (over: Partial<CustomerSafetyIdDto>): CustomerSafetyIdDto =>
+  ({
+    id: 's1',
+    safetyCode: 'SI-AAAA-AAAA',
+    status: 'ACTIVE',
+    emergencySharing: true,
+    linkedHelmet: null,
+    ...over,
+  }) as CustomerSafetyIdDto;
 const readiness = (over: Partial<EmergencyReadinessDto> = {}) =>
   ({
     status: 'ACTIVE',
@@ -90,6 +100,7 @@ describe('dashboard health check', () => {
     expect(
       evaluateHealth({
         helmets: [helmet({})],
+        safetyIds: [safety({})],
         readiness: readiness(),
         contactCount: 2,
         security,
@@ -106,6 +117,22 @@ describe('dashboard health check', () => {
         }),
         helmet({ id: 'b', helmetCode: 'HM-2', emergencyEnabled: false }),
       ],
+      safetyIds: [
+        safety({ id: 'x', safetyCode: 'SI-1', status: 'ACTIVATED', emergencySharing: false }),
+        // A linked helmet that is stolen: sharing can't be turned on, so no prompt for it.
+        safety({
+          id: 'y',
+          status: 'ACTIVATED',
+          emergencySharing: false,
+          linkedHelmet: {
+            id: 'a',
+            helmetCode: 'HM-1',
+            modelName: 'M',
+            brand: 'B',
+            status: 'STOLEN',
+          },
+        }),
+      ],
       readiness: readiness(),
       contactCount: 0,
       security: { ...security, recoveryCodeAcknowledged: false, email: null },
@@ -116,13 +143,19 @@ describe('dashboard health check', () => {
       expect.arrayContaining([
         'HELMET_STOLEN',
         'NO_EMERGENCY_CONTACT',
-        'HELMET_SHARING_OFF',
+        'SAFETY_ID_SHARING_OFF',
         'RECOVERY_CODE_NOT_ACKNOWLEDGED',
         'EMAIL_MISSING',
         'DELETION_REQUESTED',
         'WARRANTY_NOT_REGISTERED',
       ]),
     );
+    expect(warnings.filter((w) => w.code === 'SAFETY_ID_SHARING_OFF')).toEqual([
+      expect.objectContaining({
+        safetyId: 'x',
+        action: expect.objectContaining({ to: '/app/safety-ids/x' }),
+      }),
+    ]);
     expect(warnings[0]!.severity).toBe('critical');
     expect(warnings.at(-1)!.severity).toBe('info');
   });
@@ -130,13 +163,26 @@ describe('dashboard health check', () => {
   it('reports a disabled profile and missing recovery code', () => {
     const codes = evaluateHealth({
       helmets: [helmet({ status: 'ACTIVATED', emergencyEnabled: false })],
+      safetyIds: [safety({ status: 'ACTIVATED', emergencySharing: false })],
       readiness: readiness({ enabled: false }),
       contactCount: 1,
       security: { ...security, recoveryCodeConfigured: false },
       deletionRequested: false,
     }).map((w) => w.code);
     expect(codes).toEqual(expect.arrayContaining(['PROFILE_DISABLED', 'RECOVERY_CODE_MISSING']));
-    expect(codes).not.toContain('HELMET_SHARING_OFF');
+    expect(codes).not.toContain('SAFETY_ID_SHARING_OFF');
+  });
+
+  it('a customer with only a standalone Safety ID still gets the safety prompts', () => {
+    const codes = evaluateHealth({
+      helmets: [],
+      safetyIds: [safety({ status: 'ACTIVATED', emergencySharing: false })],
+      readiness: readiness({ enabled: false, canEnable: false }),
+      contactCount: 0,
+      security,
+      deletionRequested: false,
+    }).map((w) => w.code);
+    expect(codes).toContain('NO_EMERGENCY_CONTACT');
   });
 });
 
@@ -175,6 +221,17 @@ describe('customer data export sanitizer', () => {
     },
     helmets: [],
     ownerships: [],
+    safetyIds: [
+      {
+        safetyCode: 'SI-AAAA-AAAA',
+        status: 'ACTIVE',
+        emergencySharing: true,
+        linkedHelmetCode: null,
+        publicToken: 'must-not-leak-token',
+        activationPinHash: '$argon2id$pin',
+      },
+    ],
+    safetyIdOwnerships: [],
     profile: null,
     contacts: [],
     visibility: { showName: true, id: 'vis-id', userId: 'user-id', confirmedAt: now },
@@ -203,9 +260,18 @@ describe('customer data export sanitizer', () => {
       'user-id',
       'Previous owner shop',
       'INV-PREV',
+      'must-not-leak-token',
     ])
       expect(json).not.toContain(leak);
     const out = buildCustomerExport(source, now);
+    expect(out.safetyIds).toEqual([
+      {
+        safetyCode: 'SI-AAAA-AAAA',
+        status: 'ACTIVE',
+        emergencySharing: true,
+        linkedHelmetCode: null,
+      },
+    ]);
     expect(out.account.customerId).toBe('CU-AAAA-AAAQ');
     expect(out.privacySettings).toEqual({ showName: true, confirmedAt: now.toISOString() });
     expect(out.warranties[0]).toMatchObject({ sellerName: null, invoiceNumber: null });

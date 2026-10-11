@@ -50,6 +50,15 @@ export const Permission = {
   RISK_ALERT_MANAGE: 'risk-alert:manage',
   /** Mark a printed QR under review / compromised (human decision; no lifecycle effect). */
   QR_INTEGRITY_MANAGE: 'qr-integrity:manage',
+  // Phase 9 — Safety IDs (the Emergency QR identity).
+  /** List / view Safety IDs and batches (never the PIN). */
+  SAFETY_IDS_READ: 'safety-ids:read',
+  /** Create Safety ID batches (standalone or for a helmet batch) and mark them printed. */
+  SAFETY_IDS_GENERATE: 'safety-ids:generate',
+  /** Manufacturing export / print sheet with plaintext Activation PINs (audited). */
+  SAFETY_IDS_EXPORT: 'safety-ids:export',
+  /** Deactivate a Safety ID; link or unlink it to a helmet. */
+  SAFETY_IDS_MANAGE: 'safety-ids:manage',
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -80,6 +89,10 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.HELMETS_READ,
     Permission.HELMETS_UPDATE_STATUS,
     Permission.LABELS_READ,
+    // Phase 9: Safety ID production (generate, export / print, mark printed).
+    Permission.SAFETY_IDS_READ,
+    Permission.SAFETY_IDS_GENERATE,
+    Permission.SAFETY_IDS_EXPORT,
   ],
   SUPPORT: [
     Permission.DASHBOARD_READ,
@@ -106,6 +119,8 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.ANALYTICS_VIEW,
     Permission.RISK_ALERT_VIEW,
     Permission.RISK_ALERT_MANAGE,
+    // Phase 9: see Safety IDs and their links for customer support (no PINs, no generation).
+    Permission.SAFETY_IDS_READ,
   ],
   ANALYTICS_VIEWER: [
     Permission.DASHBOARD_READ,

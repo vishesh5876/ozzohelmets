@@ -9,6 +9,7 @@ import {
   type HelmetStatus,
   type OwnershipAcquisition,
   ownerActions,
+  type SafetyIdStatus,
   type StoredWarrantyStatus,
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
@@ -18,6 +19,7 @@ import { EmergencyReadinessService } from '../emergency-readiness/emergency-read
 import { helmetProfileStatus, profileStatus } from '../emergency-readiness/readiness';
 import { effectiveStatus, isoDate } from '../warranty/domain/warranty-policy';
 import { buildTimeline } from './timeline';
+import { CustomerSafetyIdsService } from '../safety-ids/customer-safety-ids.service';
 
 function warrantySummary(w: { status: StoredWarrantyStatus; warrantyEndDate: Date } | null) {
   const status = effectiveStatus(w);
@@ -33,8 +35,10 @@ interface OwnedHelmetRow {
     serialNumber: string;
     status: HelmetStatus;
     activatedAt: Date | null;
-    publicToken: string;
     helmetModel: { name: string; brand: string };
+    safetyIdLinks: {
+      safetyIdRef: { id: string; safetyCode: string; status: SafetyIdStatus; publicToken: string };
+    }[];
   };
 }
 
@@ -58,8 +62,14 @@ const ownedSelect = {
       serialNumber: true,
       status: true,
       activatedAt: true,
-      publicToken: true,
       helmetModel: { select: { name: true, brand: true } },
+      safetyIdLinks: {
+        where: { endedAt: null },
+        take: 1,
+        select: {
+          safetyIdRef: { select: { id: true, safetyCode: true, status: true, publicToken: true } },
+        },
+      },
     },
   },
 } as const;
@@ -75,6 +85,7 @@ export class CustomerHelmetsService {
     private readonly readiness: EmergencyReadinessService,
     private readonly config: AppConfigService,
     private readonly account: CustomerAccountService,
+    private readonly safetyIds: CustomerSafetyIdsService,
   ) {}
 
   async list(userId: string): Promise<CustomerHelmetDto[]> {
@@ -113,19 +124,34 @@ export class CustomerHelmetsService {
     };
   }
 
-  /** Public QR URL for one of the customer's own helmets (used for the QR preview). */
-  async publicUrl(userId: string, helmetId: string): Promise<string> {
-    return this.config.publicHelmetUrl((await this.findOwned(userId, helmetId)).helmet.publicToken);
+  /** Public QR URL of the helmet's linked Safety ID (used for the QR preview), if any. */
+  async publicUrl(userId: string, helmetId: string): Promise<string | null> {
+    const linked = (await this.findOwned(userId, helmetId)).helmet.safetyIdLinks[0];
+    return linked ? this.config.publicHelmetUrl(linked.safetyIdRef.publicToken) : null;
   }
 
   async dashboard(userId: string): Promise<CustomerDashboardDto> {
-    const [helmets, readiness, contactCount] = await Promise.all([
+    const [helmets, safetyIds, readiness, contactCount] = await Promise.all([
       this.list(userId),
+      this.safetyIds.list(userId),
       this.readiness.readiness(userId),
       this.prisma.emergencyContact.count({ where: { userId, isActive: true } }),
     ]);
-    const extras = await this.account.dashboardExtras(userId, helmets, readiness, contactCount);
-    return { helmets, readiness, contactCount, ...extras };
+    const extras = await this.account.dashboardExtras(
+      userId,
+      helmets,
+      safetyIds,
+      readiness,
+      contactCount,
+    );
+    return {
+      safetyIds,
+      safetyIdSummary: this.safetyIds.summary(safetyIds),
+      helmets,
+      readiness,
+      contactCount,
+      ...extras,
+    };
   }
 
   private async findOwned(userId: string, helmetId: string): Promise<OwnedHelmetRow> {
@@ -140,7 +166,7 @@ export class CustomerHelmetsService {
   private async context(userId: string, helmetIds: string[]): Promise<ListContext> {
     const [facts, switches, pending, links, warranties] = await Promise.all([
       this.readiness.facts(userId),
-      this.readiness.helmetSwitches(userId),
+      this.readiness.safetyIdSwitches(userId),
       helmetIds.length
         ? this.prisma.helmetTransfer.findMany({
             where: {
@@ -187,7 +213,9 @@ export class CustomerHelmetsService {
 
   private toDto(row: OwnedHelmetRow, ctx: ListContext): CustomerHelmetDto {
     const h = row.helmet;
-    const enabled = ctx.switches.get(h.id) ?? false;
+    const linked = h.safetyIdLinks[0]?.safetyIdRef ?? null;
+    // Sharing belongs to the linked Safety ID (a helmet without one has no QR to share on).
+    const enabled = linked ? (ctx.switches.get(linked.id) ?? false) : false;
     const pending = ctx.pending.get(h.id);
     const replacedBy = ctx.replacedBy.get(h.id);
     const replaces = ctx.replaces.get(h.id);
@@ -199,7 +227,7 @@ export class CustomerHelmetsService {
       model: h.helmetModel,
       activatedAt: h.activatedAt?.toISOString() ?? null,
       ownedSince: row.activatedAt.toISOString(),
-      publicUrl: this.config.publicHelmetUrl(h.publicToken),
+      publicUrl: linked ? this.config.publicHelmetUrl(linked.publicToken) : null,
       emergencyProfileStatus: helmetProfileStatus(ctx.ownerStatus, enabled),
       emergencyEnabled: enabled,
       acquiredVia: row.acquiredVia,
@@ -209,6 +237,9 @@ export class CustomerHelmetsService {
       replacedBy: replacedBy ? { helmetCode: replacedBy } : null,
       replaces: replaces ? { helmetCode: replaces } : null,
       warranty: warrantySummary(ctx.warranties.get(h.id) ?? null),
+      safetyId: linked
+        ? { id: linked.id, safetyCode: linked.safetyCode, status: linked.status }
+        : null,
     };
   }
 }

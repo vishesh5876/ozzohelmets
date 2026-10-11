@@ -81,6 +81,9 @@ enum CustomerSecurityEventType {
   HELMET_ACTIVATED
   HELMET_TRANSFERRED_OUT
   HELMET_RECEIVED
+  SAFETY_ID_ACTIVATED
+  SAFETY_ID_TRANSFERRED_OUT
+  SAFETY_ID_RECEIVED
   ACCOUNT_SUSPENDED
   ACCOUNT_LOCKED
   ACCOUNT_RESTORED
@@ -284,6 +287,29 @@ enum RiskAlertStatus {
 
 // ─────────────────────────────── Admin ───────────────────────────────
 
+/// Phase 9: lifecycle of the Emergency Safety ID (the QR identity). Physical product states
+/// (lost, stolen, damaged, recalled) belong to helmets only.
+enum SafetyIdStatus {
+  GENERATED
+  PRINTED
+  ACTIVATED
+  ACTIVE
+  DEACTIVATED
+  REPLACED
+}
+
+enum SafetyIdOwnershipSource {
+  ACTIVATION
+  TRANSFER
+  ADMIN_ASSIGNMENT
+  MIGRATION
+}
+
+enum SafetyIdBatchMode {
+  STANDALONE
+  HELMET_LINKED
+}
+
 model AdminUser {
   id           String          @id @default(uuid(7)) @db.Uuid
   name         String          @db.VarChar(120)
@@ -298,6 +324,7 @@ model AdminUser {
   refreshTokens            AdminRefreshToken[]
   auditLogs                AuditLog[]
   createdBatches           HelmetBatch[]
+  createdSafetyIdBatches   SafetyIdBatch[]
   replacements             HelmetReplacement[]
   productReports           ProductReport[]
   assignedReports          ProductReport[]          @relation("ProductReportAssignee")
@@ -366,19 +393,23 @@ model User {
   createdAt                  DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt                  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  ownerships           HelmetOwnership[]
-  auditLogs            AuditLog[]
-  refreshTokens        CustomerRefreshToken[]
-  emergencyProfiles    EmergencyProfile[]
-  emergencyContacts    EmergencyContact[]
-  emergencyVisibility  EmergencyVisibility?
-  helmetEmergency      HelmetEmergencySetting[]
-  warrantiesRegistered HelmetWarranty[]         @relation("WarrantyRegisteredBy")
-  transfersFrom        HelmetTransfer[]         @relation("TransferFrom")
-  transfersTo          HelmetTransfer[]         @relation("TransferTo")
-  securityEvents       CustomerSecurityEvent[]
-  recoveryGrants       AccountRecoveryGrant[]
-  deletionRequests     AccountDeletionRequest[]
+  ownerships            HelmetOwnership[]
+  auditLogs             AuditLog[]
+  refreshTokens         CustomerRefreshToken[]
+  emergencyProfiles     EmergencyProfile[]
+  emergencyContacts     EmergencyContact[]
+  emergencyVisibility   EmergencyVisibility?
+  helmetEmergency       HelmetEmergencySetting[]
+  safetyIdOwnerships    SafetyIdOwnership[]
+  safetyIdEmergency     SafetyIdEmergencySetting[]
+  safetyIdTransfersFrom SafetyIdTransfer[]         @relation("SafetyIdTransferFrom")
+  safetyIdTransfersTo   SafetyIdTransfer[]         @relation("SafetyIdTransferTo")
+  warrantiesRegistered  HelmetWarranty[]           @relation("WarrantyRegisteredBy")
+  transfersFrom         HelmetTransfer[]           @relation("TransferFrom")
+  transfersTo           HelmetTransfer[]           @relation("TransferTo")
+  securityEvents        CustomerSecurityEvent[]
+  recoveryGrants        AccountRecoveryGrant[]
+  deletionRequests      AccountDeletionRequest[]
 
   @@index([status, createdAt])
   @@map("users")
@@ -516,13 +547,16 @@ model HelmetBatch {
   printStatus           BatchPrintStatus      @default(NOT_PRINTED) @map("print_status")
   printedAt             DateTime?             @map("printed_at") @db.Timestamptz(3)
   notes                 String?               @db.VarChar(1000)
+  /// Phase 9: generate one linked Safety ID (QR + Activation PIN) per helmet, in the same chunks.
+  withSafetyIds         Boolean               @default(false) @map("with_safety_ids")
   createdBy             String?               @map("created_by") @db.Uuid
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmetModel HelmetModel @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
-  creator     AdminUser?  @relation(fields: [createdBy], references: [id], onDelete: SetNull)
-  helmets     Helmet[]
+  helmetModel     HelmetModel     @relation(fields: [helmetModelId], references: [id], onDelete: Restrict)
+  creator         AdminUser?      @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  helmets         Helmet[]
+  safetyIdBatches SafetyIdBatch[]
 
   @@index([helmetModelId])
   @@index([generationStatus])
@@ -534,8 +568,11 @@ model HelmetBatch {
 model Helmet {
   id                        String            @id @default(uuid(7)) @db.Uuid
   helmetCode                String            @unique @map("helmet_code") @db.VarChar(16)
-  publicToken               String            @unique @map("public_token") @db.VarChar(32)
-  activationPinHash         String            @map("activation_pin_hash")
+  /// Phase 9: compatibility copy of the linked Safety ID's token (kept for rollback). The QR
+  /// belongs to the Safety ID; NULL for helmets made without a Safety ID.
+  publicToken               String?           @unique @map("public_token") @db.VarChar(32)
+  /// Phase 9: compatibility copy of the linked Safety ID's PIN hash; NULL without a Safety ID.
+  activationPinHash         String?           @map("activation_pin_hash")
   activationPinUsed         Boolean           @default(false) @map("activation_pin_used")
   activationAttempts        Int               @default(0) @map("activation_attempts")
   /// Progressive lockout after repeated wrong PINs.
@@ -572,6 +609,7 @@ model Helmet {
   replaces          HelmetReplacement?       @relation("ReplacementNew")
   warranty          HelmetWarranty?
   productReports    ProductReport[]
+  safetyIdLinks     SafetyIdHelmetLink[]
 
   @@index([status])
   @@index([batchId])
@@ -769,6 +807,8 @@ model WarrantyHistory {
 model ProductReport {
   id                String                @id @default(uuid(7)) @db.Uuid
   helmetId          String?               @map("helmet_id") @db.Uuid
+  /// Phase 9: the Safety ID whose QR was reported (QR-abuse reports); product facts stay on the helmet.
+  safetyId          String?               @map("safety_id") @db.Uuid
   publicToken       String?               @map("public_token") @db.VarChar(32)
   reason            ProductReportReason
   description       String?               @db.VarChar(1000)
@@ -782,13 +822,15 @@ model ProductReport {
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmet     Helmet?              @relation(fields: [helmetId], references: [id], onDelete: SetNull)
-  reviewedBy AdminUser?           @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
-  assignee   AdminUser?           @relation("ProductReportAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
-  events     ProductReportEvent[]
+  helmet      Helmet?              @relation(fields: [helmetId], references: [id], onDelete: SetNull)
+  safetyIdRef SafetyId?            @relation(fields: [safetyId], references: [id], onDelete: SetNull)
+  reviewedBy  AdminUser?           @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  assignee    AdminUser?           @relation("ProductReportAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  events      ProductReportEvent[]
 
   @@index([status, createdAt])
   @@index([helmetId])
+  @@index([safetyId])
   @@index([assignedAdminId, status])
   @@map("product_reports")
 }
@@ -882,7 +924,10 @@ model AccountDeletionRequest {
 /// Append-only QR scan log. IPs are stored only as keyed HMAC-SHA256 hashes.
 model HelmetScan {
   id             String          @id @default(uuid(7)) @db.Uuid
-  helmetId       String          @map("helmet_id") @db.Uuid
+  /// Phase 9: the linked helmet at scan time (NULL for standalone Safety IDs).
+  helmetId       String?         @map("helmet_id") @db.Uuid
+  /// Phase 9: the scanned QR identity. Backfilled for every Phase 8 scan.
+  safetyId       String?         @map("safety_id") @db.Uuid
   scannedAt      DateTime        @default(now()) @map("scanned_at") @db.Timestamptz(3)
   ipHash         String?         @map("ip_hash") @db.Char(64)
   userAgent      String?         @map("user_agent") @db.VarChar(255)
@@ -896,9 +941,11 @@ model HelmetScan {
   synthetic      Boolean         @default(false)
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  helmet Helmet @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+  helmet      Helmet?   @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+  safetyIdRef SafetyId? @relation(fields: [safetyId], references: [id], onDelete: Cascade)
 
   @@index([helmetId, scannedAt])
+  @@index([safetyId, scannedAt])
   @@index([scannedAt])
   @@map("helmet_scans")
 }
@@ -1004,6 +1051,8 @@ model RiskAlert {
   status            RiskAlertStatus @default(OPEN)
   priority          RiskLevel
   helmetId          String?         @map("helmet_id") @db.Uuid
+  /// Phase 9: the Safety ID (QR) the alert is about.
+  safetyId          String?         @map("safety_id") @db.Uuid
   /// Opaque source reference (truncated hash of the IP hash) for source-level alerts.
   sourceRef         String?         @map("source_ref") @db.VarChar(16)
   dedupKey          String          @map("dedup_key") @db.VarChar(120)
@@ -1021,12 +1070,14 @@ model RiskAlert {
   createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  helmet     Helmet?    @relation(fields: [helmetId], references: [id], onDelete: Cascade)
-  assignee   AdminUser? @relation("RiskAlertAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
-  resolvedBy AdminUser? @relation("RiskAlertResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+  helmet      Helmet?    @relation(fields: [helmetId], references: [id], onDelete: Cascade)
+  safetyIdRef SafetyId?  @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+  assignee    AdminUser? @relation("RiskAlertAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  resolvedBy  AdminUser? @relation("RiskAlertResolver", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([helmetId, createdAt])
+  @@index([safetyId, createdAt])
   @@index([dedupKey, resolvedAt])
   @@map("risk_alerts")
 }
@@ -1080,4 +1131,235 @@ model WorkerHeartbeat {
 
   @@index([lastBeatAt])
   @@map("worker_heartbeats")
+}
+
+// ─────────────── Phase 9: Safety ID (the Emergency QR identity) ───────────────
+
+/// The Emergency Safety ID: owns the public QR token, the Activation PIN, the owner, emergency
+/// sharing, scans and QR risk. Optionally linked to one helmet (`SafetyIdHelmetLink`).
+/// Safety IDs migrated from Phase 8 reuse their helmet's UUID as id (see SAFETY-ID-MIGRATION.md).
+model SafetyId {
+  id                    String            @id @default(uuid(7)) @db.Uuid
+  safetyCode            String            @unique @map("safety_code") @db.VarChar(16)
+  publicToken           String            @unique @map("public_token") @db.VarChar(32)
+  status                SafetyIdStatus    @default(GENERATED)
+  activationPinHash     String            @map("activation_pin_hash")
+  activationPinUsed     Boolean           @default(false) @map("activation_pin_used")
+  activationAttempts    Int               @default(0) @map("activation_attempts")
+  activationLockedUntil DateTime?         @map("activation_locked_until") @db.Timestamptz(3)
+  qrIntegrityStatus     QrIntegrityStatus @default(NORMAL) @map("qr_integrity_status")
+  qrIntegrityNote       String?           @map("qr_integrity_note") @db.VarChar(500)
+  qrIntegrityChangedAt  DateTime?         @map("qr_integrity_changed_at") @db.Timestamptz(3)
+  batchId               String?           @map("batch_id") @db.Uuid
+  activatedAt           DateTime?         @map("activated_at") @db.Timestamptz(3)
+  deactivatedAt         DateTime?         @map("deactivated_at") @db.Timestamptz(3)
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  batch             SafetyIdBatch?             @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  activationSecret  SafetyIdActivationSecret?
+  helmetLinks       SafetyIdHelmetLink[]
+  ownerships        SafetyIdOwnership[]
+  emergencySettings SafetyIdEmergencySetting[]
+  transfers         SafetyIdTransfer[]
+  scans             HelmetScan[]
+  scanDaily         SafetyIdScanDaily[]
+  riskAssessment    SafetyIdRiskAssessment?
+  riskSignals       SafetyIdRiskSignal[]
+  riskAlerts        RiskAlert[]
+  productReports    ProductReport[]
+
+  @@index([status])
+  @@index([batchId])
+  @@index([createdAt])
+  @@map("safety_ids")
+}
+
+/// Short-lived encrypted Activation PIN escrow (AES-256-GCM, PIN_ESCROW_KEYS, AAD = safety_id).
+/// Purged when the batch is marked printed or the PIN is consumed.
+model SafetyIdActivationSecret {
+  safetyId      String   @id @map("safety_id") @db.Uuid
+  pinCiphertext String   @map("pin_ciphertext") @db.VarChar(255)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+
+  @@map("safety_id_activation_secrets")
+}
+
+model SafetyIdBatch {
+  id                    String                @id @default(uuid(7)) @db.Uuid
+  batchCode             String                @unique @map("batch_code") @db.VarChar(32)
+  mode                  SafetyIdBatchMode     @default(STANDALONE)
+  /// HELMET_LINKED: the helmet batch whose helmets get one Safety ID each.
+  helmetBatchId         String?               @map("helmet_batch_id") @db.Uuid
+  quantity              Int
+  generatedCount        Int                   @default(0) @map("generated_count")
+  generationStatus      BatchGenerationStatus @default(PENDING) @map("generation_status")
+  generationError       String?               @map("generation_error") @db.VarChar(500)
+  generationStartedAt   DateTime?             @map("generation_started_at") @db.Timestamptz(3)
+  generationCompletedAt DateTime?             @map("generation_completed_at") @db.Timestamptz(3)
+  printStatus           BatchPrintStatus      @default(NOT_PRINTED) @map("print_status")
+  printedAt             DateTime?             @map("printed_at") @db.Timestamptz(3)
+  notes                 String?               @db.VarChar(1000)
+  createdBy             String?               @map("created_by") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  creator     AdminUser?   @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  helmetBatch HelmetBatch? @relation(fields: [helmetBatchId], references: [id], onDelete: Restrict)
+  safetyIds   SafetyId[]
+
+  @@index([helmetBatchId])
+  @@index([generationStatus])
+  @@index([createdAt])
+  @@map("safety_id_batches")
+}
+
+/// Link history between a Safety ID and a helmet. Partial unique indexes (migration SQL) allow
+/// one current link (ended_at IS NULL) per Safety ID and per helmet.
+model SafetyIdHelmetLink {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  safetyId         String    @map("safety_id") @db.Uuid
+  helmetId         String    @map("helmet_id") @db.Uuid
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  endedAt          DateTime? @map("ended_at") @db.Timestamptz(3)
+  reason           String    @db.VarChar(60)
+  createdByAdminId String?   @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+  helmet      Helmet   @relation(fields: [helmetId], references: [id], onDelete: Restrict)
+
+  @@index([safetyId, startedAt])
+  @@index([helmetId, startedAt])
+  @@map("safety_id_helmet_links")
+}
+
+/// Ownership history of a Safety ID; one ACTIVE row per Safety ID (partial unique index).
+model SafetyIdOwnership {
+  id         String                  @id @default(uuid(7)) @db.Uuid
+  safetyId   String                  @map("safety_id") @db.Uuid
+  userId     String                  @map("user_id") @db.Uuid
+  status     OwnershipStatus         @default(ACTIVE)
+  source     SafetyIdOwnershipSource
+  startedAt  DateTime                @default(now()) @map("started_at") @db.Timestamptz(3)
+  endedAt    DateTime?               @map("ended_at") @db.Timestamptz(3)
+  endReason  String?                 @map("end_reason") @db.VarChar(60)
+  transferId String?                 @map("transfer_id") @db.Uuid
+  createdAt  DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Restrict)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([safetyId, startedAt])
+  @@index([userId, status])
+  @@map("safety_id_ownerships")
+}
+
+/// Per-(Safety ID, owner) emergency sharing switch. The profile itself stays account-wide.
+model SafetyIdEmergencySetting {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  safetyId    String    @map("safety_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  enabled     Boolean   @default(false)
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([safetyId, userId])
+  @@index([userId])
+  @@map("safety_id_emergency_settings")
+}
+
+/// One-time Transfer Codes for standalone Safety IDs (linked ones move with their helmet).
+model SafetyIdTransfer {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  safetyId     String         @map("safety_id") @db.Uuid
+  fromUserId   String         @map("from_user_id") @db.Uuid
+  toUserId     String?        @map("to_user_id") @db.Uuid
+  status       TransferStatus @default(PENDING)
+  codeHash     String         @map("code_hash") @db.Char(64)
+  expiresAt    DateTime       @map("expires_at") @db.Timestamptz(3)
+  claimedAt    DateTime?      @map("claimed_at") @db.Timestamptz(3)
+  cancelledAt  DateTime?      @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason String?        @map("cancel_reason") @db.VarChar(60)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Restrict)
+  fromUser    User     @relation("SafetyIdTransferFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUser      User?    @relation("SafetyIdTransferTo", fields: [toUserId], references: [id], onDelete: Restrict)
+
+  @@index([safetyId, createdAt])
+  @@index([fromUserId])
+  @@map("safety_id_transfers")
+}
+
+model SafetyIdScanDaily {
+  id                       String    @id @default(uuid(7)) @db.Uuid
+  date                     DateTime  @db.Date
+  safetyId                 String    @map("safety_id") @db.Uuid
+  totalScans               Int       @default(0) @map("total_scans")
+  emergencyScans           Int       @default(0) @map("emergency_scans")
+  verificationScans        Int       @default(0) @map("verification_scans")
+  activationScans          Int       @default(0) @map("activation_scans")
+  botScans                 Int       @default(0) @map("bot_scans")
+  uniqueIpHashes           Int       @default(0) @map("unique_ip_hashes")
+  distinctDeviceCategories Int       @default(0) @map("distinct_device_categories")
+  lastScanAt               DateTime? @map("last_scan_at") @db.Timestamptz(3)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+
+  @@unique([safetyId, date])
+  @@index([date, totalScans])
+  @@map("safety_id_scan_daily")
+}
+
+model SafetyIdRiskAssessment {
+  safetyId         String    @id @map("safety_id") @db.Uuid
+  riskLevel        RiskLevel @default(NONE) @map("risk_level")
+  riskScore        Int       @default(0) @map("risk_score")
+  reasons          Json      @default("[]")
+  evaluatedAt      DateTime  @map("evaluated_at") @db.Timestamptz(3)
+  firstDetectedAt  DateTime? @map("first_detected_at") @db.Timestamptz(3)
+  lastDetectedAt   DateTime? @map("last_detected_at") @db.Timestamptz(3)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolutionReason String?   @map("resolution_reason") @db.VarChar(500)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+
+  @@index([riskLevel, riskScore])
+  @@map("safety_id_risk_assessments")
+}
+
+model SafetyIdRiskSignal {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  safetyId        String           @map("safety_id") @db.Uuid
+  type            RiskSignalType
+  severity        RiskLevel
+  status          RiskSignalStatus @default(ACTIVE)
+  windowStart     DateTime         @map("window_start") @db.Timestamptz(3)
+  windowEnd       DateTime         @map("window_end") @db.Timestamptz(3)
+  observedValue   Float            @map("observed_value")
+  thresholdValue  Float            @map("threshold_value")
+  firstDetectedAt DateTime         @map("first_detected_at") @db.Timestamptz(3)
+  lastDetectedAt  DateTime         @map("last_detected_at") @db.Timestamptz(3)
+  clearedAt       DateTime?        @map("cleared_at") @db.Timestamptz(3)
+  metadata        Json?
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  safetyIdRef SafetyId @relation(fields: [safetyId], references: [id], onDelete: Cascade)
+
+  @@index([safetyId, status])
+  @@index([status, lastDetectedAt])
+  @@map("safety_id_risk_signals")
 }

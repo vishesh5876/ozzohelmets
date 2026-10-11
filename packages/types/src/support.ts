@@ -76,6 +76,9 @@ export const SECURITY_EVENT_LABELS: Record<CustomerSecurityEventType, string> = 
   HELMET_ACTIVATED: 'Helmet activated',
   HELMET_TRANSFERRED_OUT: 'Helmet transferred to a new owner',
   HELMET_RECEIVED: 'Helmet received by transfer',
+  SAFETY_ID_ACTIVATED: 'Safety ID activated',
+  SAFETY_ID_TRANSFERRED_OUT: 'Safety ID transferred to someone else',
+  SAFETY_ID_RECEIVED: 'Safety ID received by transfer',
   ACCOUNT_SUSPENDED: 'Account suspended by support',
   ACCOUNT_LOCKED: 'Account locked by support',
   ACCOUNT_RESTORED: 'Account restored by support',
@@ -114,11 +117,11 @@ export type ProfileCompletionKey =
   | 'MEDICATIONS'
   | 'EMERGENCY_CONTACT'
   | 'PRIVACY_REVIEW'
-  | 'HELMET_ENABLED';
+  | 'SAFETY_ID_ENABLED';
 
 /**
- * UX progress only. `required` items are what enabling the profile needs (plus a helmet switch to
- * share it); the percentage is never used as an authorisation or eligibility rule.
+ * UX progress only. `required` items are what enabling the profile needs (plus a Safety ID switch
+ * to share it); the percentage is never used as an authorisation or eligibility rule.
  */
 export interface ProfileCompletionDto {
   percent: number;
@@ -129,7 +132,7 @@ export type HealthWarningCode =
   | 'NO_EMERGENCY_CONTACT'
   | 'PROFILE_INCOMPLETE'
   | 'PROFILE_DISABLED'
-  | 'HELMET_SHARING_OFF'
+  | 'SAFETY_ID_SHARING_OFF'
   | 'RECOVERY_CODE_NOT_ACKNOWLEDGED'
   | 'RECOVERY_CODE_MISSING'
   | 'EMAIL_MISSING'
@@ -150,6 +153,9 @@ export interface HealthWarningDto {
   message: string;
   helmetId?: string;
   helmetCode?: string;
+  /** Phase 9 */
+  safetyId?: string;
+  safetyCode?: string;
   action?: { label: string; to: string };
 }
 
@@ -199,6 +205,20 @@ export interface CustomerDataExportDto {
     helmetCode: string;
     status: OwnershipStatus;
     acquiredVia: OwnershipAcquisition;
+    from: IsoDateString;
+    until: IsoDateString | null;
+  }[];
+  /** Phase 9: Safety IDs currently owned (no token, PIN or internal id). */
+  safetyIds: {
+    safetyCode: string;
+    status: string;
+    emergencySharing: boolean;
+    linkedHelmetCode: string | null;
+  }[];
+  safetyIdOwnershipHistory: {
+    safetyCode: string;
+    status: OwnershipStatus;
+    source: string;
     from: IsoDateString;
     until: IsoDateString | null;
   }[];

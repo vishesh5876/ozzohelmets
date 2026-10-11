@@ -23,15 +23,10 @@ import {
   type StoredFile,
 } from '../file-storage/file-storage.types';
 import {
-  type CachedPublicHelmet,
+  type CachedPublicSafetyId,
   PublicEmergencyCacheService,
 } from '../public-emergency-cache/public-emergency-cache.service';
-import {
-  LIFECYCLE_WARNINGS,
-  PROFILE_VISIBLE_STATUSES,
-  PUBLIC_STATE_MESSAGES,
-  toPublicState,
-} from './public-state';
+import { LIFECYCLE_WARNINGS, mayShowProfile, toPublicState } from './public-state';
 import { PublicAbuseService } from './public-abuse.service';
 import { deviceCategory } from '../analytics/domain/device';
 
@@ -70,6 +65,11 @@ const VERIFY_LIFECYCLE: Record<
   RECALLED: { label: 'Recalled', warning: null, activated: true },
 };
 
+/** Cached verification view; `scanRef` is internal (scan logging) and stripped before returning. */
+type CachedVerification = PublicProductVerificationDto & {
+  scanRef: { safetyId: string; helmetId: string | null };
+};
+
 export interface ScanContext {
   ipHash: string | null;
   userAgent: string | null;
@@ -98,80 +98,108 @@ export class PublicEmergencyService {
 
   async resolve(token: string, scan: ScanContext): Promise<PublicEmergencyDto> {
     const { entry, cacheHit } = await this.entry(token, scan.ipHash);
-    this.logScan(entry.helmetId, scan, ScanType.EMERGENCY_PAGE, cacheHit);
-    void this.abuse.recordValidAccess(scan.ipHash, entry.helmetId).catch(() => undefined);
+    this.logScan(entry, scan, ScanType.EMERGENCY_PAGE, cacheHit);
+    void this.abuse.recordValidAccess(scan.ipHash, entry.safetyId).catch(() => undefined);
     return entry.dto;
   }
 
   /**
-   * Product authenticity view for the same QR token. Reveals only registry facts (model, SKU,
-   * Helmet ID, manufacturing month, batch, lifecycle, coverage) — never owner, medical, PIN,
-   * serial or internal ids. An unknown token is "not verified", never "counterfeit".
+   * Product authenticity view for the same QR token. A Safety ID linked to a helmet reveals only
+   * registry facts (model, SKU, Helmet ID, manufacturing month, batch, lifecycle, coverage) —
+   * never owner, medical, PIN, serial or internal ids. A standalone Safety ID is "Safety ID
+   * verified" with no product facts. An unknown token is "not verified", never "counterfeit".
    */
   async verify(token: string, scan: ScanContext): Promise<PublicProductVerificationDto> {
     const notVerified: PublicProductVerificationDto = {
       state: PublicProductVerificationState.NOT_VERIFIED,
-      message: 'We could not verify this Helmet ID. Check the QR code or contact support.',
+      message: 'We could not verify this Safety ID. Check the QR code or contact support.',
     };
     if (!isValidPublicToken(token)) {
       await this.abuse.recordMiss(scan.ipHash);
       return notVerified;
     }
-    let dto = await this.cache.getVerification(token);
-    const cacheHit = dto !== null;
-    let helmetId: string | null = null;
-    if (!dto) {
+    let cached = (await this.cache.getVerification(token)) as CachedVerification | null;
+    const cacheHit = cached !== null;
+    if (!cached) {
       await this.assertUncachedAllowed(scan.ipHash);
-      const helmet = await this.prisma.helmet.findUnique({
-        where: { publicToken: token },
-        select: {
-          id: true,
-          helmetCode: true,
-          status: true,
-          qrIntegrityStatus: true,
-          helmetModel: { select: { name: true, brand: true, sku: true } },
-          batch: { select: { batchCode: true, manufacturingDate: true } },
-        },
-      });
-      if (!helmet) {
+      cached = await this.loadVerification(token);
+      if (!cached) {
         await this.abuse.recordMiss(scan.ipHash);
         return notVerified; // not cached: unknown tokens stay cheap to re-check
       }
-      helmetId = helmet.id;
-      const lifecycle = VERIFY_LIFECYCLE[helmet.status];
-      dto = {
-        state: PublicProductVerificationState.VERIFIED,
-        message:
-          'Product identity verified: this Helmet ID exists in the manufacturer’s registry. This confirms the registered identity, not the physical helmet itself.',
-        product: {
-          helmetCode: helmet.helmetCode,
-          modelName: helmet.helmetModel.name,
-          brand: helmet.helmetModel.brand,
-          sku: helmet.helmetModel.sku,
-          manufactured: helmet.batch.manufacturingDate.toISOString().slice(0, 7),
-          batchRef: helmet.batch.batchCode,
-        },
-        lifecycle: { label: lifecycle.label, warning: lifecycle.warning },
-        activated: lifecycle.activated,
-        warranty: await this.warranties.publicSummary(helmet.id),
-      };
-      if (helmet.status === 'RECALLED') dto.recallWarning = LIFECYCLE_WARNINGS.RECALLED;
-      // Phase 6: set only by an admin decision — a neutral prompt, never "counterfeit".
-      if (helmet.qrIntegrityStatus === 'COMPROMISED')
-        dto.integrityNotice =
-          'This QR code has been reported as possibly copied. Check that the Helmet ID printed inside the helmet matches the one shown here, and contact support if it does not.';
-      await this.cache.setVerification(token, { ...dto, helmetId } as PublicProductVerificationDto);
-    } else {
-      helmetId = (dto as PublicProductVerificationDto & { helmetId?: string }).helmetId ?? null;
+      await this.cache.setVerification(token, cached as PublicProductVerificationDto);
     }
-    if (helmetId) {
-      this.logScan(helmetId, scan, ScanType.VERIFY, cacheHit);
-      void this.abuse.recordValidAccess(scan.ipHash, helmetId).catch(() => undefined);
-    }
-    const { helmetId: _omit, ...publicDto } = dto as PublicProductVerificationDto & {
-      helmetId?: string;
-    };
+    const { scanRef, ...publicDto } = cached;
+    this.logScan(scanRef, scan, ScanType.VERIFY, cacheHit);
+    void this.abuse.recordValidAccess(scan.ipHash, scanRef.safetyId).catch(() => undefined);
     return publicDto;
+  }
+
+  private async loadVerification(token: string): Promise<CachedVerification | null> {
+    const safety = await this.prisma.safetyId.findUnique({
+      where: { publicToken: token },
+      select: {
+        id: true,
+        safetyCode: true,
+        qrIntegrityStatus: true,
+        helmetLinks: {
+          where: { endedAt: null },
+          take: 1,
+          select: {
+            helmet: {
+              select: {
+                id: true,
+                helmetCode: true,
+                status: true,
+                helmetModel: { select: { name: true, brand: true, sku: true } },
+                batch: { select: { batchCode: true, manufacturingDate: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!safety) return null;
+    const helmet = safety.helmetLinks[0]?.helmet ?? null;
+    const scanRef = { safetyId: safety.id, helmetId: helmet?.id ?? null };
+    if (!helmet) {
+      const dto: CachedVerification = {
+        state: PublicProductVerificationState.SAFETY_ID_VERIFIED,
+        message:
+          'Safety ID verified. This Safety ID is registered with Ozzo. No registered product is currently linked to this Safety ID.',
+        safetyId: { code: safety.safetyCode },
+        scanRef,
+      };
+      if (safety.qrIntegrityStatus === 'COMPROMISED')
+        dto.integrityNotice =
+          'This QR code has been reported as possibly copied. Check that the Safety ID printed next to the QR matches the one shown here, and contact support if it does not.';
+      return dto;
+    }
+    const lifecycle = VERIFY_LIFECYCLE[helmet.status];
+    const dto: CachedVerification = {
+      state: PublicProductVerificationState.VERIFIED,
+      message:
+        'Product identity verified: this Helmet ID exists in the manufacturer’s registry. This confirms the registered identity, not the physical helmet itself.',
+      product: {
+        helmetCode: helmet.helmetCode,
+        modelName: helmet.helmetModel.name,
+        brand: helmet.helmetModel.brand,
+        sku: helmet.helmetModel.sku,
+        manufactured: helmet.batch.manufacturingDate.toISOString().slice(0, 7),
+        batchRef: helmet.batch.batchCode,
+      },
+      lifecycle: { label: lifecycle.label, warning: lifecycle.warning },
+      activated: lifecycle.activated,
+      warranty: await this.warranties.publicSummary(helmet.id),
+      safetyId: { code: safety.safetyCode },
+      scanRef,
+    };
+    if (helmet.status === 'RECALLED') dto.recallWarning = LIFECYCLE_WARNINGS.RECALLED;
+    // Phase 6: set only by an admin decision — a neutral prompt, never "counterfeit".
+    if (safety.qrIntegrityStatus === 'COMPROMISED')
+      dto.integrityNotice =
+        'This QR code has been reported as possibly copied. Check that the Helmet ID printed inside the helmet matches the one shown here, and contact support if it does not.';
+    return dto;
   }
 
   /** Photo is served only while the cached public view says it is visible. */
@@ -185,7 +213,7 @@ export class PublicEmergencyService {
   private async entry(
     token: string,
     ipHash: string | null,
-  ): Promise<{ entry: CachedPublicHelmet; cacheHit: boolean }> {
+  ): Promise<{ entry: CachedPublicSafetyId; cacheHit: boolean }> {
     // Cheap rejection before touching cache/DB; same error as unknown tokens (no oracle).
     if (!isValidPublicToken(token)) {
       await this.abuse.recordMiss(ipHash);
@@ -218,59 +246,58 @@ export class PublicEmergencyService {
       );
   }
 
-  private async load(token: string): Promise<CachedPublicHelmet | null> {
-    const helmet = await this.prisma.helmet.findUnique({
+  private async load(token: string): Promise<CachedPublicSafetyId | null> {
+    const safety = await this.prisma.safetyId.findUnique({
       where: { publicToken: token },
       select: {
         id: true,
         status: true,
-        helmetCode: true,
-        helmetModel: { select: { name: true, brand: true } },
+        safetyCode: true,
         ownerships: { where: { status: 'ACTIVE' }, select: { userId: true }, take: 1 },
+        helmetLinks: {
+          where: { endedAt: null },
+          take: 1,
+          select: { helmet: { select: { id: true, status: true } } },
+        },
       },
     });
-    if (!helmet) return null;
+    if (!safety) return null;
 
-    const ownerId = helmet.ownerships[0]?.userId ?? null;
-    // Decrypt only when the status may show a profile at all (ACTIVE) — and the view itself
-    // checks the per-helmet switch of the CURRENT owner, so a previous owner's data can't leak.
+    const ownerId = safety.ownerships[0]?.userId ?? null;
+    const helmet = safety.helmetLinks[0]?.helmet ?? null;
+    // Decrypt only when the state may show a profile at all — and the view itself checks the
+    // Safety ID switch of the CURRENT owner, so a previous owner's data can't leak.
     const view =
-      ownerId && PROFILE_VISIBLE_STATUSES.includes(helmet.status)
+      ownerId && mayShowProfile(safety.status, true, helmet?.status ?? null)
         ? await this.profiles.publicView(
             ownerId,
-            helmet.id,
+            safety.id,
             `/api/v1/public/emergency/${token}/photo`,
           )
         : null;
-    const state = toPublicState(helmet.status, {
+    const decision = toPublicState(safety.status, helmet?.status ?? null, {
       hasOwner: ownerId !== null,
       profilePublishable: view !== null,
     });
 
+    // Person-focused: no product data (model, batch, serial, warranty) in this payload.
     const dto: PublicEmergencyDto = {
-      state,
-      helmet: { modelName: helmet.helmetModel.name, brand: helmet.helmetModel.brand },
-      message: PUBLIC_STATE_MESSAGES[state],
+      state: decision.state,
+      safetyId: {},
+      linkedProduct: helmet !== null,
+      message: decision.message,
     };
-    if (view) {
-      dto.helmet.helmetCode = helmet.helmetCode;
+    const base = { safetyId: safety.id, helmetId: helmet?.id ?? null };
+    if (view && decision.showProfile) {
+      dto.safetyId.code = safety.safetyCode;
       dto.profile = view.data.profile;
       if (view.data.contacts) dto.contacts = view.data.contacts;
-      const warning = LIFECYCLE_WARNINGS[helmet.status];
-      if (warning) {
-        // Damaged/recalled helmet still sharing: owner disclaimer + explicit lifecycle warning.
-        dto.message = PUBLIC_STATE_MESSAGES.ACTIVE;
-        dto.warning = warning;
-      }
-      return { helmetId: helmet.id, dto, photo: view.photo };
+      if (decision.warning) dto.warning = decision.warning;
+      return { ...base, dto, photo: view.photo };
     }
-    return { helmetId: helmet.id, dto, photo: null };
+    return { ...base, dto, photo: null };
   }
 
-  /**
-   * Fire-and-forget scan log. Repeated loads from the same device (IP hash + user agent) within
-   * SCAN_DEDUP_SECONDS are counted once, so refreshes don't drown real scans.
-   */
   /**
    * Fire-and-forget scan log. Repeated loads from the same device (IP hash + user agent) within
    * SCAN_DEDUP_SECONDS are counted once, so refreshes don't drown real scans. Phase 6: only a
@@ -278,7 +305,7 @@ export class PublicEmergencyService {
    * flag. `SCAN_RECORDING_ENABLED=false` keeps dev/test traffic out of analytics.
    */
   private logScan(
-    helmetId: string,
+    ref: { safetyId: string; helmetId: string | null },
     scan: ScanContext,
     scanType: ScanType,
     cacheHit: boolean,
@@ -292,7 +319,7 @@ export class PublicEmergencyService {
     const gate =
       dedupSeconds > 0
         ? this.redis
-            .set(`scan:dedup:${scanType}:${helmetId}:${device}`, '1', 'EX', dedupSeconds, 'NX')
+            .set(`scan:dedup:${scanType}:${ref.safetyId}:${device}`, '1', 'EX', dedupSeconds, 'NX')
             .catch(() => 'OK')
         : Promise.resolve('OK');
     void gate
@@ -300,7 +327,8 @@ export class PublicEmergencyService {
         if (first !== 'OK') return;
         return this.prisma.helmetScan.create({
           data: {
-            helmetId,
+            safetyId: ref.safetyId,
+            helmetId: ref.helmetId,
             scanType,
             ipHash: scan.ipHash,
             userAgent: summarizeUserAgent(scan.userAgent),
@@ -314,6 +342,9 @@ export class PublicEmergencyService {
   }
 
   private notFound(): AppException {
-    return AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'We could not verify this Helmet ID.');
+    return AppException.notFound(
+      ErrorCode.SAFETY_ID_NOT_FOUND,
+      'We could not find this Safety ID. Check the QR code.',
+    );
   }
 }

@@ -2,7 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Res } from '@nestjs/commo
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { CookieOptions, Response } from 'express';
 import type {
-  ActivationAddHelmetResponse,
+  ActivationAddSafetyIdResponse,
   ActivationRegisterResponse,
   ActivationValidateResponse,
 } from '@helmet/types';
@@ -32,7 +32,7 @@ export class ActivationController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Preliminary check: helmet eligible and PIN correct (nothing consumed). Strictly rate-limited; failures count towards lockouts.',
+      'Preliminary check: Safety ID eligible and PIN correct (nothing consumed). Strictly rate-limited; failures count towards lockouts.',
   })
   validate(
     @Body() dto: ActivationPinDto,
@@ -45,7 +45,7 @@ export class ActivationController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'First activation: PIN + new password → account, ownership, ACTIVATED (atomic). Returns a session and the recovery code (shown once).',
+      "First activation: Safety ID PIN + new password → account, ownership (and the linked helmet's), ACTIVATED (atomic). Returns a session and the recovery code (shown once).",
   })
   async register(
     @Body() dto: RegisterActivationDto,
@@ -64,17 +64,30 @@ export class ActivationController {
     return result;
   }
 
-  @Post('add-helmet')
+  @Post('add-safety-id')
   @HttpCode(HttpStatus.OK)
   @CustomerAuth()
   @ApiOperation({
-    summary: 'Signed-in customer activates another helmet with its PIN (no new account).',
+    summary: 'Signed-in customer activates another Safety ID with its PIN (no new account).',
   })
+  addSafetyId(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: ActivationPinDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<ActivationAddSafetyIdResponse> {
+    return this.activation.addSafetyId(customer, dto, meta);
+  }
+
+  /** Phase 8 path, kept so older portal builds keep working during the deploy window. */
+  @Post('add-helmet')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @ApiOperation({ summary: 'Deprecated alias of add-safety-id.', deprecated: true })
   addHelmet(
     @CurrentCustomer() customer: AuthenticatedCustomer,
     @Body() dto: ActivationPinDto,
     @ReqMeta() meta: RequestMeta,
-  ): Promise<ActivationAddHelmetResponse> {
-    return this.activation.addHelmet(customer, dto, meta);
+  ): Promise<ActivationAddSafetyIdResponse> {
+    return this.activation.addSafetyId(customer, dto, meta);
   }
 }

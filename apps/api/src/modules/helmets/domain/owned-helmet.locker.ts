@@ -7,7 +7,7 @@ export interface LockedHelmet {
   id: string;
   helmetCode: string;
   status: HelmetStatus;
-  publicToken: string;
+  publicToken: string | null;
   previousOperationalStatus: HelmetStatus | null;
 }
 
@@ -20,7 +20,7 @@ interface HelmetRow {
   id: string;
   helmet_code: string;
   status: HelmetStatus;
-  public_token: string;
+  public_token: string | null;
   previous_operational_status: HelmetStatus | null;
 }
 

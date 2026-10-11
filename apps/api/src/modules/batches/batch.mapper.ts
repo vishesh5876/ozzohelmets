@@ -4,6 +4,12 @@ import type { BatchDto } from '@helmet/types';
 export const batchInclude = {
   helmetModel: { select: { id: true, name: true, sku: true } },
   creator: { select: { id: true, name: true } },
+  safetyIdBatches: {
+    where: { mode: 'HELMET_LINKED' },
+    orderBy: { createdAt: 'asc' },
+    take: 1,
+    select: { id: true, batchCode: true },
+  },
 } satisfies Prisma.HelmetBatchInclude;
 
 export type BatchRow = Prisma.HelmetBatchGetPayload<{ include: typeof batchInclude }>;
@@ -29,6 +35,8 @@ export function toBatchDto(
     pinsEscrowed,
     exportCount: exports.count,
     lastExportedAt: exports.lastAt?.toISOString() ?? null,
+    withSafetyIds: b.withSafetyIds,
+    safetyIdBatch: b.safetyIdBatches[0] ?? null,
     notes: b.notes,
     createdBy: b.creator,
     createdAt: b.createdAt.toISOString(),

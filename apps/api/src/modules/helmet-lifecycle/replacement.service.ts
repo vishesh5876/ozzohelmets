@@ -19,6 +19,7 @@ import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
 import { WarrantyService } from '../warranty/warranty.service';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
+import { SafetyIdCoreService } from '../safety-ids/domain/safety-id-core.service';
 
 /** Statuses from which an original helmet may be marked REPLACED. */
 const REPLACEABLE: readonly HelmetStatus[] = [
@@ -58,6 +59,7 @@ export class ReplacementService {
     private readonly cache: PublicEmergencyCacheService,
     private readonly credentials: CustomerCredentialsService,
     private readonly warranties: WarrantyService,
+    private readonly safetyIds: SafetyIdCoreService,
   ) {}
 
   async link(
@@ -132,6 +134,8 @@ export class ReplacementService {
         where: { helmetId: original.helmet.id },
         data: { enabled: false },
       });
+      // The original's Safety ID (if any) stops sharing; the replaced helmet hides it publicly.
+      await this.safetyIds.mirrorHelmetSharingOff(tx, original.helmet.id, null);
       // Replacement warranty policy (original → REPLACED; replacement gets its own coverage).
       await this.warranties.applyReplacement(
         tx,
@@ -164,6 +168,8 @@ export class ReplacementService {
       return [original.helmet.publicToken, replacement.helmet.publicToken] as const;
     });
     await this.cache.invalidate(publicToken, replacementToken);
+    await this.cache.invalidateForHelmet(input.originalHelmetId);
+    await this.cache.invalidateForHelmet(replacementRow.id);
     return this.links(input.originalHelmetId);
   }
 

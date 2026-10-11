@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -47,6 +48,14 @@ export class CreateBatchDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Generate a Safety ID (QR + Activation PIN) for each helmet.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  withSafetyIds?: boolean;
 }
 
 export class BatchQueryDto extends PaginationQueryDto {

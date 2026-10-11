@@ -90,21 +90,37 @@ export class HelmetsService {
       where: { id },
       select: {
         ...listSelect,
-        publicToken: true,
-        activationPinUsed: true,
         previousOperationalStatus: true,
         updatedAt: true,
-        activationSecret: { select: { helmetId: true } },
+        safetyIdLinks: {
+          where: { endedAt: null },
+          take: 1,
+          select: {
+            safetyIdRef: {
+              select: {
+                id: true,
+                safetyCode: true,
+                status: true,
+                publicToken: true,
+                activationPinUsed: true,
+                batchId: true,
+                activationSecret: { select: { safetyId: true } },
+              },
+            },
+          },
+        },
         warranty: { select: { status: true, warrantyEndDate: true } },
         _count: { select: { scans: true } },
         statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 },
       },
     });
     if (!helmet) throw AppException.notFound(ErrorCode.HELMET_NOT_FOUND, 'Helmet not found.');
+    // Phase 9: the QR and the PIN printed with this helmet belong to its linked Safety ID.
+    const safety = helmet.safetyIdLinks[0]?.safetyIdRef ?? null;
     // Export history comes from the audit log (no schema change): only relevant while escrowed.
     const lastExport =
-      !helmet.activationPinUsed && helmet.activationSecret
-        ? await lastBatchExport(this.prisma, helmet.batch.id)
+      safety && !safety.activationPinUsed && safety.activationSecret
+        ? await lastPinExport(this.prisma, helmet.batch.id, safety.batchId)
         : null;
 
     const adminIds = [
@@ -142,23 +158,26 @@ export class HelmetsService {
             .then((ok) => restoreTarget(helmet.previousOperationalStatus, ok))
         : Promise.resolve(null),
       this.scanSummary(id),
-      ownership ? this.readiness.helmetEnabled(id, ownership.user.id) : Promise.resolve(false),
+      ownership && safety
+        ? this.readiness.safetyIdEnabled(safety.id, ownership.user.id)
+        : Promise.resolve(false),
     ]);
     const warrantyStatus = effectiveStatus(helmet.warranty);
 
     return {
       ...toListItem(helmet),
       owner,
-      qrUrl: this.config.publicHelmetUrl(helmet.publicToken),
-      activationPinUsed: helmet.activationPinUsed,
-      pinEscrowed: helmet.activationSecret !== null,
-      pinState: helmet.activationPinUsed
-        ? 'CONSUMED'
-        : helmet.activationSecret === null
-          ? 'PURGED'
-          : lastExport
-            ? 'EXPORTED'
-            : 'AVAILABLE',
+      qrUrl: safety ? this.config.publicHelmetUrl(safety.publicToken) : null,
+      safetyId: safety
+        ? { id: safety.id, safetyCode: safety.safetyCode, status: safety.status }
+        : null,
+      activationPinUsed: safety?.activationPinUsed ?? false,
+      pinEscrowed: safety?.activationSecret != null,
+      pinState: pinState(
+        safety?.activationPinUsed ?? false,
+        safety?.activationSecret != null,
+        lastExport,
+      ),
       batchLastExportedAt: lastExport?.toISOString() ?? null,
       scanCount: helmet._count.scans,
       // Operational targets are reached only via activation, enablement, transfer or support restore.
@@ -233,7 +252,7 @@ export class HelmetsService {
   ): Promise<HelmetDetailDto> {
     const publicToken = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        { id: string; status: HelmetStatus; public_token: string }[]
+        { id: string; status: HelmetStatus; public_token: string | null }[]
       >`
         SELECT id, status, public_token FROM helmets WHERE id = ${id}::uuid FOR UPDATE`;
       const helmet = locked[0];
@@ -275,6 +294,7 @@ export class HelmetsService {
       return helmet.public_token;
     });
     await this.publicCache.invalidate(publicToken);
+    await this.publicCache.invalidateForHelmet(id);
     return this.get(id);
   }
 
@@ -377,6 +397,57 @@ function toListItem(h: HelmetListRow): HelmetListItemDto {
 }
 
 /** When the batch's manufacturing CSV (with PINs) was last exported, from the audit log. */
+/** Operator-facing PIN state (shared by the helmet and Safety ID admin pages). */
+export function pinState(
+  used: boolean,
+  escrowed: boolean,
+  lastExport: Date | null,
+): 'AVAILABLE' | 'EXPORTED' | 'PURGED' | 'CONSUMED' {
+  if (used) return 'CONSUMED';
+  if (!escrowed) return 'PURGED';
+  return lastExport ? 'EXPORTED' : 'AVAILABLE';
+}
+
+/** Latest export that included this PIN: the helmet batch CSV or the Safety ID batch export. */
+export async function lastPinExport(
+  prisma: PrismaService,
+  helmetBatchId: string | null,
+  safetyBatchId: string | null,
+): Promise<Date | null> {
+  const ors = [
+    ...(helmetBatchId
+      ? [
+          {
+            action: AuditAction.BATCH_EXPORT_MANUFACTURING_CSV,
+            entityType: 'helmet_batch',
+            entityId: helmetBatchId,
+          },
+        ]
+      : []),
+    ...(safetyBatchId
+      ? [
+          {
+            action: AuditAction.SAFETY_ID_BATCH_EXPORTED,
+            entityType: 'safety_id_batch',
+            entityId: safetyBatchId,
+          },
+          {
+            action: AuditAction.SAFETY_ID_BATCH_PRINT_SHEET,
+            entityType: 'safety_id_batch',
+            entityId: safetyBatchId,
+          },
+        ]
+      : []),
+  ];
+  if (ors.length === 0) return null;
+  const row = await prisma.auditLog.findFirst({
+    where: { OR: ors },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  return row?.createdAt ?? null;
+}
+
 export async function lastBatchExport(
   prisma: PrismaService,
   batchId: string,

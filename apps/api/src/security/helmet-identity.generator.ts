@@ -3,6 +3,7 @@ import {
   ACTIVATION_PIN_LENGTH,
   BASE62_ALPHABET,
   formatCustomerCode,
+  formatSafetyCode,
   formatHelmetCode,
   HELMET_CODE_ALPHABET,
   HELMET_CODE_RANDOM_LENGTH,
@@ -28,6 +29,12 @@ export function generateHelmetCode(): string {
 export function generateCustomerCode(): string {
   const payload = secureRandomString(HELMET_CODE_RANDOM_LENGTH, HELMET_CODE_ALPHABET);
   return formatCustomerCode(payload + helmetCodeCheckSymbol(payload));
+}
+
+/** Phase 9: `SI-XXXX-XXXY`: Safety ID code (7 random symbols + the same check symbol). */
+export function generateSafetyCode(): string {
+  const payload = secureRandomString(HELMET_CODE_RANDOM_LENGTH, HELMET_CODE_ALPHABET);
+  return formatSafetyCode(payload + helmetCodeCheckSymbol(payload));
 }
 
 /** 22 base62 symbols ≈ 131 bits — the only value encoded in the QR URL. */

@@ -78,14 +78,17 @@ export class EmergencyProfileController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Enable the emergency profile and switch it on for the given helmets (or the only helmet in use).',
+      'Enable the emergency profile and switch sharing on for the given Safety IDs (or the only one in use).',
   })
   enable(
     @CurrentCustomer() customer: AuthenticatedCustomer,
     @Body() dto: EnableEmergencyProfileDto,
     @ReqMeta() meta: RequestMeta,
   ): Promise<EmergencyReadinessDto> {
-    return this.profiles.enable(customer, meta, dto.helmetIds);
+    return this.profiles.enable(customer, meta, {
+      helmetIds: dto.helmetIds,
+      safetyIds: dto.safetyIds,
+    });
   }
 
   @Post('disable')

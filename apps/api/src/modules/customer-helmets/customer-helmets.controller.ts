@@ -6,6 +6,8 @@ import type {
   CustomerHelmetDetailDto,
   CustomerHelmetDto,
 } from '@helmet/types';
+import { ErrorCode } from '@helmet/types';
+import { AppException } from '../../common/http/app.exception';
 import { RawResponse } from '../../common/http/raw-response.decorator';
 import type { AuthenticatedCustomer } from '../customer-auth/customer-auth.types';
 import { CurrentCustomer } from '../customer-auth/decorators/current-customer.decorator';
@@ -49,6 +51,8 @@ export class CustomerHelmetsController {
     @Res() res: Response,
   ): Promise<void> {
     const url = await this.helmets.publicUrl(customer.id, id);
+    if (!url)
+      throw AppException.notFound(ErrorCode.SAFETY_ID_NOT_FOUND, 'This helmet has no Safety ID.');
     res.setHeader('Cache-Control', 'private, max-age=300');
     res.type('image/svg+xml').send(await this.labels.qrSvg(url));
   }

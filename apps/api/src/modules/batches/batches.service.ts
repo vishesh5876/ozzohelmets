@@ -117,6 +117,7 @@ export class BatchesService {
       const id = await this.prisma.$transaction(async (tx) => {
         const batchCode =
           dto.batchCode ?? (await this.nextBatchCode(tx, manufacturingDate.getUTCFullYear()));
+        const withSafetyIds = dto.withSafetyIds ?? true;
         const row = await tx.helmetBatch.create({
           data: {
             batchCode,
@@ -124,10 +125,13 @@ export class BatchesService {
             manufacturingDate,
             quantity: dto.quantity,
             notes: dto.notes,
+            withSafetyIds,
             createdBy: admin.id,
           },
           select: { id: true },
         });
+        // Companion Safety ID batch: generated in the same chunks as the helmets.
+        if (withSafetyIds) await this.createCompanion(tx, row.id, dto.quantity, admin.id);
         await this.audit.record(
           {
             action: AuditAction.BATCH_CREATED,
@@ -135,7 +139,12 @@ export class BatchesService {
             entityId: row.id,
             adminId: admin.id,
             ipHash: meta.ipHash,
-            metadata: { batchCode, quantity: dto.quantity, helmetModelId: dto.helmetModelId },
+            metadata: {
+              batchCode,
+              quantity: dto.quantity,
+              helmetModelId: dto.helmetModelId,
+              withSafetyIds: dto.withSafetyIds ?? true,
+            },
           },
           tx,
         );
@@ -185,6 +194,29 @@ export class BatchesService {
         ErrorCode.BATCH_ALREADY_GENERATED,
         'Helmets for this batch have already been generated.',
       );
+    }
+    // The companion Safety ID batch follows the helmet batch's generation state.
+    const claimedRow = await this.prisma.helmetBatch.findUniqueOrThrow({
+      where: { id },
+      select: { withSafetyIds: true, quantity: true },
+    });
+    if (claimedRow.withSafetyIds) {
+      const companion = await this.prisma.safetyIdBatch.findFirst({
+        where: { helmetBatchId: id, mode: 'HELMET_LINKED' },
+        select: { id: true },
+      });
+      if (!companion)
+        await this.prisma.$transaction((tx) =>
+          this.createCompanion(tx, id, claimedRow.quantity, admin.id),
+        );
+      await this.prisma.safetyIdBatch.updateMany({
+        where: { helmetBatchId: id, mode: 'HELMET_LINKED', generationStatus: { not: 'COMPLETED' } },
+        data: {
+          generationStatus: 'GENERATING',
+          generationStartedAt: new Date(),
+          generationError: null,
+        },
+      });
     }
     const batch = await this.get(id);
     await this.audit.record({
@@ -240,8 +272,22 @@ export class BatchesService {
         where: { batchId: id, status: 'GENERATED' },
         data: { status: 'PRINTED' },
       });
-      const purged = await tx.helmetActivationSecret.deleteMany({
+      const purgedHelmet = await tx.helmetActivationSecret.deleteMany({
         where: { helmet: { batchId: id } },
+      });
+      // Phase 9: the QR + PIN printed with these helmets belong to their linked Safety IDs.
+      const linked = await this.safetyIdsForHelmetBatch(tx, id);
+      const safetyMoved = await tx.safetyId.updateMany({
+        where: { id: { in: linked }, status: 'GENERATED' },
+        data: { status: 'PRINTED' },
+      });
+      const purgedSafety = await tx.safetyIdActivationSecret.deleteMany({
+        where: { safetyId: { in: linked } },
+      });
+      const purged = { count: purgedHelmet.count + purgedSafety.count };
+      await tx.safetyIdBatch.updateMany({
+        where: { helmetBatchId: id, mode: 'HELMET_LINKED', printStatus: 'NOT_PRINTED' },
+        data: { printStatus: 'PRINTED', printedAt: new Date() },
       });
       await tx.helmetBatch.update({
         where: { id },
@@ -255,7 +301,11 @@ export class BatchesService {
           entityId: id,
           adminId: admin.id,
           ipHash: meta.ipHash,
-          metadata: { batchCode: batch.batch_code, helmetsPrinted: moved.count },
+          metadata: {
+            batchCode: batch.batch_code,
+            helmetsPrinted: moved.count,
+            safetyIdsPrinted: safetyMoved.count,
+          },
         },
         tx,
       );
@@ -274,6 +324,33 @@ export class BatchesService {
     return this.get(id);
   }
 
+  private async createCompanion(
+    tx: Prisma.TransactionClient,
+    helmetBatchId: string,
+    quantity: number,
+    adminId: string,
+  ): Promise<void> {
+    const [row] = await tx.$queryRaw<
+      { n: bigint }[]
+    >`SELECT nextval('safety_id_batch_code_seq') AS n`;
+    const batchCode = `SID-${new Date().getUTCFullYear()}-${String(row?.n ?? 0).padStart(5, '0')}`;
+    await tx.safetyIdBatch.create({
+      data: { batchCode, mode: 'HELMET_LINKED', helmetBatchId, quantity, createdBy: adminId },
+    });
+  }
+
+  /** Safety IDs currently linked to helmets of a helmet batch. */
+  private async safetyIdsForHelmetBatch(
+    tx: Prisma.TransactionClient,
+    helmetBatchId: string,
+  ): Promise<string[]> {
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT l.safety_id AS id FROM safety_id_helmet_links l
+      JOIN helmets h ON h.id = l.helmet_id
+      WHERE h.batch_id = ${helmetBatchId}::uuid AND l.ended_at IS NULL`;
+    return rows.map((r) => r.id);
+  }
+
   /** BAT-<year>-<5-digit sequence>. The DB sequence guarantees no two batches get the same number. */
   private async nextBatchCode(tx: Prisma.TransactionClient, year: number): Promise<string> {
     const [row] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('helmet_batch_code_seq') AS n`;
@@ -282,9 +359,13 @@ export class BatchesService {
 
   private async escrowCounts(batchIds: string[]): Promise<Map<string, number>> {
     if (batchIds.length === 0) return new Map();
+    // PINs printed with the helmets: escrow of their linked Safety IDs (Phase 9). Migrated
+    // Safety IDs carry a copy of the Phase 8 helmet escrow, so this counts every printable PIN.
     const rows = await this.prisma.$queryRaw<{ batch_id: string; n: bigint }[]>`
       SELECT h.batch_id, COUNT(*)::bigint AS n
-      FROM helmet_activation_secrets s JOIN helmets h ON h.id = s.helmet_id
+      FROM safety_id_activation_secrets s
+      JOIN safety_id_helmet_links l ON l.safety_id = s.safety_id AND l.ended_at IS NULL
+      JOIN helmets h ON h.id = l.helmet_id
       WHERE h.batch_id = ANY(${batchIds}::uuid[])
       GROUP BY h.batch_id`;
     return new Map(rows.map((r) => [r.batch_id, Number(r.n)]));

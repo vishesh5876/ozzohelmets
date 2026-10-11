@@ -35,6 +35,7 @@ import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
 import { generateTransferCode, hashTransferCode, sameHash } from './transfer-code';
+import { SafetyIdCoreService } from '../safety-ids/domain/safety-id-core.service';
 
 const HOUR = 3600;
 const sha = (v: string) => createHash('sha256').update(v).digest('hex');
@@ -75,6 +76,7 @@ export class TransferService {
     private readonly customerHelmets: CustomerHelmetsService,
     private readonly config: AppConfigService,
     private readonly events: SecurityEventsService,
+    private readonly safetyIds: SafetyIdCoreService,
   ) {}
 
   // ───────────── Current owner ─────────────
@@ -252,7 +254,7 @@ export class TransferService {
     recipient: Recipient,
     meta: RequestMeta,
   ): Promise<{ helmetId: string; userId: string }> {
-    let outcome: { helmetId: string; userId: string; publicToken: string };
+    let outcome: { helmetId: string; userId: string; publicToken: string | null };
     try {
       outcome = await this.prisma.$transaction(
         async (tx) => {
@@ -313,6 +315,12 @@ export class TransferService {
               reasonCode: 'TRANSFERRED',
             });
           }
+          // 6. The linked Safety ID moves with the helmet (sharing off for the new owner).
+          await this.safetyIds.followHelmetOwnership(tx, helmet.id, {
+            kind: 'transfer',
+            toUserId: userId,
+            at: now,
+          });
           await this.audit.record(
             {
               action: AuditAction.TRANSFER_CLAIMED,
@@ -341,6 +349,7 @@ export class TransferService {
     await this.lockout.reset(this.lockKey(helmetCode));
     // Safety-critical: the previous owner's public data must disappear immediately.
     await this.cache.invalidate(outcome.publicToken);
+    await this.cache.invalidateForHelmet(outcome.helmetId);
     return { helmetId: outcome.helmetId, userId: outcome.userId };
   }
 

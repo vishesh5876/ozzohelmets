@@ -5,7 +5,7 @@ import {
 } from '@helmet/types';
 
 export interface ReadinessFacts {
-  ownsHelmet: boolean;
+  ownsSafetyId: boolean;
   hasProfile: boolean;
   name: string | null;
   activeContactCount: number;
@@ -35,7 +35,7 @@ export function profileStatus(f: ReadinessFacts): EmergencyProfileStatus {
 export function evaluateReadiness(f: ReadinessFacts): EmergencyReadinessDto {
   const missing = missingRequirements(f);
   const steps: EmergencyReadinessDto['steps'] = [
-    { key: 'ACTIVATED', done: f.ownsHelmet },
+    { key: 'ACTIVATED', done: f.ownsSafetyId },
     { key: 'DETAILS', done: !missing.includes(ReadinessRequirement.NAME) },
     { key: 'CONTACTS', done: !missing.includes(ReadinessRequirement.EMERGENCY_CONTACT) },
     { key: 'PRIVACY', done: !missing.includes(ReadinessRequirement.PRIVACY_REVIEW) },

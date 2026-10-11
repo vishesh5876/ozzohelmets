@@ -32,6 +32,8 @@ import { HelmetModelsModule } from './modules/helmet-models/helmet-models.module
 import { HelmetsModule } from './modules/helmets/helmets.module';
 import { PublicEmergencyModule } from './modules/public-emergency/public-emergency.module';
 import { PublicEmergencyCacheModule } from './modules/public-emergency-cache/public-emergency-cache.module';
+import { SafetyIdCoreModule } from './modules/safety-ids/safety-id-core.module';
+import { SafetyIdsModule } from './modules/safety-ids/safety-ids.module';
 import { SecurityModule } from './security/security.module';
 
 @Module({
@@ -46,6 +48,7 @@ import { SecurityModule } from './security/security.module';
     // Cross-cutting domain
     AuditModule,
     PublicEmergencyCacheModule,
+    SafetyIdCoreModule,
     EmergencyReadinessModule,
     FileStorageModule,
     AdminAuthModule,
@@ -58,6 +61,7 @@ import { SecurityModule } from './security/security.module';
     HelmetModelsModule,
     BatchesModule,
     HelmetsModule,
+    SafetyIdsModule,
     PublicEmergencyModule,
     CustomerHelmetsModule,
     CustomerAccountModule,

@@ -237,9 +237,9 @@ export class WarrantyAdminService {
         },
         tx,
       );
-      return w.helmet.publicToken;
+      return w.helmetId;
     });
-    await this.cache.invalidate(token);
+    await this.cache.invalidateForHelmet(token);
     return this.detail(id);
   }
 
@@ -324,7 +324,7 @@ export class WarrantyAdminService {
       await tx.$queryRaw`SELECT id FROM helmet_warranties WHERE id = ${id}::uuid FOR UPDATE`;
       const w = await tx.helmetWarranty.findUnique({
         where: { id },
-        select: { status: true, helmet: { select: { publicToken: true } } },
+        select: { status: true, helmetId: true },
       });
       if (!w) throw AppException.notFound(ErrorCode.WARRANTY_NOT_FOUND, 'Warranty not found.');
       if (!(t.allowedFrom as string[]).includes(w.status)) {
@@ -355,9 +355,9 @@ export class WarrantyAdminService {
         },
         tx,
       );
-      return w.helmet.publicToken;
+      return w.helmetId;
     });
-    await this.cache.invalidate(token);
+    await this.cache.invalidateForHelmet(token);
     return this.detail(id);
   }
 

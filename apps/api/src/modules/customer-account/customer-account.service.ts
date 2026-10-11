@@ -3,6 +3,7 @@ import {
   type AccountDeletionRequestDto,
   type CustomerDataExportDto,
   type CustomerHelmetDto,
+  type CustomerSafetyIdDto,
   type CustomerSecurityEventDto,
   type CustomerSecurityStatusDto,
   type CustomerWarrantySummaryDto,
@@ -104,11 +105,11 @@ export class CustomerAccountService {
         where: { userId },
         select: { confirmedAt: true },
       }),
-      this.prisma.helmetEmergencySetting.count({
+      this.prisma.safetyIdEmergencySetting.count({
         where: {
           userId,
           enabled: true,
-          helmet: { ownerships: { some: { userId, status: 'ACTIVE' } } },
+          safetyIdRef: { ownerships: { some: { userId, status: 'ACTIVE' } } },
         },
       }),
     ]);
@@ -120,7 +121,7 @@ export class CustomerAccountService {
       hasMedications: !!profile?.medicationsCiphertext,
       activeContactCount: contacts,
       privacyConfirmed: visibility?.confirmedAt != null,
-      sharingOnAnyHelmet: !!profile?.emergencyProfileEnabled && sharing > 0,
+      sharingOnAnySafetyId: !!profile?.emergencyProfileEnabled && sharing > 0,
     });
   }
 
@@ -128,6 +129,7 @@ export class CustomerAccountService {
   async dashboardExtras(
     userId: string,
     helmets: CustomerHelmetDto[],
+    safetyIds: CustomerSafetyIdDto[],
     readiness: EmergencyReadinessDto,
     contactCount: number,
   ): Promise<{
@@ -154,6 +156,7 @@ export class CustomerAccountService {
     }
     const health = evaluateHealth({
       helmets,
+      safetyIds,
       readiness,
       contactCount,
       security,
@@ -225,8 +228,51 @@ export class CustomerAccountService {
           orderBy: { requestedAt: 'desc' },
         }),
       ]);
+    const [safetyOwned, safetyHistory] = await Promise.all([
+      this.prisma.safetyIdOwnership.findMany({
+        where: { userId, status: 'ACTIVE' },
+        orderBy: { startedAt: 'asc' },
+        select: {
+          safetyIdRef: {
+            select: {
+              safetyCode: true,
+              status: true,
+              emergencySettings: { where: { userId }, select: { enabled: true } },
+              helmetLinks: {
+                where: { endedAt: null },
+                select: { helmet: { select: { helmetCode: true } } },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.safetyIdOwnership.findMany({
+        where: { userId },
+        orderBy: { startedAt: 'asc' },
+        select: {
+          status: true,
+          source: true,
+          startedAt: true,
+          endedAt: true,
+          safetyIdRef: { select: { safetyCode: true } },
+        },
+      }),
+    ]);
     const result = buildCustomerExport({
       user,
+      safetyIds: safetyOwned.map(({ safetyIdRef: s }) => ({
+        safetyCode: s.safetyCode,
+        status: s.status,
+        emergencySharing: s.emergencySettings[0]?.enabled ?? false,
+        linkedHelmetCode: s.helmetLinks[0]?.helmet.helmetCode ?? null,
+      })),
+      safetyIdOwnerships: safetyHistory.map((o) => ({
+        safetyCode: o.safetyIdRef.safetyCode,
+        status: o.status,
+        source: o.source,
+        from: o.startedAt,
+        until: o.endedAt,
+      })),
       helmets: owned.map(({ helmet }) => ({
         helmetCode: helmet.helmetCode,
         model: helmet.helmetModel.name,

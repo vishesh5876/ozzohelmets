@@ -6,3 +6,4 @@ export * from './lifecycle';
 export * from './permissions';
 export * from './support';
 export * from './analytics';
+export * from './safety-id';

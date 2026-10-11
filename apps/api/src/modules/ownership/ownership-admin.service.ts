@@ -20,6 +20,7 @@ import { CustomerTokenService } from '../customer-auth/customer-token.service';
 import { HelmetStatusService } from '../helmets/domain/helmet-status.service';
 import { OwnedHelmetLocker } from '../helmets/domain/owned-helmet.locker';
 import { PublicEmergencyCacheService } from '../public-emergency-cache/public-emergency-cache.service';
+import { SafetyIdCoreService } from '../safety-ids/domain/safety-id-core.service';
 
 export interface RevokeOwnershipInput {
   reason: string;
@@ -40,6 +41,7 @@ export class OwnershipAdminService {
     private readonly cache: PublicEmergencyCacheService,
     private readonly recentAuth: RecentAuthService,
     private readonly customerTokens: CustomerTokenService,
+    private readonly safetyIds: SafetyIdCoreService,
   ) {}
 
   async history(
@@ -190,6 +192,12 @@ export class OwnershipAdminService {
         where: { helmetId, userId: ownership.userId },
         data: { enabled: false },
       });
+      // The linked Safety ID follows: same owner, revoked together (sharing off).
+      await this.safetyIds.followHelmetOwnership(tx, helmetId, {
+        kind: 'revoke',
+        reason: 'HELMET_OWNERSHIP_REVOKED',
+        at: now,
+      });
       // A replaced helmet stays REPLACED (final); otherwise move to the requested safe state.
       if (helmet.status !== input.targetStatus && helmet.status !== 'REPLACED') {
         await this.statuses.apply(tx, {
@@ -226,6 +234,7 @@ export class OwnershipAdminService {
       await this.recentAuth.revokeAll('customer', userId);
     }
     await this.cache.invalidate(publicToken);
+    await this.cache.invalidateForHelmet(helmetId);
   }
 
   private async assertHelmet(helmetId: string): Promise<void> {

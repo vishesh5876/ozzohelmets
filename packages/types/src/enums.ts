@@ -288,7 +288,10 @@ export type ProductReportStatus = (typeof ProductReportStatus)[keyof typeof Prod
  * presented as "counterfeit".
  */
 export const PublicProductVerificationState = {
+  /** Safety ID linked to a registered helmet: product facts are shown. */
   VERIFIED: 'VERIFIED',
+  /** Phase 9: a registered Safety ID with no linked product (no helmet facts exist). */
+  SAFETY_ID_VERIFIED: 'SAFETY_ID_VERIFIED',
   NOT_VERIFIED: 'NOT_VERIFIED',
 } as const;
 export type PublicProductVerificationState =
@@ -311,6 +314,9 @@ export const CustomerSecurityEventType = {
   HELMET_ACTIVATED: 'HELMET_ACTIVATED',
   HELMET_TRANSFERRED_OUT: 'HELMET_TRANSFERRED_OUT',
   HELMET_RECEIVED: 'HELMET_RECEIVED',
+  SAFETY_ID_ACTIVATED: 'SAFETY_ID_ACTIVATED',
+  SAFETY_ID_TRANSFERRED_OUT: 'SAFETY_ID_TRANSFERRED_OUT',
+  SAFETY_ID_RECEIVED: 'SAFETY_ID_RECEIVED',
   ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
   ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
   ACCOUNT_RESTORED: 'ACCOUNT_RESTORED',

@@ -7,7 +7,7 @@ import {
 } from './readiness';
 
 const complete: ReadinessFacts = {
-  ownsHelmet: true,
+  ownsSafetyId: true,
   hasProfile: true,
   name: 'Rahul Sharma',
   activeContactCount: 1,

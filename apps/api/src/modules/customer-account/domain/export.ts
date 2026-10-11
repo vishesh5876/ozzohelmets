@@ -37,6 +37,19 @@ export interface ExportSource {
     from: Date;
     until: Date | null;
   }[];
+  safetyIds: {
+    safetyCode: string;
+    status: string;
+    emergencySharing: boolean;
+    linkedHelmetCode: string | null;
+  }[];
+  safetyIdOwnerships: {
+    safetyCode: string;
+    status: OwnershipStatus;
+    source: string;
+    from: Date;
+    until: Date | null;
+  }[];
   profile: DecryptedProfile | null;
   contacts: {
     name: string;
@@ -120,6 +133,19 @@ export function buildCustomerExport(src: ExportSource, now = new Date()): Custom
       helmetCode: o.helmetCode,
       status: o.status,
       acquiredVia: o.acquiredVia,
+      from: o.from.toISOString(),
+      until: iso(o.until),
+    })),
+    safetyIds: src.safetyIds.map((s) => ({
+      safetyCode: s.safetyCode,
+      status: s.status,
+      emergencySharing: s.emergencySharing,
+      linkedHelmetCode: s.linkedHelmetCode,
+    })),
+    safetyIdOwnershipHistory: src.safetyIdOwnerships.map((o) => ({
+      safetyCode: o.safetyCode,
+      status: o.status,
+      source: o.source,
       from: o.from.toISOString(),
       until: iso(o.until),
     })),

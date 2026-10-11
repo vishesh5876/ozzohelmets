@@ -198,6 +198,7 @@ export class WarrantyService {
       throw err;
     }
     if (publicToken) await this.cache.invalidate(publicToken);
+    await this.cache.invalidateForHelmet(helmetId);
     return this.forCustomer(customer, helmetId);
   }
 

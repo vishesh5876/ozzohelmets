@@ -1,3 +1,4 @@
+import type { CustomerSafetyIdDto, SafetyIdStatus } from './safety-id';
 import type {
   ActorType,
   BloodGroup,
@@ -98,6 +99,10 @@ export interface BatchDto {
   /** Phase 8: manufacturing CSV exports, from the audit log. */
   exportCount: number;
   lastExportedAt: IsoDateString | null;
+  /** Phase 9: one linked Safety ID (QR + Activation PIN) is generated per helmet. */
+  withSafetyIds: boolean;
+  /** Phase 9: the companion Safety ID batch (helmet-linked), when one exists. */
+  safetyIdBatch: { id: string; batchCode: string } | null;
   /** Phase 8: per-status helmet counts (batch detail only). */
   stats?: BatchStatsDto;
   notes: string | null;
@@ -151,11 +156,14 @@ export interface HelmetOwnerSummaryDto {
 
 export interface HelmetDetailDto extends HelmetListItemDto {
   owner: HelmetOwnerSummaryDto | null;
-  qrUrl: string;
+  /** Phase 9: QR URL of the linked Safety ID (null when the helmet has none). */
+  qrUrl: string | null;
+  /** Phase 9: the Safety ID currently linked to this helmet. */
+  safetyId: { id: string; safetyCode: string; status: SafetyIdStatus } | null;
   activationPinUsed: boolean;
   pinEscrowed: boolean;
   /**
-   * Phase 8: operator-facing Activation PIN state.
+   * Phase 8: operator-facing Activation PIN state (Phase 9: of the linked Safety ID's PIN).
    * AVAILABLE = plaintext in escrow, batch never exported · EXPORTED = in escrow, batch CSV
    * exported at least once · PURGED = unused but plaintext destroyed (batch marked printed) ·
    * CONSUMED = used to activate.
@@ -254,8 +262,14 @@ export interface DashboardStatsDto {
 /** Public, unauthenticated QR resolution. Never contains internal identifiers. */
 export interface PublicEmergencyDto {
   state: PublicHelmetState;
-  /** `helmetCode` is included only while an emergency profile is shown (for identification). */
-  helmet: { modelName: string; brand: string; helmetCode?: string };
+  /**
+   * Phase 9: the person-focused page identifies the QR only by its Safety ID code (shown while a
+   * profile is shown). No product data (model, batch, serial, warranty) is ever part of this
+   * payload; that lives on /verify.
+   */
+  safetyId: { code?: string };
+  /** True when the Safety ID is linked to a helmet, so the page may offer "View product information". */
+  linkedProduct: boolean;
   message: string;
   /**
    * Present in ACTIVE — and, since Phase 4, in DAMAGED/RECALLED when this helmet was already
@@ -342,7 +356,10 @@ export interface CustomerSessionDto {
 
 export interface ActivationValidateResponse {
   activatable: true;
-  helmet: { modelName: string; brand: string; helmetCode: string };
+  /** Phase 9: activation starts from the Safety ID. */
+  safetyId: { safetyCode: string };
+  /** The helmet this Safety ID came with, if any (it will be registered to the same account). */
+  linkedHelmet: { modelName: string; brand: string; helmetCode: string } | null;
 }
 
 export interface CustomerHelmetDto {
@@ -353,7 +370,8 @@ export interface CustomerHelmetDto {
   model: { name: string; brand: string };
   activatedAt: IsoDateString | null;
   ownedSince: IsoDateString;
-  publicUrl: string;
+  /** QR URL of the linked Safety ID (null when the helmet has none). */
+  publicUrl: string | null;
   emergencyProfileStatus: EmergencyProfileStatus;
   /** Whether THIS helmet exposes the owner's emergency profile (per-helmet switch). */
   emergencyEnabled: boolean;
@@ -366,6 +384,8 @@ export interface CustomerHelmetDto {
   replaces: { helmetCode: string } | null;
   /** Effective warranty status and last covered day (Phase 4). */
   warranty: { status: WarrantyStatus; endDate: string | null };
+  /** Phase 9: the Safety ID currently linked to this helmet (null when none). */
+  safetyId: { id: string; safetyCode: string; status: SafetyIdStatus } | null;
 }
 
 export type HelmetTimelineEventType =
@@ -425,12 +445,14 @@ export type TransferClaimRegisterResponse = CustomerLoginResponse &
 
 /** First activation: account created, signed in, recovery code shown once. */
 export type ActivationRegisterResponse = CustomerLoginResponse &
-  RecoveryCodeIssued & { helmet: CustomerHelmetDto };
+  RecoveryCodeIssued & { safetyId: CustomerSafetyIdDto; helmet: CustomerHelmetDto | null };
 
-/** Existing customer adding another helmet. */
+/** Existing customer adding another Safety ID (and its linked helmet, if any). */
 export interface ActivationAddHelmetResponse {
-  helmet: CustomerHelmetDto;
+  safetyId: CustomerSafetyIdDto;
+  helmet: CustomerHelmetDto | null;
 }
+export type ActivationAddSafetyIdResponse = ActivationAddHelmetResponse;
 
 export interface EmergencyProfileDto {
   name: string | null;
@@ -498,6 +520,10 @@ export interface EmergencyReadinessDto {
 }
 
 export interface CustomerDashboardDto {
+  /** Phase 9: the customer's Safety IDs (the emergency QR identities). */
+  safetyIds: CustomerSafetyIdDto[];
+  /** "2 Safety IDs active / 1 needs setup". */
+  safetyIdSummary: { total: number; active: number; needsSetup: number };
   helmets: CustomerHelmetDto[];
   readiness: EmergencyReadinessDto;
   contactCount: number;
@@ -619,6 +645,8 @@ export interface PublicProductVerificationDto {
   activated?: boolean;
   warranty?: { status: WarrantyStatus; endsOn: string | null };
   recallWarning?: string;
+  /** Phase 9: the Safety ID behind this QR (always present when the token is registered). */
+  safetyId?: { code: string };
   /**
    * Phase 6: present only when an admin marked this QR as compromised — a neutral prompt to check
    * the Helmet ID on the inner label (never "counterfeit").
