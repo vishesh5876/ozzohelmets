@@ -22,9 +22,9 @@ export class PublicEmergencyController {
   @Header('Cache-Control', 'no-store')
   @Header('X-Robots-Tag', 'noindex, nofollow')
   @ApiOperation({
-    summary: 'Resolve a helmet QR token. No authentication. Returns only public-safe data.',
+    summary: 'Resolve a Safety ID QR token. No authentication. Returns only public-safe data.',
   })
-  @ApiOkResponse({ description: 'Public helmet state' })
+  @ApiOkResponse({ description: 'Public Safety ID state' })
   resolve(
     @Param('token') token: string,
     @ReqMeta() meta: RequestMeta,

@@ -55,7 +55,7 @@ const PIN_STATE: Record<HelmetDetailDto['pinState'], { label: string; help: stri
   },
   CONSUMED: {
     label: 'Consumed',
-    help: 'Used to activate this helmet. A PIN works only once.',
+    help: 'Used to activate the linked Safety ID. A PIN works only once.',
   },
 };
 
