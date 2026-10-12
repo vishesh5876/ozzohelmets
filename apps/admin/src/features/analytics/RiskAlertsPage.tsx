@@ -136,7 +136,15 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
         <div>
           <dt className="inline">Subject: </dt>
           <dd className="inline font-mono">
-            {alert.helmet ? (
+            {alert.safetyId ? (
+              <Link
+                to={`/analytics/safety-ids/${alert.safetyId.safetyCode}`}
+                className="hover:underline"
+              >
+                {alert.safetyId.safetyCode}
+                {alert.helmet ? ` · ${alert.helmet.helmetCode}` : ''}
+              </Link>
+            ) : alert.helmet ? (
               <Link
                 to={`/analytics/helmets/${alert.helmet.helmetCode}`}
                 className="hover:underline"

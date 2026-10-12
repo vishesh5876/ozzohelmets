@@ -108,6 +108,44 @@ export function CustomerDetailPage() {
             </CardContent>
           </Card>
 
+          <Card id="safety-ids" className="scroll-mt-20" data-testid="customer-safety-ids">
+            <CardHeader>
+              <CardTitle>Safety IDs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {c.safetyIds.length === 0 ? (
+                <p className="text-sm text-body">No Safety IDs currently owned.</p>
+              ) : (
+                <Table>
+                  <THead>
+                    <tr>
+                      <Th>Safety ID</Th>
+                      <Th>Status</Th>
+                      <Th>Emergency sharing</Th>
+                      <Th>Linked helmet</Th>
+                      <Th>Owned since</Th>
+                    </tr>
+                  </THead>
+                  <tbody>
+                    {c.safetyIds.map((s) => (
+                      <Tr key={s.id}>
+                        <Td className="font-mono text-xs">
+                          <Link to={`/safety-ids/${s.id}`} className="hover:underline">
+                            {s.safetyCode}
+                          </Link>
+                        </Td>
+                        <Td>{humanizeEnum(s.status)}</Td>
+                        <Td>{s.emergencySharing ? 'On' : 'Off'}</Td>
+                        <Td className="font-mono text-xs">{s.linkedHelmetCode ?? 'Standalone'}</Td>
+                        <Td>{formatDateTime(s.ownedSince)}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
           <Card id="helmets" className="scroll-mt-20">
             <CardHeader>
               <CardTitle>Helmets</CardTitle>

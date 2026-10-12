@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   type CursorPage,
-  type HelmetAnalyticsDetailDto,
+  type SafetyIdAnalyticsDetailDto,
   type HelmetScanEventDto,
   Permission,
   QrIntegrityStatus,
@@ -21,30 +21,44 @@ import { AlertCard } from './RiskAlertsPage';
 import { Disclaimer, QrIntegrityBadge, RiskLevelBadge } from './shared';
 
 export function HelmetAnalyticsPage() {
-  const { helmetCode = '' } = useParams();
+  // Phase 9: per Safety ID; the old /analytics/helmets/:helmetCode route resolves the linked one.
+  const { code: safetyParam, helmetCode } = useParams();
+  const code = safetyParam ?? helmetCode ?? '';
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['helmet-analytics', helmetCode],
+    queryKey: ['safety-analytics', code],
     queryFn: () =>
-      api.get<HelmetAnalyticsDetailDto>(
-        `/admin/analytics/helmets/${encodeURIComponent(helmetCode)}`,
+      api.get<SafetyIdAnalyticsDetailDto>(
+        `/admin/analytics/safety-ids/${encodeURIComponent(code)}`,
       ),
   });
   return (
     <>
       <PageHeader
-        title={helmetCode}
-        description="QR activity, review signals and product reports for this helmet."
-        back={{ to: '/analytics/helmets', label: 'Helmet activity' }}
+        title={data?.safetyId.safetyCode ?? code}
+        description="QR activity, review signals and product reports for this Safety ID."
+        back={{ to: '/analytics/safety-ids', label: 'QR activity' }}
         actions={
           data && (
-            <RequirePermission permission={Permission.HELMETS_READ}>
-              <Link
-                to={`/helmets/${data.helmet.id}`}
-                className="text-sm font-medium underline-offset-2 hover:underline"
-              >
-                Open helmet record
-              </Link>
-            </RequirePermission>
+            <div className="flex gap-4">
+              <RequirePermission permission={Permission.SAFETY_IDS_READ}>
+                <Link
+                  to={`/safety-ids/${data.safetyId.id}`}
+                  className="text-sm font-medium underline-offset-2 hover:underline"
+                >
+                  Open Safety ID record
+                </Link>
+              </RequirePermission>
+              {data.safetyId.linkedHelmet && (
+                <RequirePermission permission={Permission.HELMETS_READ}>
+                  <Link
+                    to={`/helmets/${data.safetyId.linkedHelmet.id}`}
+                    className="text-sm font-medium underline-offset-2 hover:underline"
+                  >
+                    Open helmet record
+                  </Link>
+                </RequirePermission>
+              )}
+            </div>
           )
         }
       />
@@ -55,18 +69,28 @@ export function HelmetAnalyticsPage() {
   );
 }
 
-function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
-  const { helmet, totals, risk } = data;
+function Detail({ data }: { data: SafetyIdAnalyticsDetailDto }) {
+  const { safetyId: safety, totals, risk } = data;
+  const linked = safety.linkedHelmet;
   return (
     <div className="flex flex-col gap-6" data-testid="helmet-analytics">
       <div className="flex flex-wrap items-center gap-2">
-        <HelmetStatusBadge status={helmet.status} />
-        <QrIntegrityBadge status={helmet.qrIntegrityStatus} />
+        <Badge tone="soft">{humanizeEnum(safety.status)}</Badge>
+        <QrIntegrityBadge status={safety.qrIntegrityStatus} />
         <RiskLevelBadge level={risk?.level ?? 'NONE'} score={risk?.score} />
-        <Badge tone="muted">{helmet.model}</Badge>
-        <Badge tone="muted">Warranty {humanizeEnum(helmet.warrantyStatus).toLowerCase()}</Badge>
-        {helmet.activatedAt && (
-          <Badge tone="muted">Activated {formatDate(helmet.activatedAt)}</Badge>
+        {linked ? (
+          <>
+            <HelmetStatusBadge status={linked.status} />
+            <Badge tone="muted">
+              {linked.helmetCode} · {linked.model}
+            </Badge>
+            <Badge tone="muted">Warranty {humanizeEnum(linked.warrantyStatus).toLowerCase()}</Badge>
+          </>
+        ) : (
+          <Badge tone="muted">Standalone</Badge>
+        )}
+        {safety.activatedAt && (
+          <Badge tone="muted">Activated {formatDate(safety.activatedAt)}</Badge>
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -108,7 +132,7 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
           </p>
         )}
         {data.signals.length === 0 ? (
-          <p className="text-sm text-body">No review signals for this helmet.</p>
+          <p className="text-sm text-body">No review signals for this Safety ID.</p>
         ) : (
           <Table>
             <THead>
@@ -164,7 +188,7 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
         <section>
           <h2 className="mb-3 text-lg font-bold">Alerts</h2>
           {data.alerts.length === 0 ? (
-            <p className="text-sm text-body">No alerts for this helmet.</p>
+            <p className="text-sm text-body">No alerts for this Safety ID.</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {data.alerts.map((a) => (
@@ -199,24 +223,24 @@ function Detail({ data }: { data: HelmetAnalyticsDetailDto }) {
         <QrIntegrityPanel data={data} />
       </RequirePermission>
 
-      <ScanEvents helmetCode={helmet.helmetCode} />
+      <ScanEvents code={safety.safetyCode} />
     </div>
   );
 }
 
 /** Human decision only. Never changes lifecycle status or emergency access. */
-function QrIntegrityPanel({ data }: { data: HelmetAnalyticsDetailDto }) {
+function QrIntegrityPanel({ data }: { data: SafetyIdAnalyticsDetailDto }) {
   const qc = useQueryClient();
-  const [status, setStatus] = useState<QrIntegrityStatus>(data.helmet.qrIntegrityStatus);
+  const [status, setStatus] = useState<QrIntegrityStatus>(data.safetyId.qrIntegrityStatus);
   const [note, setNote] = useState('');
   const save = useMutation({
     mutationFn: () =>
-      api.patch<HelmetAnalyticsDetailDto>(
-        `/admin/analytics/helmets/${encodeURIComponent(data.helmet.helmetCode)}/qr-integrity`,
+      api.patch<SafetyIdAnalyticsDetailDto>(
+        `/admin/analytics/safety-ids/${encodeURIComponent(data.safetyId.safetyCode)}/qr-integrity`,
         { status, note },
       ),
     onSuccess: (next) => {
-      qc.setQueryData(['helmet-analytics', data.helmet.helmetCode], next);
+      qc.setQueryData(['safety-analytics', data.safetyId.safetyCode], next);
       setNote('');
     },
   });
@@ -227,14 +251,15 @@ function QrIntegrityPanel({ data }: { data: HelmetAnalyticsDetailDto }) {
     >
       <h2 className="text-lg font-bold">QR integrity</h2>
       <p className="mt-1 text-sm text-body">
-        A separate, admin-only marker for this QR code. It never changes the helmet&apos;s lifecycle
-        status and never disables the emergency page. &ldquo;Compromised&rdquo; adds a neutral
-        notice to the public verification page asking the owner to contact support.
+        A separate, admin-only marker for this QR code. It never changes the Safety ID&apos;s or
+        helmet&apos;s lifecycle status and never disables the emergency page.
+        &ldquo;Compromised&rdquo; adds a neutral notice to the public verification page asking the
+        owner to contact support.
       </p>
-      {data.helmet.qrIntegrityNote && (
+      {data.safetyId.qrIntegrityNote && (
         <p className="mt-2 text-sm">
-          Current note ({formatDateTime(data.helmet.qrIntegrityChangedAt)}):{' '}
-          {data.helmet.qrIntegrityNote}
+          Current note ({formatDateTime(data.safetyId.qrIntegrityChangedAt)}):{' '}
+          {data.safetyId.qrIntegrityNote}
         </p>
       )}
       <div className="mt-3 flex flex-col gap-2 sm:max-w-lg">
@@ -259,7 +284,7 @@ function QrIntegrityPanel({ data }: { data: HelmetAnalyticsDetailDto }) {
         <div>
           <Button
             size="sm"
-            disabled={note.trim().length < 5 || status === data.helmet.qrIntegrityStatus}
+            disabled={note.trim().length < 5 || status === data.safetyId.qrIntegrityStatus}
             loading={save.isPending}
             onClick={() => save.mutate()}
           >
@@ -272,15 +297,15 @@ function QrIntegrityPanel({ data }: { data: HelmetAnalyticsDetailDto }) {
   );
 }
 
-function ScanEvents({ helmetCode }: { helmetCode: string }) {
+function ScanEvents({ code }: { code: string }) {
   const [open, setOpen] = useState(false);
   const q = useInfiniteQuery({
-    queryKey: ['helmet-scan-events', helmetCode],
+    queryKey: ['safety-scan-events', code],
     enabled: open,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       api.get<CursorPage<HelmetScanEventDto>>(
-        `/admin/analytics/helmets/${encodeURIComponent(helmetCode)}/scans`,
+        `/admin/analytics/safety-ids/${encodeURIComponent(code)}/scans`,
         { cursor: pageParam, limit: 50 },
       ),
     getNextPageParam: (last) => last.nextCursor ?? undefined,

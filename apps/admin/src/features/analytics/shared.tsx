@@ -59,7 +59,7 @@ export function AnalyticsTabs() {
   const tabs = [
     { to: '/analytics', label: 'Overview', end: true, show: can(Permission.ANALYTICS_VIEW) },
     { to: '/analytics/scans', label: 'QR scans', show: can(Permission.ANALYTICS_VIEW) },
-    { to: '/analytics/helmets', label: 'Helmet activity', show: can(Permission.ANALYTICS_VIEW) },
+    { to: '/analytics/safety-ids', label: 'QR activity', show: can(Permission.ANALYTICS_VIEW) },
     { to: '/analytics/alerts', label: 'Risk alerts', show: can(Permission.RISK_ALERT_VIEW) },
   ].filter((t) => t.show);
   return (

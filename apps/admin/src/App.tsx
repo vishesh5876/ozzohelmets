@@ -10,6 +10,24 @@ import { useAuth } from './lib/auth-context';
 const AdminUsersPage = lazy(() =>
   import('./features/admin-users/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
 );
+const SafetyIdsPage = lazy(() =>
+  import('./features/safety-ids/SafetyIdsPage').then((m) => ({ default: m.SafetyIdsPage })),
+);
+const SafetyIdDetailPage = lazy(() =>
+  import('./features/safety-ids/SafetyIdDetailPage').then((m) => ({
+    default: m.SafetyIdDetailPage,
+  })),
+);
+const SafetyIdBatchesPage = lazy(() =>
+  import('./features/safety-ids/SafetyIdBatchesPage').then((m) => ({
+    default: m.SafetyIdBatchesPage,
+  })),
+);
+const SafetyIdBatchDetailPage = lazy(() =>
+  import('./features/safety-ids/SafetyIdBatchDetailPage').then((m) => ({
+    default: m.SafetyIdBatchDetailPage,
+  })),
+);
 const AuditLogsPage = lazy(() =>
   import('./features/audit/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })),
 );
@@ -149,6 +167,54 @@ export function App() {
           element={
             <Guard permission={Permission.BATCHES_READ}>
               <BatchDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="safety-ids"
+          element={
+            <Guard permission={Permission.SAFETY_IDS_READ}>
+              <SafetyIdsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="safety-ids/:id"
+          element={
+            <Guard permission={Permission.SAFETY_IDS_READ}>
+              <SafetyIdDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="safety-id-batches"
+          element={
+            <Guard permission={Permission.SAFETY_IDS_READ}>
+              <SafetyIdBatchesPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="safety-id-batches/:id"
+          element={
+            <Guard permission={Permission.SAFETY_IDS_READ}>
+              <SafetyIdBatchDetailPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/safety-ids"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <HelmetActivityPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="analytics/safety-ids/:code"
+          element={
+            <Guard permission={Permission.ANALYTICS_VIEW}>
+              <HelmetAnalyticsPage />
             </Guard>
           }
         />

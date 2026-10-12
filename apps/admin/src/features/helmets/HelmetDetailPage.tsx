@@ -178,29 +178,49 @@ export function HelmetDetailPage() {
                 />
                 <Item label="Created" value={formatDateTime(helmet.createdAt)} />
                 <div className="sm:col-span-2">
-                  <dt className="text-body">Public QR URL</dt>
-                  <dd className="mt-1 flex items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded-md bg-canvas-soft px-3 py-2 font-mono text-xs">
-                      {helmet.qrUrl}
-                    </code>
-                    <Button
-                      variant="subtle"
-                      size="icon"
-                      aria-label="Copy URL"
-                      onClick={() => void navigator.clipboard.writeText(helmet.qrUrl)}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    <a
-                      href={helmet.qrUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Open public page"
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-pill bg-canvas-soft hover:bg-surface-pressed"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </dd>
+                  <dt className="text-body">Safety ID (QR)</dt>
+                  {helmet.safetyId && helmet.qrUrl ? (
+                    <dd className="mt-1 flex flex-col gap-2">
+                      <RequirePermission
+                        permission={Permission.SAFETY_IDS_READ}
+                        fallback={<span className="font-mono">{helmet.safetyId.safetyCode}</span>}
+                      >
+                        <Link
+                          to={`/safety-ids/${helmet.safetyId.id}`}
+                          className="font-mono font-medium hover:underline"
+                          data-testid="helmet-safety-id"
+                        >
+                          {helmet.safetyId.safetyCode}
+                        </Link>
+                      </RequirePermission>
+                      <div className="flex items-center gap-2">
+                        <code className="min-w-0 flex-1 truncate rounded-md bg-canvas-soft px-3 py-2 font-mono text-xs">
+                          {helmet.qrUrl}
+                        </code>
+                        <Button
+                          variant="subtle"
+                          size="icon"
+                          aria-label="Copy URL"
+                          onClick={() => void navigator.clipboard.writeText(helmet.qrUrl ?? '')}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <a
+                          href={helmet.qrUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="Open public page"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-pill bg-canvas-soft hover:bg-surface-pressed"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                    </dd>
+                  ) : (
+                    <dd className="mt-1 text-body">
+                      No Safety ID linked — this helmet has no emergency QR.
+                    </dd>
+                  )}
                 </div>
               </dl>
             </CardContent>
@@ -237,26 +257,28 @@ export function HelmetDetailPage() {
         </div>
         <div className="flex flex-col gap-4">
           <RequirePermission permission={Permission.LABELS_READ}>
-            <Card>
-              <CardHeader>
-                <CardTitle>QR code</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center gap-3">
-                <AuthImage
-                  path={`/admin/helmets/${id}/qr`}
-                  alt={`QR code for ${helmet.helmetCode}`}
-                  className="h-48 w-48"
-                />
-                <div className="flex gap-2">
-                  <Button variant="subtle" size="sm" onClick={() => void download('qr', 'png')}>
-                    <Download className="h-4 w-4" aria-hidden /> PNG
-                  </Button>
-                  <Button variant="subtle" size="sm" onClick={() => void download('qr', 'svg')}>
-                    <Download className="h-4 w-4" aria-hidden /> SVG
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            {helmet.safetyId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Safety ID QR code</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center gap-3">
+                  <AuthImage
+                    path={`/admin/helmets/${id}/qr`}
+                    alt={`QR code for ${helmet.helmetCode}`}
+                    className="h-48 w-48"
+                  />
+                  <div className="flex gap-2">
+                    <Button variant="subtle" size="sm" onClick={() => void download('qr', 'png')}>
+                      <Download className="h-4 w-4" aria-hidden /> PNG
+                    </Button>
+                    <Button variant="subtle" size="sm" onClick={() => void download('qr', 'svg')}>
+                      <Download className="h-4 w-4" aria-hidden /> SVG
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle>Barcode (Code128)</CardTitle>

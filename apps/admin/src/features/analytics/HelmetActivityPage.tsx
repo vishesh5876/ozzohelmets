@@ -1,8 +1,8 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { CursorPage, HelmetActivityItemDto, RiskLevel } from '@helmet/types';
-import { Button, HelmetStatusBadge, Select } from '@helmet/ui';
+import type { CursorPage, RiskLevel, SafetyIdActivityItemDto } from '@helmet/types';
+import { Badge, Button, HelmetStatusBadge, humanizeEnum, Select } from '@helmet/ui';
 import { PageHeader } from '../../components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '../../components/States';
 import { Table, Td, Th, THead, Tr } from '../../components/Table';
@@ -10,14 +10,15 @@ import { api } from '../../lib/api';
 import { formatDateTime, formatNumber } from '../../lib/format';
 import { AnalyticsTabs, Disclaimer, QrIntegrityBadge, RiskLevelBadge } from './shared';
 
+/** Phase 9: QR activity per Safety ID (the scanned code), with the linked helmet for context. */
 export function HelmetActivityPage() {
   const [minLevel, setMinLevel] = useState<RiskLevel | ''>('');
   const [includeResolved, setIncludeResolved] = useState(false);
   const q = useInfiniteQuery({
-    queryKey: ['analytics-helmets', minLevel, includeResolved],
+    queryKey: ['analytics-safety-ids', minLevel, includeResolved],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
-      api.get<CursorPage<HelmetActivityItemDto>>('/admin/analytics/helmets', {
+      api.get<CursorPage<SafetyIdActivityItemDto>>('/admin/analytics/safety-ids', {
         minLevel: minLevel || undefined,
         includeResolved: includeResolved || undefined,
         cursor: pageParam,
@@ -30,7 +31,7 @@ export function HelmetActivityPage() {
     <>
       <PageHeader
         title="Analytics"
-        description="Helmets whose recent QR scan pattern produced review signals, highest score first."
+        description="Safety IDs whose recent QR scan pattern produced review signals, highest score first."
       />
       <AnalyticsTabs />
       <Disclaimer />
@@ -61,15 +62,15 @@ export function HelmetActivityPage() {
       {q.data && items.length === 0 && (
         <EmptyState
           title="No unusual activity"
-          description="No helmet currently has review signals."
+          description="No Safety ID currently has review signals."
         />
       )}
       {items.length > 0 && (
         <Table>
           <THead>
             <tr>
-              <Th>Helmet</Th>
-              <Th>Lifecycle</Th>
+              <Th>Safety ID</Th>
+              <Th>Status</Th>
               <Th>Review priority</Th>
               <Th className="text-right">Scans 24 h</Th>
               <Th className="text-right">Scans 7 d</Th>
@@ -79,18 +80,23 @@ export function HelmetActivityPage() {
           </THead>
           <tbody>
             {items.map((h) => (
-              <Tr key={h.helmetId} data-testid="activity-row">
+              <Tr key={h.safetyId} data-testid="activity-row">
                 <Td>
                   <Link
-                    to={`/analytics/helmets/${h.helmetCode}`}
+                    to={`/analytics/safety-ids/${h.safetyCode}`}
                     className="font-mono text-xs hover:underline"
                   >
-                    {h.helmetCode}
+                    {h.safetyCode}
                   </Link>
-                  <p className="text-xs text-body">{h.model}</p>
+                  <p className="text-xs text-body">
+                    {h.linkedHelmet
+                      ? `${h.linkedHelmet.helmetCode} · ${h.linkedHelmet.model}`
+                      : 'Standalone'}
+                  </p>
                 </Td>
                 <Td className="flex flex-col items-start gap-1">
-                  <HelmetStatusBadge status={h.status} />
+                  <Badge tone="soft">{humanizeEnum(h.status)}</Badge>
+                  {h.linkedHelmet && <HelmetStatusBadge status={h.linkedHelmet.status} />}
                   <QrIntegrityBadge status={h.qrIntegrityStatus} />
                 </Td>
                 <Td>

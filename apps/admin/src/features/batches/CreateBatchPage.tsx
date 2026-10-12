@@ -25,6 +25,7 @@ const schema = z.object({
     .optional(),
   notes: z.string().max(1000).optional(),
   generateNow: z.boolean(),
+  withSafetyIds: z.boolean(),
 });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
@@ -47,6 +48,7 @@ export function CreateBatchPage() {
       manufacturingDate: new Date().toISOString().slice(0, 10),
       quantity: 100,
       generateNow: true,
+      withSafetyIds: true,
     },
   });
 
@@ -58,6 +60,7 @@ export function CreateBatchPage() {
         quantity: values.quantity,
         batchCode: values.batchCode || undefined,
         notes: values.notes || undefined,
+        withSafetyIds: values.withSafetyIds,
       });
       if (values.generateNow) await api.post<BatchDto>(`/admin/batches/${batch.id}/generate`);
       return batch;
@@ -141,6 +144,20 @@ export function CreateBatchPage() {
             <Field label="Notes (optional)" htmlFor="b-notes" error={errors.notes?.message}>
               <Textarea id="b-notes" rows={3} {...register('notes')} />
             </Field>
+            <label className="flex items-start gap-3 rounded-md bg-canvas-soft p-4">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-black"
+                {...register('withSafetyIds')}
+              />
+              <span>
+                <span className="font-medium">Generate a Safety ID for each helmet</span>
+                <span className="block text-sm text-body">
+                  Each helmet gets its own Safety ID (emergency QR + Activation PIN), linked to it
+                  and exported with the batch. Without it, the helmets have no QR code.
+                </span>
+              </span>
+            </label>
             <label className="flex items-start gap-3 rounded-md bg-canvas-soft p-4">
               <input
                 type="checkbox"

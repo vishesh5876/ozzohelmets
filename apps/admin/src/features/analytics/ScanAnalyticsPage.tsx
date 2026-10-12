@@ -52,8 +52,8 @@ export function ScanAnalyticsPage() {
             />
             <StatCard
               label="Unusual activity"
-              value={formatNumber(data.helmetsWithUnusualActivity)}
-              hint="helmets with active review signals"
+              value={formatNumber(data.safetyIdsWithUnusualActivity)}
+              hint="Safety IDs with active review signals"
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -63,8 +63,8 @@ export function ScanAnalyticsPage() {
               hint={counts(data.period)}
             />
             <StatCard
-              label="Helmets scanned in period"
-              value={formatNumber(data.uniqueHelmetsScannedInPeriod)}
+              label="Safety IDs scanned in period"
+              value={formatNumber(data.uniqueSafetyIdsScannedInPeriod)}
             />
             <StatCard
               label="Unknown-code requests"
@@ -82,15 +82,17 @@ export function ScanAnalyticsPage() {
             testId="chart-scan-trend"
           />
           <section>
-            <h2 className="mb-3 text-sm font-semibold text-body">Most scanned helmets in period</h2>
-            {data.topHelmets.length === 0 ? (
+            <h2 className="mb-3 text-sm font-semibold text-body">
+              Most scanned Safety IDs in period
+            </h2>
+            {data.topSafetyIds.length === 0 ? (
               <EmptyState title="No scans in this period" description="Try a longer range." />
             ) : (
               <Table>
                 <THead>
                   <tr>
-                    <Th>Helmet</Th>
-                    <Th>Model</Th>
+                    <Th>Safety ID</Th>
+                    <Th>Linked helmet</Th>
                     <Th className="text-right">Scans</Th>
                     <Th className="text-right">Emergency</Th>
                     <Th className="text-right">Verification</Th>
@@ -98,14 +100,17 @@ export function ScanAnalyticsPage() {
                   </tr>
                 </THead>
                 <tbody>
-                  {data.topHelmets.map((h) => (
-                    <Tr key={h.helmetId}>
+                  {data.topSafetyIds.map((h) => (
+                    <Tr key={h.safetyId}>
                       <Td className="font-mono text-xs">
-                        <Link to={`/analytics/helmets/${h.helmetCode}`} className="hover:underline">
-                          {h.helmetCode}
+                        <Link
+                          to={`/analytics/safety-ids/${h.safetyCode}`}
+                          className="hover:underline"
+                        >
+                          {h.safetyCode}
                         </Link>
                       </Td>
-                      <Td>{h.model}</Td>
+                      <Td>{h.helmetCode ? `${h.helmetCode} · ${h.model}` : 'Standalone'}</Td>
                       <Td className="text-right tabular-nums">{formatNumber(h.scans)}</Td>
                       <Td className="text-right tabular-nums">{formatNumber(h.emergency)}</Td>
                       <Td className="text-right tabular-nums">{formatNumber(h.verify)}</Td>

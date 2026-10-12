@@ -38,7 +38,11 @@ const LABELS: Record<Permission, string> = {
   'analytics:view': 'View aggregate analytics and helmet QR activity (no visitor identities)',
   'risk-alert:view': 'View risk alerts',
   'risk-alert:manage': 'Acknowledge, assign, resolve and dismiss risk alerts',
-  'qr-integrity:manage': 'Mark a helmet QR normal, under review or compromised',
+  'qr-integrity:manage': 'Mark a Safety ID QR normal, under review or compromised',
+  'safety-ids:read': 'View Safety IDs, batches and links (never PINs)',
+  'safety-ids:generate': 'Create Safety ID batches and mark them printed',
+  'safety-ids:export': 'Export / print Safety IDs with Activation PINs (audited)',
+  'safety-ids:manage': 'Deactivate Safety IDs and link or unlink helmets',
 };
 
 export function RolesPage() {

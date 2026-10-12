@@ -68,8 +68,13 @@ function Overview({ data }: { data: AnalyticsOverviewDto }) {
             hint={`${formatNumber(c.profilesCreated)} created · ${formatNumber(c.profilesEnabled)} enabled`}
           />
           <StatCard
-            label="Owned helmets without contacts"
-            value={formatNumber(c.ownedHelmetsWithoutContacts)}
+            label="Safety IDs"
+            value={formatNumber(c.safetyIdsGenerated)}
+            hint={`${formatNumber(c.safetyIdsActivated)} activated · ${formatNumber(c.standaloneSafetyIds)} standalone`}
+          />
+          <StatCard
+            label="Owned Safety IDs without contacts"
+            value={formatNumber(c.ownedSafetyIdsWithoutContacts)}
           />
           <StatCard label="Proof of purchase uploaded" value={pct(c.proofUploadRate)} />
           <StatCard
@@ -143,12 +148,13 @@ function Overview({ data }: { data: AnalyticsOverviewDto }) {
               <li className="px-4 py-3 text-sm text-body">No activations yet.</li>
             )}
             {data.recentActivations.map((a) => (
-              <li key={a.helmetId} className="flex justify-between px-4 py-3 text-sm">
+              <li key={a.safetyId} className="flex justify-between px-4 py-3 text-sm">
                 <Link
-                  to={`/analytics/helmets/${a.helmetCode}`}
+                  to={`/analytics/safety-ids/${a.safetyCode}`}
                   className="font-mono hover:underline"
                 >
-                  {a.helmetCode}
+                  {a.safetyCode}
+                  {a.helmetCode ? ` · ${a.helmetCode}` : ''}
                 </Link>
                 <span className="text-body">{formatDateTime(a.activatedAt)}</span>
               </li>

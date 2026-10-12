@@ -180,6 +180,23 @@ export function BatchDetailPage() {
               <span className="text-body">Print status</span>
               <PrintBadge status={batch.printStatus} />
             </div>
+            <div className="flex items-center justify-between" data-testid="batch-safety-ids">
+              <span className="text-body">Safety IDs</span>
+              <span className="text-right font-medium">
+                {batch.safetyIdBatch ? (
+                  <Link
+                    to={`/safety-id-batches/${batch.safetyIdBatch.id}`}
+                    className="font-mono hover:underline"
+                  >
+                    {batch.safetyIdBatch.batchCode}
+                  </Link>
+                ) : batch.withSafetyIds ? (
+                  'One per helmet'
+                ) : (
+                  'None (no QR)'
+                )}
+              </span>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-body">PINs in escrow</span>
               <span className="font-medium tabular-nums">{formatNumber(batch.pinsEscrowed)}</span>

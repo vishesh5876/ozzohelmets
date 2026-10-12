@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   LogOut,
   Menu,
+  QrCode,
   Settings,
   ShieldCheck,
   Tags,
@@ -78,6 +79,24 @@ const NAV: NavSection[] = [
         to: '/batches/new',
         icon: <Boxes className={ICON} />,
         permission: Permission.BATCHES_WRITE,
+      },
+    ],
+  },
+  {
+    title: 'Safety IDs',
+    items: [
+      {
+        label: 'Safety IDs',
+        to: '/safety-ids',
+        icon: <QrCode className={ICON} />,
+        permission: Permission.SAFETY_IDS_READ,
+        end: true,
+      },
+      {
+        label: 'Safety ID Batches',
+        to: '/safety-id-batches',
+        icon: <Boxes className={ICON} />,
+        permission: Permission.SAFETY_IDS_READ,
       },
     ],
   },
