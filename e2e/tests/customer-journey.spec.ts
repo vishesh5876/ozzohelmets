@@ -121,9 +121,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     expect(recoveryCode).toMatch(RECOVERY_CODE);
     await owner.getByTestId('recovery-saved').check();
     await owner.getByRole('button', { name: 'Continue' }).click();
-    await expect(owner.getByTestId('activation-done')).toContainText(
-      first.helmetCode,
-    );
+    await expect(owner.getByTestId('activation-done')).toContainText(first.helmetCode);
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
   });
 
@@ -176,9 +174,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
     await owner.fill('#pin', second.pin);
     await owner.getByRole('button', { name: 'Add Safety ID to my account' }).click();
-    await expect(owner.getByTestId('activation-done')).toContainText(
-      second.helmetCode,
-    );
+    await expect(owner.getByTestId('activation-done')).toContainText(second.helmetCode);
     await owner.goto(portal('/app/helmets'));
     await expect(owner.getByTestId('helmet-card')).toHaveCount(2);
     for (const h of [first, second])

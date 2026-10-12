@@ -134,9 +134,7 @@ test.describe
     await expect(cont).toBeDisabled();
     await owner.getByTestId('recovery-saved').check();
     await cont.click();
-    await expect(owner.getByTestId('activation-done')).toContainText(
-      helmet.helmetCode,
-    );
+    await expect(owner.getByTestId('activation-done')).toContainText(helmet.helmetCode);
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
 
     // The scan page now reports a registered helmet without a shared profile.

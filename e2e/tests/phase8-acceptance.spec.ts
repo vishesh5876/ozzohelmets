@@ -110,7 +110,9 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     owner = await phone(browser);
     await owner.goto(h.qrUrl);
     await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
-    await expect(owner.getByTestId('setup-progress')).toContainText('Step 1 of 6: Verify Safety ID');
+    await expect(owner.getByTestId('setup-progress')).toContainText(
+      'Step 1 of 6: Verify Safety ID',
+    );
 
     await owner.fill('#pin', '0000AAAA');
     await owner.getByRole('button', { name: 'Continue' }).click();
@@ -126,14 +128,10 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     await owner.fill('#reg-confirm', PASSWORD);
     await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
 
-    await expect(
-      owner.getByText('It is not your Activation PIN.', { exact: false }),
-    ).toBeVisible();
+    await expect(owner.getByText('It is not your Activation PIN.', { exact: false })).toBeVisible();
     await owner.getByTestId('recovery-saved').check();
     await owner.getByRole('button', { name: 'Continue' }).click();
-    await expect(owner.getByTestId('activation-done')).toContainText(
-      'Not enabled yet',
-    );
+    await expect(owner.getByTestId('activation-done')).toContainText('Not enabled yet');
     await owner.getByRole('button', { name: 'Complete emergency setup' }).click();
 
     await expect(owner.getByTestId('setup-progress')).toContainText(
