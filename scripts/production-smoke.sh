@@ -57,7 +57,7 @@ code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' "http://${PORTAL#https://}/"
 if [ "$code" = 301 ] || [ "$code" = 308 ]; then pass "HTTP redirects to HTTPS ($code)"; else fail "HTTP → HTTPS redirect: got $code"; fi
 
 echo "== Public QR paths"
-check "Unknown QR → 404 (no detail leak)" "$PORTAL/api/v1/public/emergency/$UNKNOWN_TOKEN" 404 'HELMET_NOT_FOUND'
+check "Unknown QR → 404 (no detail leak)" "$PORTAL/api/v1/public/emergency/$UNKNOWN_TOKEN" 404 'SAFETY_ID_NOT_FOUND|HELMET_NOT_FOUND'
 check "Unknown QR verify → NOT_VERIFIED" "$PORTAL/api/v1/public/verify/$UNKNOWN_TOKEN" 200 '"state":"NOT_VERIFIED"'
 if [ -n "$TEST_TOKEN" ]; then
   check "Test helmet emergency data" "$PORTAL/api/v1/public/emergency/$TEST_TOKEN" 200 '"success":true'
