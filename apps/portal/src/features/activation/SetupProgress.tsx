@@ -5,7 +5,7 @@ import { cn } from '@helmet/ui';
  * emergency setup (/app/onboarding) so the customer sees a single path instead of two flows.
  */
 export const SETUP_STEPS = [
-  'Verify helmet',
+  'Verify Safety ID',
   'Create account',
   'Emergency details',
   'Emergency contact',
@@ -19,7 +19,7 @@ export function SetupProgress({
   skip = [],
 }: {
   current: SetupStep;
-  /** Steps that do not apply (e.g. "Create account" when adding a helmet to an existing account). */
+  /** Steps that do not apply (e.g. "Create account" when adding a Safety ID to an existing account). */
   skip?: SetupStep[];
 }) {
   const steps = SETUP_STEPS.filter((s) => !skip.includes(s));

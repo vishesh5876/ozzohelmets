@@ -494,7 +494,7 @@ export function redactAuditMetadata(
  * but owner-approved fields — so a hidden field can never appear in it.
  */
 export function buildEmergencySummaryText(
-  dto: Pick<PublicEmergencyDto, 'profile' | 'contacts'> & { helmet?: { helmetCode?: string } },
+  dto: Pick<PublicEmergencyDto, 'profile' | 'contacts'> & { safetyId?: { code?: string } },
 ): string {
   const p = dto.profile ?? {};
   const lines: string[] = [];
@@ -514,7 +514,7 @@ export function buildEmergencySummaryText(
       `${i === 0 ? 'Emergency Contact' : 'Secondary Contact'}: ${c.name} (${c.relationship}) ${c.phone}${alt}`,
     );
   }
-  if (dto.helmet?.helmetCode) lines.push(`Helmet ID: ${dto.helmet.helmetCode}`);
-  if (lines.length) lines.push('Provided by the helmet owner; not verified.');
+  if (dto.safetyId?.code) lines.push(`Safety ID: ${dto.safetyId.code}`);
+  if (lines.length) lines.push('Provided by the owner; not verified.');
   return lines.join('\n');
 }

@@ -8,15 +8,16 @@ export function HomePage() {
       <section className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-8 lg:grid-cols-2 lg:py-24">
         <div>
           <h1 className="text-display-xl font-bold sm:text-display-xxl">
-            Your helmet speaks for you when you can’t.
+            Your Safety ID speaks for you when you can’t.
           </h1>
           <p className="mt-5 max-w-lg text-lg text-body">
-            Every helmet carries a secure QR code. Activate it, add your emergency profile, and
-            first responders see exactly what you choose to share — nothing more.
+            An Ozzo Safety ID is a secure QR code — on your helmet, a sticker or a card. Activate
+            it, add your emergency profile, and first responders see exactly what you choose to
+            share — nothing more.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link to="/activate" className={buttonVariants({ size: 'lg' })}>
-              Activate helmet
+              Activate Safety ID
             </Link>
             <Link to="/login" className={buttonVariants({ variant: 'subtle', size: 'lg' })}>
               Sign in
@@ -26,10 +27,10 @@ export function HomePage() {
         <div className="rounded-xl bg-canvas-soft p-6 sm:p-8">
           <ol className="flex flex-col gap-6">
             {[
-              ['Scan', 'Scan the QR code inside your helmet.'],
+              ['Scan', 'Scan the QR code of your Safety ID (on your helmet, sticker or card).'],
               [
                 'Activate',
-                'Enter the Activation PIN from the label and create a password. Save your Recovery Code.',
+                'Enter the Activation PIN printed with your Safety ID and create a password. Save your Recovery Code.',
               ],
               [
                 'Protect',

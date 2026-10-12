@@ -26,6 +26,11 @@ const WarrantyOverviewPage = page(
 const ActivatePage = page(() => import('./features/activation/ActivatePage'), 'ActivatePage');
 const DashboardPage = page(() => import('./features/dashboard/DashboardPage'), 'DashboardPage');
 const HelmetsPage = page(() => import('./features/helmets/HelmetsPage'), 'HelmetsPage');
+const SafetyIdsPage = page(() => import('./features/safety-ids/SafetyIdsPage'), 'SafetyIdsPage');
+const SafetyIdDetailPage = page(
+  () => import('./features/safety-ids/SafetyIdDetailPage'),
+  'SafetyIdDetailPage',
+);
 const HelmetDetailPage = page(
   () => import('./features/helmets/HelmetDetailPage'),
   'HelmetDetailPage',
@@ -69,6 +74,8 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
+          <Route path="safety-ids" element={<SafetyIdsPage />} />
+          <Route path="safety-ids/:id" element={<SafetyIdDetailPage />} />
           <Route path="helmets" element={<HelmetsPage />} />
           <Route path="helmets/:id" element={<HelmetDetailPage />} />
           <Route path="helmets/:id/warranty" element={<WarrantyPage />} />

@@ -228,11 +228,11 @@ h3 {
   letter-spacing: 0.02em;
   opacity: 0.85;
 }
-.helmet {
+.safety-id {
   font-size: 15px;
   color: var(--body);
 }
-.helmet code {
+.safety-id code {
   font:
     600 15px ui-monospace,
     SFMono-Regular,

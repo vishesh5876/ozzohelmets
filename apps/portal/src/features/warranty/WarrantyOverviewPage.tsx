@@ -27,7 +27,7 @@ export function WarrantyOverviewPage() {
             date.
           </p>
           <Link to="/activate" className={buttonVariants({ className: 'mt-4' })}>
-            Activate helmet
+            Activate Safety ID
           </Link>
         </div>
       ) : (

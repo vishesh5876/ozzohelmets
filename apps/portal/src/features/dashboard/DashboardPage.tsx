@@ -16,6 +16,7 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { keys } from '../../lib/query';
 import { HelmetCard } from '../helmets/HelmetCard';
+import { SafetyIdCard } from '../safety-ids/SafetyIdsPage';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -27,7 +28,7 @@ const COMPLETION_LABELS: Record<ProfileCompletionKey, string> = {
   MEDICATIONS: 'Medications',
   EMERGENCY_CONTACT: 'Emergency contact',
   PRIVACY_REVIEW: 'Privacy review',
-  HELMET_ENABLED: 'Sharing on a helmet',
+  SAFETY_ID_ENABLED: 'Sharing on a Safety ID',
 };
 
 export function DashboardPage() {
@@ -39,29 +40,28 @@ export function DashboardPage() {
 
   if (isLoading) return <LoadingState />;
   if (error || !data) return <ErrorState error={error} />;
-  const owned = data.helmets.length > 0;
-
-  const sharingOn = data.helmets.filter((h) => h.emergencyEnabled).length;
-  const inUse = data.helmets.filter((h) => h.group === 'ACTIVE').length;
+  // Phase 9: protection is about Safety IDs (helmets are optional linked products).
+  const owned = data.safetyIds.length > 0 || data.helmets.length > 0;
+  const { total, active: sharingOn, needsSetup } = data.safetyIdSummary;
 
   return (
     <>
       <PageTitle
         title={customer?.name ? `Hi, ${customer.name.split(' ')[0]}` : 'Dashboard'}
-        description="Your emergency protection, helmets and account at a glance."
+        description="Your emergency protection, Safety IDs, helmets and account at a glance."
       />
       <div className="flex flex-col gap-6">
         {!owned && (
           <div className="rounded-xl bg-ink p-6 text-on-dark">
-            <p className="text-display-sm font-bold">Activate your first helmet</p>
+            <p className="text-display-sm font-bold">Activate your first Safety ID</p>
             <p className="mt-1 text-mute">
-              Scan the QR code inside your helmet, or enter its Helmet ID and Activation PIN.
+              Scan the QR code of your Safety ID, or enter the Safety ID and its Activation PIN.
             </p>
             <Link
               to="/activate"
               className={buttonVariants({ variant: 'onDark', className: 'mt-4' })}
             >
-              Activate helmet
+              Activate Safety ID
             </Link>
           </div>
         )}
@@ -83,10 +83,12 @@ export function DashboardPage() {
                 <h2 id="protection-h" className="mt-1 text-display-sm font-bold">
                   Emergency information is active
                 </h2>
-                <p className="mt-1 text-body">
-                  Shown on {sharingOn} of {inUse || data.helmets.length} helmet
-                  {(inUse || data.helmets.length) === 1 ? '' : 's'} · {data.contactCount} emergency
-                  contact{data.contactCount === 1 ? '' : 's'}
+                <p className="mt-1 text-body" data-testid="safety-id-summary">
+                  {sharingOn} Safety ID{sharingOn === 1 ? '' : 's'} active
+                  {needsSetup > 0
+                    ? ` / ${needsSetup} need${needsSetup === 1 ? 's' : ''} setup`
+                    : ''}{' '}
+                  · {data.contactCount} emergency contact{data.contactCount === 1 ? '' : 's'}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link
@@ -110,14 +112,20 @@ export function DashboardPage() {
                 </h2>
                 <p className="mt-1 text-body">
                   {data.readiness.enabled
-                    ? 'Your profile is ready but not shown on any helmet. Turn sharing on for the helmet you ride with.'
-                    : 'Anyone who scans your helmet sees only a basic notice until you finish setting up your emergency profile.'}
+                    ? 'Your profile is ready but not shown on any Safety ID. Turn sharing on for the Safety ID you carry.'
+                    : 'Anyone who scans your Safety ID sees only a basic notice until you finish setting up your emergency profile.'}
                 </p>
+                {total > 0 && (
+                  <p className="mt-1 text-sm text-body" data-testid="safety-id-summary">
+                    {sharingOn} Safety ID{sharingOn === 1 ? '' : 's'} active / {needsSetup} need
+                    {needsSetup === 1 ? 's' : ''} setup
+                  </p>
+                )}
                 <Link
-                  to={data.readiness.enabled ? '/app/helmets' : '/app/onboarding'}
+                  to={data.readiness.enabled ? '/app/safety-ids' : '/app/onboarding'}
                   className={buttonVariants({ size: 'lg', className: 'mt-4' })}
                 >
-                  {data.readiness.enabled ? 'Choose a helmet' : 'Complete emergency setup'}
+                  {data.readiness.enabled ? 'Choose a Safety ID' : 'Complete emergency setup'}
                 </Link>
               </>
             )}
@@ -126,14 +134,32 @@ export function DashboardPage() {
 
         {data.health.length > 0 && <HealthList warnings={data.health} />}
 
-        {owned && (
+        {data.safetyIds.length > 0 && (
+          <section aria-labelledby="safety-ids-h">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 id="safety-ids-h" className="text-display-sm font-bold">
+                My Safety IDs
+              </h2>
+              <Link to="/activate" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+                Add a Safety ID
+              </Link>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {data.safetyIds.map((x) => (
+                <SafetyIdCard key={x.id} safetyId={x} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {data.helmets.length > 0 && (
           <section aria-labelledby="helmets-h">
             <div className="mb-3 flex items-center justify-between">
               <h2 id="helmets-h" className="text-display-sm font-bold">
                 My helmets
               </h2>
-              <Link to="/activate" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
-                Add helmet
+              <Link to="/app/helmets" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+                All helmets
               </Link>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -304,7 +330,7 @@ function HealthList({ warnings }: { warnings: HealthWarningDto[] }) {
           const Icon = s.icon;
           return (
             <li
-              key={`${w.code}-${w.helmetId ?? i}`}
+              key={`${w.code}-${w.safetyId ?? w.helmetId ?? i}`}
               className={cn(
                 'flex flex-wrap items-center gap-3 rounded-xl border-2 p-4',
                 s.className,

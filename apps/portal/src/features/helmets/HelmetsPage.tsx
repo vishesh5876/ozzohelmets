@@ -28,7 +28,7 @@ export function HelmetsPage() {
               Claim a helmet
             </Link>
             <Link to="/activate" className={buttonVariants({ size: 'sm' })}>
-              Add helmet
+              Activate Safety ID
             </Link>
           </div>
         }
@@ -37,10 +37,10 @@ export function HelmetsPage() {
         <div className="rounded-xl border border-dashed border-hairline p-8 text-center">
           <p className="font-bold">No helmets yet</p>
           <p className="mt-1 text-sm text-body">
-            Scan the QR code inside your helmet, or enter its Helmet ID and Activation PIN.
+            A helmet is registered to you when you activate the Safety ID that came with it.
           </p>
           <Link to="/activate" className={buttonVariants({ className: 'mt-4' })}>
-            Activate helmet
+            Activate Safety ID
           </Link>
         </div>
       ) : (

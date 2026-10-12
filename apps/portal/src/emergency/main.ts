@@ -60,7 +60,7 @@ async function lookup(token: string): Promise<Lookup> {
   return { kind: 'error' };
 }
 
-function header(title: string, eyebrow = 'Helmet ID', alert = false): HTMLElement {
+function header(title: string, eyebrow = 'Safety ID', alert = false): HTMLElement {
   return h(
     'header',
     { class: alert ? 'top alert' : 'top' },
@@ -109,7 +109,7 @@ function profileView(data: PublicEmergencyDto): Node[] {
             ? h('img', {
                 class: 'photo',
                 src: p.photoUrl,
-                alt: p.name ? `Photo of ${p.name}` : 'Photo of the helmet owner',
+                alt: p.name ? `Photo of ${p.name}` : 'Photo of the owner',
                 width: '96',
                 height: '96',
               })
@@ -132,7 +132,7 @@ function profileView(data: PublicEmergencyDto): Node[] {
       ),
     );
   // Phase 8 order: critical medical facts first, then who to call, then free-text notes.
-  // Product identity and warranty never appear above emergency facts.
+  // Phase 9: the page is about the person — no product, model, batch or warranty at all.
   nodes.push(listCard('Medical conditions', p.medicalConditions));
   nodes.push(listCard('Allergies', p.allergies, 'allergy'));
   nodes.push(listCard('Medications', p.medications));
@@ -150,18 +150,11 @@ function profileView(data: PublicEmergencyDto): Node[] {
     nodes.push(
       messageCard('Emergency profile', 'The owner has chosen not to share details publicly.'),
     );
-  nodes.push(
-    h(
-      'p',
-      { class: 'helmet' },
-      `${data.helmet.brand} ${data.helmet.modelName}`,
-      data.helmet.helmetCode ? ' · ' : '',
-      data.helmet.helmetCode ? h('code', {}, data.helmet.helmetCode) : null,
-    ),
-    h('p', { class: 'disclaimer' }, data.message),
-  );
+  nodes.push(h('p', { class: 'disclaimer' }, data.message));
   const summary = buildEmergencySummaryText(data);
   if (summary) nodes.push(summaryActions(summary));
+  if (data.safetyId.code)
+    nodes.push(h('p', { class: 'safety-id' }, 'Safety ID ', h('code', {}, data.safetyId.code)));
   return nodes.filter((n): n is Node => n instanceof Node);
 }
 
@@ -204,7 +197,7 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
     'section',
     { class: 'card strong', 'aria-labelledby': 'contacts-h' },
     h('h3', { id: 'contacts-h' }, contacts.length > 1 ? 'Emergency contacts' : 'Emergency contact'),
-    h('p', { class: 'muted' }, 'Provided by helmet owner'),
+    h('p', { class: 'muted' }, 'Provided by the owner'),
     ...contacts.map((c, i) => {
       const first = c.name.split(' ')[0] || c.name;
       return h(
@@ -241,9 +234,9 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
 
 const INACTIVE_TITLES: Record<'DAMAGED' | 'REPLACED' | 'DEACTIVATED' | 'RECALLED', string> = {
   DAMAGED: 'Marked as damaged',
-  REPLACED: 'Helmet replaced',
+  REPLACED: 'Replaced',
   DEACTIVATED: 'No longer active',
-  RECALLED: 'Recalled helmet',
+  RECALLED: 'Product recall',
 };
 
 function render(token: string, result: Lookup | null): void {
@@ -266,7 +259,7 @@ function render(token: string, result: Lookup | null): void {
     const d = result.data;
     switch (d.state) {
       case 'ACTIVE':
-        top = header('Emergency profile', 'Helmet ID · Emergency');
+        top = header('Emergency information', 'Safety ID · Emergency');
         main.append(...profileView(d));
         break;
       case 'NOT_ACTIVATED':
@@ -274,13 +267,12 @@ function render(token: string, result: Lookup | null): void {
           h(
             'section',
             { class: 'card strong' },
-            h('p', { class: 'muted' }, `${d.helmet.brand} ${d.helmet.modelName}`),
-            h('h2', {}, 'Helmet not activated'),
+            h('h2', {}, 'Safety ID not activated'),
             h('p', { class: 'lead' }, d.message),
             h(
               'p',
               { class: 'muted' },
-              'Ready to activate. You’ll need the Activation PIN that came with this helmet.',
+              'Ready to activate. You’ll need the Activation PIN printed with this Safety ID.',
             ),
             h(
               'a',
@@ -288,14 +280,14 @@ function render(token: string, result: Lookup | null): void {
                 class: 'btn btn-primary mt-20',
                 href: `/activate?t=${encodeURIComponent(token)}`,
               },
-              'Activate helmet',
+              'Activate Safety ID',
             ),
           ),
         );
         break;
       case 'LOST':
       case 'STOLEN':
-        top = header(d.state === 'LOST' ? 'Reported lost' : 'Reported stolen', 'Helmet ID', true);
+        top = header(d.state === 'LOST' ? 'Reported lost' : 'Reported stolen', 'Safety ID', true);
         main.append(
           messageCard(
             d.state === 'LOST' ? 'Reported lost' : 'Reported stolen',
@@ -309,9 +301,9 @@ function render(token: string, result: Lookup | null): void {
       case 'REPLACED':
       case 'DEACTIVATED': {
         const title = INACTIVE_TITLES[d.state];
-        top = header(title, d.profile ? 'Helmet ID · Emergency' : 'Helmet ID', true);
+        top = header(title, d.profile ? 'Safety ID · Emergency' : 'Safety ID', true);
         if (d.profile) {
-          // Phase 4: a damaged/recalled helmet that was already sharing keeps the approved
+          // Phase 4: a damaged/recalled linked helmet that was already sharing keeps the approved
           // information, with the lifecycle warning shown first.
           main.append(messageCard(title, d.warning ?? d.message, 'danger'), ...profileView(d));
         } else {
@@ -321,12 +313,12 @@ function render(token: string, result: Lookup | null): void {
         break;
       }
       default:
-        main.append(messageCard(`${d.helmet.brand} ${d.helmet.modelName}`, d.message));
+        main.append(messageCard('Safety ID', d.message));
     }
   } else if (result.kind === 'not-found') {
     main.append(
       messageCard(
-        'We could not verify this Helmet ID',
+        'We could not find this Safety ID',
         'This QR code is not in the registry. It may be damaged or mistyped. In an emergency, call the number below.',
       ),
     );
@@ -354,16 +346,17 @@ function render(token: string, result: Lookup | null): void {
       ),
     );
   }
-  if (result?.kind === 'ok') main.append(verifyLink(token));
+  // "View product information" only when a product is linked (standalone Safety IDs have none).
+  if (result?.kind === 'ok' && result.data.linkedProduct) main.append(verifyLink(token));
   app.replaceChildren(top, main);
 }
 
-/** Same QR, second purpose: product identity verification (no personal data). */
+/** Same QR, second purpose: product identity of the linked helmet (no personal data). */
 function verifyLink(token: string): HTMLElement {
   return h(
     'p',
     { class: 'muted no-print verify-link' },
-    h('a', { href: `/verify/${encodeURIComponent(token)}` }, 'Verify product identity'),
+    h('a', { href: `/verify/${encodeURIComponent(token)}` }, 'View product information'),
   );
 }
 
@@ -503,7 +496,7 @@ function renderVerify(token: string, d: PublicProductVerificationDto | null | 'l
   const app = document.getElementById('app');
   if (!app) return;
   const main = h('main', { class: 'content' });
-  const top = header('Product verification', 'Helmet ID');
+  const top = header('Verification', 'Safety ID');
   if (d === 'loading') {
     main.append(
       h(
@@ -514,7 +507,9 @@ function renderVerify(token: string, d: PublicProductVerificationDto | null | 'l
       ),
     );
   } else if (d === null) {
-    main.append(messageCard('Couldn’t check this helmet', 'Check your connection and try again.'));
+    main.append(
+      messageCard('Couldn’t check this Safety ID', 'Check your connection and try again.'),
+    );
   } else {
     const form = reportForm(token);
     if (d.state === 'VERIFIED' && d.product) {
@@ -534,6 +529,7 @@ function renderVerify(token: string, d: PublicProductVerificationDto | null | 'l
             fact('Batch', p.batchRef, true),
             fact('Status', d.lifecycle?.label ?? '—'),
             d.warranty ? fact('Warranty', warrantyText(d.warranty)) : null,
+            d.safetyId ? fact('Safety ID', d.safetyId.code, true) : null,
           ),
         ),
       );
@@ -550,12 +546,36 @@ function renderVerify(token: string, d: PublicProductVerificationDto | null | 'l
           'Emergency information',
         ),
       );
+    } else if (d.state === 'SAFETY_ID_VERIFIED') {
+      // Phase 9: a standalone Safety ID — registered, but no product facts exist.
+      main.append(
+        h(
+          'section',
+          { class: 'card strong verified' },
+          h('p', { class: 'verified-mark' }, '✓ Safety ID verified'),
+          h('p', { class: 'lead' }, 'This Safety ID is registered with Ozzo.'),
+          h('p', {}, 'No registered product is currently linked to this Safety ID.'),
+          h(
+            'div',
+            { class: 'facts' },
+            d.safetyId ? fact('Safety ID', d.safetyId.code, true) : null,
+          ),
+        ),
+      );
+      if (d.integrityNotice) main.append(messageCard('Please contact support', d.integrityNotice));
+      main.append(
+        h(
+          'a',
+          { class: 'btn btn-primary', href: `/e/${encodeURIComponent(token)}` },
+          'Emergency information',
+        ),
+      );
     } else {
       main.append(
         h(
           'section',
           { class: 'card' },
-          h('h2', {}, 'We could not verify this Helmet ID'),
+          h('h2', {}, 'We could not verify this Safety ID'),
           h('p', { class: 'lead' }, 'Check the QR code or contact support.'),
         ),
       );

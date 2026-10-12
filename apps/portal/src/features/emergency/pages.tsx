@@ -34,7 +34,7 @@ export function PrivacyPage() {
     <>
       <PageTitle
         title="Privacy"
-        description="You decide what appears when someone scans your helmet."
+        description="You decide what appears when someone scans your Safety ID."
       />
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="flex flex-col gap-6">

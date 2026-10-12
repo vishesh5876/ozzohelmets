@@ -4,6 +4,7 @@ import { useCustomerAuth } from '../lib/auth-context';
 
 const NAV = [
   { to: '/app', label: 'Dashboard', end: true },
+  { to: '/app/safety-ids', label: 'My Safety IDs' },
   { to: '/app/helmets', label: 'My helmets' },
   { to: '/app/profile', label: 'Emergency profile' },
   { to: '/app/contacts', label: 'Emergency contacts' },
@@ -19,7 +20,7 @@ export function AppLayout() {
       <header className="sticky top-0 z-20 border-b border-hairline bg-canvas">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
           <NavLink to="/app" className="text-lg font-bold">
-            Helmet ID
+            Ozzo Safety ID
           </NavLink>
           <span className="truncate text-sm text-body">{customer?.name ?? 'My account'}</span>
         </div>

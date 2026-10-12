@@ -27,7 +27,7 @@ export function HelmetDetailPage() {
   const qr = useQuery({
     queryKey: ['helmets', id, 'qr'],
     queryFn: () => api.blob(`/customer/helmets/${id}/qr`).then((r) => r.blob),
-    enabled: !!helmet,
+    enabled: !!helmet?.safetyId,
   });
   const qrUrl = useMemo(() => (qr.data ? URL.createObjectURL(qr.data) : null), [qr.data]);
   useEffect(() => () => (qrUrl ? URL.revokeObjectURL(qrUrl) : undefined), [qrUrl]);
@@ -67,53 +67,73 @@ export function HelmetDetailPage() {
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="flex flex-col gap-4 md:col-span-2">
-          <Section title="Emergency protection" testId="protection-section">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={helmet.emergencyEnabled ? 'solid' : 'outline'}>
-                {helmet.emergencyEnabled ? 'Emergency sharing on' : 'Emergency sharing off'}
-              </Badge>
-              <Badge tone={profile.tone}>{profile.label}</Badge>
-            </div>
-            <p className="mt-3 text-sm text-body">
-              {helmet.emergencyEnabled
-                ? 'Anyone who scans this helmet’s QR code sees the emergency information you chose to share.'
-                : profileReady
-                  ? 'Your emergency profile is ready, but this helmet does not show it.'
-                  : 'Emergency information is not active yet. Complete your emergency setup to show it on this helmet.'}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {canEnable &&
-                (profileReady ? (
-                  <Button loading={emergency.isPending} onClick={() => emergency.mutate(true)}>
-                    Show emergency info on this helmet
-                  </Button>
-                ) : (
+          <Section title="Safety ID" testId="protection-section">
+            {helmet.safetyId ? (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-lg font-bold" data-testid="helmet-safety-id">
+                    {helmet.safetyId.safetyCode}
+                  </span>
+                  <Badge tone={helmet.emergencyEnabled ? 'solid' : 'outline'}>
+                    {helmet.emergencyEnabled ? 'Emergency sharing on' : 'Emergency sharing off'}
+                  </Badge>
+                  <Badge tone={profile.tone}>{profile.label}</Badge>
+                </div>
+                <p className="mt-3 text-sm text-body">
+                  {helmet.emergencyEnabled
+                    ? 'This helmet carries a Safety ID. Anyone who scans its QR code sees the emergency information you chose to share.'
+                    : profileReady
+                      ? 'Your emergency profile is ready, but this helmet’s Safety ID does not show it.'
+                      : 'Emergency information is not active yet. Complete your emergency setup to show it on this helmet’s Safety ID.'}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
                   <Link
-                    to={`/app/onboarding?helmet=${encodeURIComponent(helmet.id)}`}
-                    className={buttonVariants()}
+                    to={`/app/safety-ids/${helmet.safetyId.id}`}
+                    className={buttonVariants({ variant: 'subtle' })}
                   >
-                    Complete emergency setup
+                    View Safety ID
                   </Link>
-                ))}
-              {canDisable && (
-                <Button
-                  variant="secondary"
-                  loading={emergency.isPending}
-                  onClick={() => emergency.mutate(false)}
-                >
-                  Hide emergency info on this helmet
-                </Button>
-              )}
-              <a
-                href={helmet.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={buttonVariants({ variant: 'subtle' })}
-              >
-                Open public page
-              </a>
-            </div>
-            <InlineError error={emergency.error} />
+                  {canEnable &&
+                    (profileReady ? (
+                      <Button loading={emergency.isPending} onClick={() => emergency.mutate(true)}>
+                        Turn on emergency sharing
+                      </Button>
+                    ) : (
+                      <Link
+                        to={`/app/onboarding?safetyId=${encodeURIComponent(helmet.safetyId.id)}`}
+                        className={buttonVariants()}
+                      >
+                        Complete emergency setup
+                      </Link>
+                    ))}
+                  {canDisable && (
+                    <Button
+                      variant="secondary"
+                      loading={emergency.isPending}
+                      onClick={() => emergency.mutate(false)}
+                    >
+                      Turn off emergency sharing
+                    </Button>
+                  )}
+                  {helmet.publicUrl && (
+                    <a
+                      href={helmet.publicUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={buttonVariants({ variant: 'subtle' })}
+                    >
+                      Open public page
+                    </a>
+                  )}
+                </div>
+                <InlineError error={emergency.error} />
+              </>
+            ) : (
+              <p className="text-sm text-body">
+                No Safety ID is linked to this helmet, so it has no emergency QR code. Contact
+                support if your helmet came with a QR code.
+              </p>
+            )}
           </Section>
 
           <Section title="Identity">
@@ -222,15 +242,25 @@ export function HelmetDetailPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-3">
             <h2 className="self-start font-bold">QR code and activity</h2>
-            {qrUrl ? (
-              <img src={qrUrl} alt={`QR code for ${helmet.helmetCode}`} className="h-44 w-44" />
+            {!helmet.safetyId ? (
+              <p className="text-sm text-body">No Safety ID QR code on this helmet.</p>
+            ) : qrUrl ? (
+              <img
+                src={qrUrl}
+                alt={`Safety ID QR code for ${helmet.helmetCode}`}
+                className="h-44 w-44"
+              />
             ) : (
               <LoadingState label="" />
             )}
-            <p className="text-center text-xs text-body">
-              This is the code printed on your helmet.
-            </p>
-            <ScanSummary helmetId={helmet.id} />
+            {helmet.safetyId && (
+              <>
+                <p className="text-center text-xs text-body">
+                  This is the Safety ID QR code that came with your helmet.
+                </p>
+                <ScanSummary helmetId={helmet.id} />
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

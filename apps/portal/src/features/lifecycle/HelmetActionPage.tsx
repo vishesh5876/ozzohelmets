@@ -296,8 +296,8 @@ function TransferPanel({ helmet }: { helmet: CustomerHelmetDetailDto }) {
           <h1 className="text-display-sm font-bold">Transfer this helmet</h1>
           <p className="mt-1 text-body">
             Transfer this helmet to another owner. Give them the Helmet ID and a one-time transfer
-            code; they enter both under “Claim a helmet”. Your emergency information stops showing
-            on this helmet the moment they claim it.
+            code; they enter both under “Claim a helmet”. The helmet’s Safety ID moves with it, and
+            your emergency information stops showing on it the moment they claim it.
           </p>
         </div>
         {issued && active ? (

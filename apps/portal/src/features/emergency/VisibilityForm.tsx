@@ -99,7 +99,8 @@ export function VisibilityForm({
       }}
     >
       <p className="text-body">
-        Choose what anyone who scans your helmet can see. Nothing is public unless you switch it on.
+        Choose what anyone who scans your Safety ID can see. Nothing is public unless you switch it
+        on.
       </p>
       <fieldset className="flex flex-col divide-y divide-hairline rounded-xl border border-hairline">
         <legend className="sr-only">Public information</legend>

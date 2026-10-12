@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   type CustomerLoginResponse,
   isValidHelmetCode,
@@ -21,6 +21,7 @@ import { emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
+import { ClaimSafetyIdPage } from './ClaimSafetyIdPage';
 
 type Step = 'code' | 'confirm' | 'recovery';
 
@@ -29,6 +30,13 @@ type Step = 'code' | 'confirm' | 'recovery';
  * (existing customer) or create an account with email + password (new customer). The code stays in memory only.
  */
 export function ClaimPage() {
+  const [params] = useSearchParams();
+  // Phase 9: standalone Safety IDs have their own claim (Safety ID + Transfer Code).
+  if (params.get('type') === 'safety-id') return <ClaimSafetyIdPage />;
+  return <ClaimHelmetPage />;
+}
+
+function ClaimHelmetPage() {
   const { status, signIn, restored } = useCustomerAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('code');

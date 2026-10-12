@@ -1,20 +1,22 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import {
-  type ActivationAddHelmetResponse,
+  type ActivationAddSafetyIdResponse,
   type ActivationRegisterResponse,
   type ActivationValidateResponse,
-  type CustomerHelmetDto,
+  type EmergencyReadinessDto,
   isValidHelmetCode,
+  isValidSafetyCode,
   normalizeHelmetCode,
+  normalizeSafetyCode,
 } from '@helmet/types';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
 import { InlineError, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
-import { queryClient } from '../../lib/query';
+import { keys, queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { EmailField } from '../auth/EmailField';
 import { emailClientProblem } from '../auth/email-check';
@@ -23,21 +25,22 @@ import { passwordClientProblem, type PasswordValue } from '../auth/password-chec
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
 import { SetupProgress, type SetupStep } from './SetupProgress';
 
-type Target = { publicToken: string } | { helmetCode: string };
+type Target = { publicToken: string } | { safetyCode: string } | { helmetCode: string };
 type Step = 'identify' | 'pin' | 'account' | 'recovery' | 'done';
 const PROGRESS: Record<Exclude<Step, 'done'>, SetupStep> = {
-  identify: 'Verify helmet',
-  pin: 'Verify helmet',
+  identify: 'Verify Safety ID',
+  pin: 'Verify Safety ID',
   account: 'Create account',
   recovery: 'Create account',
 };
 
 /**
- * Activation with the concealed one-time PIN as proof of possession:
- *  QR (?t=token) or manual Helmet ID → PIN (validated) →
+ * Phase 9: activation starts from the Safety ID; the one-time Activation PIN printed with it is
+ * the proof of possession:
+ *  QR (?t=token) or manual Safety ID (or the Helmet ID on older cards) → PIN (validated) →
  *    new customer: email + password → account + ownership → Recovery Code shown once
- *    signed-in customer: helmet added to the existing account (no email/password needed)
- * The PIN is the proof of possession; the email is only the sign-in identifier. The PIN and
+ *    signed-in customer: Safety ID added to the existing account (no email/password needed)
+ * A helmet that came with the Safety ID becomes the customer's in the same step. The PIN and
  * password live only in component state.
  */
 export function ActivatePage() {
@@ -48,7 +51,7 @@ export function ActivatePage() {
   const signedIn = status === 'authenticated';
 
   const [target, setTarget] = useState<Target | null>(token ? { publicToken: token } : null);
-  const [helmet, setHelmet] = useState<ActivationValidateResponse['helmet'] | null>(null);
+  const [validated, setValidated] = useState<ActivationValidateResponse | null>(null);
   const [step, setStep] = useState<Step>(token ? 'pin' : 'identify');
   const [manualCode, setManualCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -59,13 +62,13 @@ export function ActivatePage() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState('');
-  const [activated, setActivated] = useState<CustomerHelmetDto | null>(null);
+  const [activated, setActivated] = useState<ActivationAddSafetyIdResponse | null>(null);
 
   const validate = useMutation({
     mutationFn: () =>
       api.post<ActivationValidateResponse>('/customer/activation/validate', { ...target, pin }),
     onSuccess: (res) => {
-      setHelmet(res.helmet);
+      setValidated(res);
       if (signedIn) addHelmet.mutate();
       else setStep('account');
     },
@@ -85,7 +88,7 @@ export function ActivatePage() {
       signIn(res);
       setPin('');
       setPw({ password: '', confirm: '' });
-      setActivated(res.helmet);
+      setActivated({ safetyId: res.safetyId, helmet: res.helmet });
       setRecoveryCode(res.recoveryCode);
       setStep('recovery');
       await queryClient.invalidateQueries();
@@ -93,10 +96,13 @@ export function ActivatePage() {
   });
   const addHelmet = useMutation({
     mutationFn: () =>
-      api.post<ActivationAddHelmetResponse>('/customer/activation/add-helmet', { ...target, pin }),
+      api.post<ActivationAddSafetyIdResponse>('/customer/activation/add-safety-id', {
+        ...target,
+        pin,
+      }),
     onSuccess: async (res) => {
       setPin('');
-      setActivated(res.helmet);
+      setActivated(res);
       setStep('done');
       await queryClient.invalidateQueries();
     },
@@ -105,17 +111,28 @@ export function ActivatePage() {
   useEffect(() => {
     if (token) setTarget({ publicToken: token });
   }, [token]);
+  // After activation: an existing customer whose profile is ready only needs this switch.
+  const readiness = useQuery({
+    queryKey: keys.readiness,
+    queryFn: () => api.get<EmergencyReadinessDto>('/customer/emergency-profile/readiness'),
+    enabled: step === 'done',
+  });
 
   const submitManual = (e: FormEvent) => {
     e.preventDefault();
-    const code = normalizeHelmetCode(manualCode);
-    // Client-side checksum validation catches typos before any API call.
-    if (!code || !isValidHelmetCode(code)) {
-      setCodeError('That Helmet ID doesn’t look right. Check the characters on your label.');
+    // Client-side checksum validation catches typos before any API call. A Helmet ID is still
+    // accepted for activation cards printed before Safety IDs.
+    const safety = normalizeSafetyCode(manualCode);
+    const helmetCode = safety ? null : normalizeHelmetCode(manualCode);
+    if (safety && isValidSafetyCode(safety)) setTarget({ safetyCode: safety });
+    else if (helmetCode && isValidHelmetCode(helmetCode)) setTarget({ helmetCode });
+    else {
+      setCodeError(
+        'That Safety ID doesn’t look right. Check the characters printed next to the QR code.',
+      );
       return;
     }
     setCodeError(null);
-    setTarget({ helmetCode: code });
     setStep('pin');
   };
 
@@ -131,10 +148,10 @@ export function ActivatePage() {
   const busy = validate.isPending || addHelmet.isPending;
   const title =
     step === 'done' || step === 'recovery'
-      ? 'Helmet activated'
+      ? 'Your Safety ID is activated.'
       : signedIn
-        ? 'Add a helmet'
-        : 'Activate your helmet';
+        ? 'Add a Safety ID'
+        : 'Activate your Safety ID';
 
   return (
     <SiteFrame>
@@ -147,21 +164,28 @@ export function ActivatePage() {
           />
         )}
 
-        {(helmet || target) && ['pin', 'account'].includes(step) && (
-          <div className="mt-6 rounded-xl bg-canvas-soft p-4">
-            {helmet ? (
+        {(validated || target) && ['pin', 'account'].includes(step) && (
+          <div className="mt-6 rounded-xl bg-canvas-soft p-4" data-testid="activation-target">
+            {validated ? (
               <>
-                <p className="text-sm text-body">
-                  {helmet.brand} {helmet.modelName}
-                </p>
-                <p className="font-mono text-lg font-bold">{helmet.helmetCode}</p>
+                <p className="text-sm text-body">Safety ID</p>
+                <p className="font-mono text-lg font-bold">{validated.safetyId.safetyCode}</p>
+                {validated.linkedHelmet && (
+                  <p className="mt-1 text-sm text-body">
+                    Comes with {validated.linkedHelmet.brand} {validated.linkedHelmet.modelName}{' '}
+                    <span className="font-mono">{validated.linkedHelmet.helmetCode}</span>. The
+                    helmet will be registered to you too.
+                  </p>
+                )}
               </>
             ) : (
               <p className="text-sm text-body">
-                {target && 'helmetCode' in target ? (
+                {target && 'safetyCode' in target ? (
+                  <span className="font-mono text-lg font-bold text-ink">{target.safetyCode}</span>
+                ) : target && 'helmetCode' in target ? (
                   <span className="font-mono text-lg font-bold text-ink">{target.helmetCode}</span>
                 ) : (
-                  'Helmet identified from its QR code'
+                  'Safety ID identified from its QR code'
                 )}
               </p>
             )}
@@ -172,20 +196,20 @@ export function ActivatePage() {
           <CardContent>
             {step === 'identify' && (
               <form onSubmit={submitManual} noValidate className="flex flex-col gap-4">
-                <p className="font-medium">I have a Helmet ID</p>
+                <p className="font-medium">I have a Safety ID</p>
                 <Field
-                  label="Helmet ID"
-                  htmlFor="helmet-code"
+                  label="Safety ID"
+                  htmlFor="safety-code"
                   error={codeError ?? undefined}
-                  hint="Printed on the label inside your helmet, e.g. HM-A8F3-KL92."
+                  hint="Printed next to the QR code, e.g. SI-CD69-GXXR. Older activation cards show a Helmet ID (HM-…), which works too."
                 >
                   <Input
-                    id="helmet-code"
+                    id="safety-code"
                     autoCapitalize="characters"
                     autoComplete="off"
                     spellCheck={false}
                     className="font-mono uppercase"
-                    placeholder="HM-XXXX-XXXX"
+                    placeholder="SI-XXXX-XXXX"
                     value={manualCode}
                     onChange={(e) => setManualCode(e.target.value)}
                     aria-invalid={!!codeError}
@@ -212,7 +236,7 @@ export function ActivatePage() {
                 <Field
                   label="Activation PIN"
                   htmlFor="pin"
-                  hint="The 8-character code under the scratch-off panel or on the activation card in the box. It works only once."
+                  hint="Enter the Activation PIN printed with your Safety ID. It works only once."
                 >
                   <Input
                     id="pin"
@@ -228,11 +252,11 @@ export function ActivatePage() {
                 </Field>
                 <InlineError error={validate.error ?? addHelmet.error} />
                 <Button type="submit" size="lg" disabled={pin.length < 8} loading={busy}>
-                  {signedIn ? 'Add helmet to my account' : 'Continue'}
+                  {signedIn ? 'Add Safety ID to my account' : 'Continue'}
                 </Button>
                 {!signedIn && (
                   <p className="text-sm text-body">
-                    Already have an account for another helmet?{' '}
+                    Already have an account?{' '}
                     <Link
                       className="font-medium text-ink underline underline-offset-4"
                       to={`/login?next=${encodeURIComponent(`/activate${token ? `?t=${encodeURIComponent(token)}` : ''}`)}`}
@@ -270,7 +294,7 @@ export function ActivatePage() {
                 {pwError && <p className="text-sm text-danger">{pwError}</p>}
                 <InlineError error={register.error} />
                 <Button type="submit" size="lg" loading={register.isPending}>
-                  Activate helmet
+                  Activate Safety ID
                 </Button>
               </form>
             )}
@@ -282,35 +306,48 @@ export function ActivatePage() {
             {step === 'done' && activated && (
               <div className="flex flex-col items-start gap-4" data-testid="activation-done">
                 <CheckCircle2 className="h-10 w-10" aria-hidden />
-                <div>
-                  <p className="text-display-sm font-bold">
-                    <span className="font-mono">{activated.helmetCode}</span> is registered to you.
-                  </p>
-                  <p className="mt-1 text-body">
-                    {activated.emergencyEnabled
-                      ? 'Your emergency profile is already shown on this helmet.'
-                      : 'Emergency information is not active on this helmet yet. Finish it now so first responders see it when they scan the QR code.'}
-                  </p>
-                </div>
-                {activated.emergencyEnabled ||
-                activated.emergencyProfileStatus === 'ACTIVE' ||
-                activated.emergencyProfileStatus === 'DISABLED' ? (
-                  // Profile already set up (e.g. a second helmet): only this helmet's switch is left.
+                <dl className="grid w-full gap-3 rounded-xl bg-canvas-soft p-4">
+                  <div>
+                    <dt className="text-sm text-body">Safety ID</dt>
+                    <dd className="font-mono text-lg font-bold">{activated.safetyId.safetyCode}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-body">Emergency Sharing</dt>
+                    <dd className="font-medium">
+                      {activated.safetyId.emergencySharing ? 'On' : 'Not enabled yet'}
+                    </dd>
+                  </div>
+                  {activated.helmet && (
+                    <div>
+                      <dt className="text-sm text-body">Linked helmet</dt>
+                      <dd className="font-medium">
+                        {activated.helmet.model.brand} {activated.helmet.model.name}{' '}
+                        <span className="font-mono">{activated.helmet.helmetCode}</span>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                <p className="text-body">
+                  Finish your emergency setup so first responders see your information when they
+                  scan this Safety ID.
+                </p>
+                {readiness.data?.canEnable ? (
+                  // Profile already set up (e.g. a second Safety ID): only this switch is left.
                   <Button
                     size="lg"
                     className="w-full"
-                    onClick={() => navigate(`/app/helmets/${activated.id}`)}
+                    onClick={() => navigate(`/app/safety-ids/${activated.safetyId.id}`)}
                   >
-                    {activated.emergencyEnabled
-                      ? 'View my helmet'
-                      : 'Turn on sharing for this helmet'}
+                    Turn on sharing for this Safety ID
                   </Button>
                 ) : (
                   <Button
                     size="lg"
                     className="w-full"
                     onClick={() =>
-                      navigate(`/app/onboarding?helmet=${encodeURIComponent(activated.id)}`)
+                      navigate(
+                        `/app/onboarding?safetyId=${encodeURIComponent(activated.safetyId.id)}`,
+                      )
                     }
                   >
                     Complete emergency setup

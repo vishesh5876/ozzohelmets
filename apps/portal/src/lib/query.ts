@@ -18,6 +18,8 @@ export const keys = {
   dashboard: ['dashboard'] as const,
   helmets: ['helmets'] as const,
   helmet: (id: string) => ['helmets', id] as const,
+  safetyIds: ['safety-ids'] as const,
+  safetyId: (id: string) => ['safety-ids', id] as const,
   profile: ['emergency', 'profile'] as const,
   contacts: ['emergency', 'contacts'] as const,
   visibility: ['emergency', 'visibility'] as const,
