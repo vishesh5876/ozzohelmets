@@ -24,7 +24,7 @@ export function RecoveryCodeNotice({
       <div>
         <p className="text-display-sm font-bold">Your Recovery Code</p>
         <p className="mt-1 text-body">
-          This code can recover your account if you forget your password. It is not your helmet’s
+          This code can recover your account if you forget your password. It is not your
           Activation PIN.
         </p>
       </div>

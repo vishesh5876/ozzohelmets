@@ -277,7 +277,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await expect(b.getByTestId('timeline')).toContainText('Reported lost');
     let view = await scan(browser, helmet.qrUrl);
     await expect(view.page.getByRole('heading', { level: 1, name: 'Reported lost' })).toBeVisible();
-    expect(view.text).toContain('This helmet has been reported lost.');
+    expect(view.text).toContain('The helmet carrying this Safety ID has been reported lost.');
     expect(view.text).not.toContain(B_NAME);
     await view.page.context().close();
 
@@ -300,7 +300,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     const actions = b.getByTestId('helmet-actions');
     await expect(actions.getByRole('link', { name: 'Transfer' })).toHaveCount(0);
     const view = await scan(browser, helmet.qrUrl);
-    expect(view.text).toContain('This helmet has been reported stolen.');
+    expect(view.text).toContain('The helmet carrying this Safety ID has been reported stolen.');
     expect(view.text).not.toContain(B_NAME);
     await view.page.context().close();
     // The direct URL is refused too.
@@ -343,7 +343,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await expect(
       view.page.getByRole('heading', { level: 1, name: 'No longer active' }),
     ).toBeVisible();
-    expect(view.text).toContain('This helmet is no longer active.');
+    expect(view.text).toContain('The helmet carrying this Safety ID is no longer active.');
     expect(view.text).not.toContain(B_NAME);
     expect(view.text).not.toContain(A_NAME);
     await view.page.context().close();

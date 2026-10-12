@@ -61,8 +61,13 @@ async function manufactureOne(api: APIRequestContext) {
     await api.get(`${API}/admin/batches/${batchId}/export/manufacturing.csv`, { headers: auth })
   ).text();
   await api.post(`${API}/admin/batches/${batchId}/mark-printed`, { headers: auth });
-  const [helmetCode, , , , qrUrl, pin] = csv.trim().split('\r\n')[1]!.split(',');
-  return { helmetCode: helmetCode!, token: qrUrl!.split('/e/')[1]!, pin: pin! };
+  const [helmetCode, , , , qrUrl, pin, safetyCode] = csv.trim().split('\r\n')[1]!.split(',');
+  return {
+    helmetCode: helmetCode!,
+    safetyCode: safetyCode!,
+    token: qrUrl!.split('/e/')[1]!,
+    pin: pin!,
+  };
 }
 
 /** Runs the scheduled jobs once, exactly as ops would (`node dist/worker.js --once all`). */
@@ -80,7 +85,7 @@ function runWorkerOnce(): string {
 }
 
 test.describe.serial('Phase 6: QR analytics, review signals and alert workflow', () => {
-  let helmet: { helmetCode: string; token: string; pin: string };
+  let helmet: { helmetCode: string; safetyCode: string; token: string; pin: string };
   let helmetId: string;
 
   test.beforeAll(async () => {
@@ -143,19 +148,19 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
     await expect(page.getByTestId('chart-scans')).toBeVisible();
 
     await page.getByRole('link', { name: 'QR scans' }).click();
-    // The top-10 list ranks every helmet in the database, so on a long-lived dev database earlier
-    // runs can outrank this one; assert the list renders scanned helmets, then check this helmet
-    // specifically on Helmet activity below.
+    // The top-10 list ranks every Safety ID in the database, so on a long-lived dev database earlier
+    // runs can outrank this one; assert the list renders scanned Safety IDs, then check this one
+    // specifically on QR activity below.
     await expect(page.getByTestId('scan-analytics')).toContainText(
-      'Most scanned helmets in period',
+      'Most scanned Safety IDs in period',
     );
-    await expect(page.getByTestId('scan-analytics')).toContainText(/HM-[0-9A-Z]{4}-[0-9A-Z]{4}/);
+    await expect(page.getByTestId('scan-analytics')).toContainText(/SI-[0-9A-Z]{4}-[0-9A-Z]{4}/);
 
-    await page.getByRole('link', { name: 'Helmet activity' }).click();
+    await page.getByRole('link', { name: 'QR activity' }).click();
     await expect(page.getByTestId('risk-disclaimer')).toContainText('does not prove');
-    const row = page.getByTestId('activity-row').filter({ hasText: helmet.helmetCode });
+    const row = page.getByTestId('activity-row').filter({ hasText: helmet.safetyCode });
     await expect(row).toContainText('review priority');
-    await row.getByRole('link', { name: helmet.helmetCode }).click();
+    await row.getByRole('link', { name: helmet.safetyCode }).click();
 
     const detail = page.getByTestId('helmet-analytics');
     await expect(detail.getByTestId('risk-signal').first()).toContainText('High scan volume');
@@ -206,7 +211,7 @@ test.describe.serial('Phase 6: QR analytics, review signals and alert workflow',
     await phone.getByTestId('helmet-card').filter({ hasText: helmet.helmetCode }).click();
     const summary = phone.getByTestId('scan-summary');
     await expect(summary).toContainText(
-      /Your helmet QR was accessed \d+ times in the last 30 days\./,
+      /Your Safety ID QR was accessed \d+ times in the last 30 days\./,
     );
     await expect(summary).not.toContainText(/IP|device|location|risk|suspicious/i);
 

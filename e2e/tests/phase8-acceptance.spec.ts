@@ -27,6 +27,7 @@ const OWNER = 'Meera Acceptance';
 
 interface Helmet {
   helmetCode: string;
+  safetyCode: string;
   qrUrl: string;
   token: string;
   pin: string;
@@ -75,8 +76,14 @@ async function manufacture(api: APIRequestContext, quantity: number): Promise<He
     .split('\r\n')
     .slice(1)
     .map((line) => {
-      const [helmetCode, , , , qrUrl, pin] = line.split(',');
-      return { helmetCode: helmetCode!, qrUrl: qrUrl!, token: qrUrl!.split('/e/')[1]!, pin: pin! };
+      const [helmetCode, , , , qrUrl, pin, safetyCode] = line.split(',');
+      return {
+        helmetCode: helmetCode!,
+        safetyCode: safetyCode!,
+        qrUrl: qrUrl!,
+        token: qrUrl!.split('/e/')[1]!,
+        pin: pin!,
+      };
     });
 }
 
@@ -102,13 +109,13 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     const h = helmets[0]!;
     owner = await phone(browser);
     await owner.goto(h.qrUrl);
-    await owner.getByRole('link', { name: 'Activate helmet' }).click();
-    await expect(owner.getByTestId('setup-progress')).toContainText('Step 1 of 6: Verify helmet');
+    await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
+    await expect(owner.getByTestId('setup-progress')).toContainText('Step 1 of 6: Verify Safety ID');
 
     await owner.fill('#pin', '0000AAAA');
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(
-      owner.getByText('The Helmet ID or Activation PIN could not be verified.', { exact: false }),
+      owner.getByText('The Activation PIN could not be verified.', { exact: false }),
     ).toBeVisible();
 
     await owner.fill('#pin', h.pin);
@@ -117,15 +124,15 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     await owner.fill('#reg-email', `p8.${run}@example.com`);
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
-    await owner.getByRole('button', { name: 'Activate helmet' }).click();
+    await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
 
     await expect(
-      owner.getByText('It is not your helmet’s Activation PIN.', { exact: false }),
+      owner.getByText('It is not your Activation PIN.', { exact: false }),
     ).toBeVisible();
     await owner.getByTestId('recovery-saved').check();
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(owner.getByTestId('activation-done')).toContainText(
-      'Emergency information is not active on this helmet yet',
+      'Not enabled yet',
     );
     await owner.getByRole('button', { name: 'Complete emergency setup' }).click();
 
@@ -173,7 +180,7 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
       done.getByRole('heading', { name: 'Emergency information is active' }),
     ).toBeVisible();
     await expect(done).toContainText(h.helmetCode);
-    await expect(done).toContainText('QR emergency sharingOn');
+    await expect(done).toContainText('Emergency SharingOn');
     await expect(done).toContainText('Emergency contacts1');
     await expect(done.getByRole('link', { name: 'View emergency page' })).toHaveAttribute(
       'href',
@@ -215,11 +222,12 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
       await expect(call).toContainText('+919812340008');
       const box = (await call.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(56);
-      await expect(scan.getByText('Provided by helmet owner')).toBeVisible();
+      await expect(scan.getByText('Provided by the owner', { exact: true })).toBeVisible();
       await expect(scan.getByRole('link', { name: /Call emergency services/ })).toBeVisible();
-      // Product identity sits below the emergency facts.
+      // Person-focused: no product identity; the Safety ID sits below the emergency facts.
       const body = await scan.locator('main').innerText();
-      expect(body.indexOf('Rajesh Kumar')).toBeLessThan(body.indexOf(helmets[0]!.helmetCode));
+      expect(body).not.toContain(helmets[0]!.helmetCode);
+      expect(body.indexOf(helmets[0]!.safetyCode)).toBeGreaterThan(body.indexOf('Rajesh Kumar'));
       expect(await overflowsX(scan)).toBe(false);
       await scan.context().close();
     }
@@ -263,13 +271,13 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     const h = helmets[1]!;
     const page = await phone(browser);
     await page.goto(h.qrUrl);
-    await page.getByRole('link', { name: 'Activate helmet' }).click();
+    await page.getByRole('link', { name: 'Activate Safety ID' }).click();
     await page.fill('#pin', h.pin);
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.fill('#reg-email', `p8.skip.${run}@example.com`);
     await page.fill('#reg-new', PASSWORD);
     await page.fill('#reg-confirm', PASSWORD);
-    await page.getByRole('button', { name: 'Activate helmet' }).click();
+    await page.getByRole('button', { name: 'Activate Safety ID' }).click();
     await page.getByTestId('recovery-saved').check();
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.getByRole('link', { name: 'Do it later' }).click();
@@ -318,8 +326,8 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
       .first()
       .getByRole('link', { name: 'View helmet' })
       .click();
-    for (const section of ['Emergency protection', 'Identity', 'Ownership', 'Lifecycle'])
-      await expect(page.getByRole('heading', { name: section })).toBeVisible();
+    for (const section of ['Safety ID', 'Identity', 'Ownership', 'Lifecycle'])
+      await expect(page.getByRole('heading', { name: section, exact: true })).toBeVisible();
     expect(await overflowsX(page)).toBe(false);
     await ctx.close();
   });

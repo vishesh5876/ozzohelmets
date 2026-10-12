@@ -316,14 +316,14 @@ test.describe.serial('Phase 5: account management, support view and recovery gra
   }) => {
     const scan = await mobile(browser);
     await scan.goto(helmet.qrUrl);
-    await expect(scan.getByRole('heading', { name: 'Emergency profile' })).toBeVisible();
+    await expect(scan.getByRole('heading', { name: 'Emergency information' })).toBeVisible();
     await expect(scan.getByText(OWNER)).toBeVisible();
     await expect(scan.getByText(ALLERGY)).toBeVisible();
     await expect(scan.getByRole('link', { name: /Call Karan/ })).toHaveAttribute(
       'href',
       'tel:+919812300005',
     );
-    await expect(scan.getByText('Provided by helmet owner')).toBeVisible();
+    await expect(scan.getByText('Provided by the owner', { exact: true })).toBeVisible();
     await expect(scan.getByRole('button', { name: 'Copy medical information' })).toBeVisible();
     await expect(scan.getByRole('button', { name: 'Print emergency information' })).toBeVisible();
     const body = await scan.locator('body').innerText();

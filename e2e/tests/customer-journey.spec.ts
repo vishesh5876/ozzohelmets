@@ -92,15 +92,15 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await expect(page.getByText('Printed', { exact: true }).first()).toBeVisible();
   });
 
-  test('3–4: scanning the QR shows the helmet is ready to activate', async ({ browser }) => {
+  test('3–4: scanning the QR shows the Safety ID is ready to activate', async ({ browser }) => {
     owner = await mobile(browser);
     await owner.goto(first.qrUrl);
-    await expect(owner.getByRole('heading', { name: 'Helmet not activated' })).toBeVisible();
+    await expect(owner.getByRole('heading', { name: 'Safety ID not activated' })).toBeVisible();
     await expect(owner.getByText(/Ready to activate/)).toBeVisible();
   });
 
   test('5–9: PIN → email → password → account created → recovery code shown once', async () => {
-    await owner.getByRole('link', { name: 'Activate helmet' }).click();
+    await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
     await owner.fill('#pin', first.pin);
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(owner.getByText(/PIN accepted/)).toBeVisible();
@@ -112,7 +112,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.fill('#reg-name', OWNER);
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
-    await owner.getByRole('button', { name: 'Activate helmet' }).click();
+    await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
 
     await expect(
       owner.getByText('This code can recover your account if you forget your password.'),
@@ -122,7 +122,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await owner.getByTestId('recovery-saved').check();
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(owner.getByTestId('activation-done')).toContainText(
-      `${first.helmetCode} is registered to you.`,
+      first.helmetCode,
     );
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
   });
@@ -173,11 +173,11 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
 
   test('17–18: a second helmet joins the same account with only its PIN', async () => {
     await owner.goto(second.qrUrl);
-    await owner.getByRole('link', { name: 'Activate helmet' }).click();
+    await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
     await owner.fill('#pin', second.pin);
-    await owner.getByRole('button', { name: 'Add helmet to my account' }).click();
+    await owner.getByRole('button', { name: 'Add Safety ID to my account' }).click();
     await expect(owner.getByTestId('activation-done')).toContainText(
-      `${second.helmetCode} is registered to you.`,
+      second.helmetCode,
     );
     await owner.goto(portal('/app/helmets'));
     await expect(owner.getByTestId('helmet-card')).toHaveCount(2);
@@ -217,7 +217,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
 
     const scan = await mobile(browser);
     await scan.goto(first.qrUrl);
-    await expect(scan.getByRole('heading', { name: 'Emergency profile' })).toBeVisible();
+    await expect(scan.getByRole('heading', { name: 'Emergency information' })).toBeVisible();
     await expect(scan.getByText(OWNER)).toBeVisible();
     await expect(scan.getByText('Peanuts')).toBeVisible();
     await expect(scan.getByText('Arjun Rao')).toBeVisible();

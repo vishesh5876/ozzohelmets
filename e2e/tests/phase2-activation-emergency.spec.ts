@@ -93,8 +93,8 @@ test.describe
   test('anonymous scan shows the helmet is not activated', async ({ browser }) => {
     const scan = await anonymousMobilePage(browser);
     await scan.goto(helmet.qrUrl);
-    await expect(scan.getByRole('heading', { name: 'Helmet not activated' })).toBeVisible();
-    await expect(scan.getByText('This helmet has not yet been activated.')).toBeVisible();
+    await expect(scan.getByRole('heading', { name: 'Safety ID not activated' })).toBeVisible();
+    await expect(scan.getByText('This Safety ID has not been activated yet.')).toBeVisible();
     await expect(scan.getByRole('link', { name: /Call emergency/ })).toHaveAttribute(
       'href',
       /^tel:/,
@@ -109,8 +109,8 @@ test.describe
   }) => {
     owner = await anonymousMobilePage(browser);
     await owner.goto(helmet.qrUrl);
-    await owner.getByRole('link', { name: 'Activate helmet' }).click();
-    await expect(owner.getByText('Helmet identified from its QR code')).toBeVisible();
+    await owner.getByRole('link', { name: 'Activate Safety ID' }).click();
+    await expect(owner.getByText('Safety ID identified from its QR code')).toBeVisible();
 
     // PIN = proof of possession (preliminary check, nothing consumed yet).
     await owner.fill('#pin', helmet.pin.toLowerCase());
@@ -122,7 +122,7 @@ test.describe
     await owner.fill('#reg-email', EMAIL);
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
-    await owner.getByRole('button', { name: 'Activate helmet' }).click();
+    await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
 
     // Recovery code shown once; must be acknowledged before continuing.
     await expect(
@@ -135,7 +135,7 @@ test.describe
     await owner.getByTestId('recovery-saved').check();
     await cont.click();
     await expect(owner.getByTestId('activation-done')).toContainText(
-      `${helmet.helmetCode} is registered to you.`,
+      helmet.helmetCode,
     );
     await expect(owner.getByTestId('recovery-code')).toHaveCount(0);
 
@@ -195,7 +195,7 @@ test.describe
   test('anonymous scan shows only the approved information', async ({ browser }) => {
     const scan = await anonymousMobilePage(browser);
     await scan.goto(helmet.qrUrl);
-    await expect(scan.getByRole('heading', { name: 'Emergency profile' })).toBeVisible();
+    await expect(scan.getByRole('heading', { name: 'Emergency information' })).toBeVisible();
     await expect(scan.getByText(OWNER)).toBeVisible();
     await expect(scan.getByText('O+', { exact: true })).toBeVisible();
     await expect(scan.getByText('Penicillin')).toBeVisible();
@@ -207,7 +207,7 @@ test.describe
     await expect(scan.getByRole('heading', { name: /^Emergency contacts?$/ })).toBeVisible();
     await expect(
       scan.getByText(
-        'Emergency information and contacts were provided by the helmet owner and are not verified.',
+        'Emergency information and contacts were provided by the owner and are not verified.',
       ),
     ).toBeVisible();
     const body = await scan.locator('body').innerText();

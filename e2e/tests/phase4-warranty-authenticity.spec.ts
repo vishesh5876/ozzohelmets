@@ -358,7 +358,7 @@ test.describe.serial('Phase 4: Customer ID → warranty → verification → tra
     const page = await mobile(browser);
     await page.goto(`${PORTAL}/verify/ZZZZZZZZZZZZZZZZZZZZZZ`);
     await expect(
-      page.getByRole('heading', { name: 'We could not verify this Helmet ID' }),
+      page.getByRole('heading', { name: 'We could not verify this Safety ID' }),
     ).toBeVisible();
     await expect(page.getByText('Check the QR code or contact support.')).toBeVisible();
     expect((await page.locator('body').innerText()).toLowerCase()).not.toContain('counterfeit');

@@ -114,7 +114,7 @@ export function AlertCard({ alert }: { alert: RiskAlertDto }) {
     onSuccess: () => {
       setReason('');
       void qc.invalidateQueries({ queryKey: ['risk-alerts'] });
-      void qc.invalidateQueries({ queryKey: ['helmet-analytics'] });
+      void qc.invalidateQueries({ queryKey: ['safety-analytics'] });
     },
   });
   const open = OPEN.includes(alert.status);
