@@ -76,3 +76,13 @@ scenarios, including "crash scene stays below HIGH" and "busy emergency is never
 All thresholds are environment variables (`.env.example`, "Analytics, risk signals and the
 worker"). Raising a threshold only reduces signals; existing active signals clear on their own
 after the clear-after window.
+
+## Phase 9: per Safety ID
+
+Signals, assessments and alerts are computed per **Safety ID** (`safety_id_risk_signals`,
+`safety_id_risk_assessments`, `risk_alerts.safety_id`), so standalone stickers and cards are
+covered exactly like helmet QRs. Rules and thresholds are unchanged. Alert dedup keys are
+`safety:<id>:volume` and `safety:<id>:anomaly` (migrated from `helmet:<id>:…`). An alert about a
+standalone Safety ID has no helmet; the `risk_alerts_subject` check accepts `safety_id`
+(migration `20261012090000`, integration-tested). Signals never change a Safety ID's status or
+sharing.

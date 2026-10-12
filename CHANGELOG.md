@@ -3,6 +3,31 @@
 Format: one entry per production release, grouped by capability. Commit history is in git.
 Release procedure: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
+## Unreleased: Phase 9, Safety ID architecture + standalone emergency QR
+
+**Status:** not deployed. High-risk data migration: follow
+[SAFETY-ID-MIGRATION → Deployment plan](docs/SAFETY-ID-MIGRATION.md#3-deployment-plan).
+Latest migration: `20261012090000_phase9_risk_alert_subject`.
+
+- **Safety ID** (`SI-XXXX-XXXX`) is the emergency QR identity: QR token, Activation PIN,
+  owner, per-Safety-ID emergency sharing, scans and risk. Helmets keep product identity,
+  warranty and lifecycle and can be linked to one Safety ID. Standalone stickers and cards work
+  without a helmet.
+- Manufacturing: standalone and helmet-linked Safety ID batches; "Generate a Safety ID for each
+  helmet" (default on); Safety ID CSV and print sheet; escrow destroyed on mark printed. The
+  helmet manufacturing CSV keeps its Phase 8 columns (`safetyCode` appended).
+- Public: person-focused emergency page (no product data, Safety ID at the bottom, "View product
+  information" only when linked); standalone verify message.
+- Customer: "Activate your Safety ID"; My Safety IDs; independent sharing per Safety ID;
+  Transfer Codes for standalone Safety IDs; dashboard "N Safety IDs active / M need setup";
+  helmet page "View Safety ID".
+- Admin: Safety IDs and Safety ID Batches; PIN states; deactivate / reactivate / link / unlink /
+  QR integrity / revoke ownership; Safety IDs on the customer page and in search; analytics and
+  risk per Safety ID.
+- Migration: expand / migrate / switch, nothing dropped; existing printed QR codes and unused
+  PINs keep working (verify, reconcile and replay scripts).
+- Fixed: risk alerts about standalone Safety IDs; admin alert workflow refresh.
+
 ## v1.0.0: first production release (pilot)
 
 **Status:** release candidate. Tagged after the release checklist (deploy, smoke test, real-device

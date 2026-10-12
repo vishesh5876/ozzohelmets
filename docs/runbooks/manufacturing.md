@@ -1,4 +1,8 @@
-# Runbook: manufacturing a batch (QR labels + activation PINs)
+# Runbook: manufacturing a batch (Safety ID QR labels + activation PINs)
+
+Phase 9: every QR is a **Safety ID**. Helmet batches create one linked Safety ID per helmet by
+default; stickers and cards come from standalone Safety ID batches (section below). Details:
+[SAFETY-ID-MANUFACTURING](../SAFETY-ID-MANUFACTURING.md).
 
 Who: users with `batches:write`, `batches:generate` and `export:manufacturing` (SUPER_ADMIN,
 ADMIN). The manufacturing CSV contains **plaintext one-time activation PINs**. Treat it like
@@ -20,23 +24,25 @@ cash.
 
 1. **Model:** admin → Helmet models. Create or confirm the model and SKU (warranty months come
    from the model).
-2. **Batch:** admin → Batches → New. Pick the model, manufacturing date and quantity.
+2. **Batch:** admin → Batches → New. Pick the model, manufacturing date and quantity. Keep
+   **Generate a Safety ID for each helmet** ticked (default) unless these helmets get no QR.
 3. **Generate:** press Generate. The job runs in the background. Wait for `COMPLETED`.
    Generation hashes each PIN with Argon2id, one at a time per API process
-   (`ARGON2_MAX_CONCURRENCY=1`). Each hash costs about 150–200 ms of CPU, so expect several
-   minutes per 1,000 helmets. This is an estimate from the login measurements, so time your
-   first real batch. The limiter queue is FIFO, so a login waits behind at most the PIN hash in
+   (`ARGON2_MAX_CONCURRENCY=1`). Measured on a 4 vCPU development machine: about 27 PINs per
+   second (5,000 in 188 s); time your first real batch on the production server. The limiter queue is FIFO, so a login waits behind at most the PIN hash in
    progress, not the whole batch. Generate large batches outside peak hours anyway.
 4. **Export:** Batches → batch → Export manufacturing CSV
-   (`helmetCode,serialNumber,model,batchCode,qrUrl,activationPin`). The export is audited
+   (`helmetCode,serialNumber,model,batchCode,qrUrl,activationPin,safetyCode`; the first six
+   columns are unchanged from Phase 8, `qrUrl` and `activationPin` belong to the linked Safety
+   ID). The export is audited
    (`batch.export.manufacturing_csv`). Transfer it to the printer over an encrypted channel (SFTP, or an
    encrypted archive whose password is sent separately). **Never email the plain CSV.**
 5. **Print:** the QR code encodes `qrUrl`. The Helmet ID and Code128 barcode
    (`/admin/helmets/:id/barcode`) go inside the helmet. The PIN goes on the scratch-off or
    sealed card in the box, never on the outside.
 6. **Quality check:** scan 5 random labels from the printed run. Each must open
-   `/e/<token>` showing "not yet activated", and `/verify/<token>` must show the right model and
-   Helmet ID.
+   `/e/<token>` showing "Safety ID not activated", and `/verify/<token>` must show the right
+   model and Helmet ID.
 7. **Mark printed:** Batches → batch → Mark printed. Helmets become `PRINTED`, and the PIN
    escrow is **purged**: PINs can no longer be exported, and the CSV shows an empty
    `activationPin`. Do this as soon as printing has been confirmed.
@@ -85,3 +91,17 @@ uncovered, and never appear on the outside of the box or in the QR code.
 
 For the pilot (10–20 internal helmets) a sealed card is enough. Record the final decision here
 and in the manufacturing contract.
+
+## Standalone Safety IDs (stickers, cards)
+
+1. Admin → **Safety ID Batches** → **New Safety ID batch** → mode _Standalone_, quantity, notes →
+   **Create and generate**. Wait until the batch shows all Safety IDs generated.
+2. **Export CSV** (`safetyCode,qrUrl,activationPin,linkedHelmetCode,linkedHelmetSerial,model,batchCode`)
+   or **Print sheet** (HTML labels: QR, Safety ID and PIN with "Use this PIN once to activate
+   your Safety ID."). Both are audited and contain plaintext PINs: same handling as above.
+3. Print; scan five random labels (`/e/<token>` → "Safety ID not activated"; `/verify/<token>`
+   → "Safety ID verified", no product linked).
+4. **Mark printed** (escrow destroyed, Safety IDs become activatable). Destroy the files.
+
+For an existing helmet batch made without Safety IDs: Safety ID Batches → New → mode _For an
+existing helmet batch_ → pick the batch. Each helmet without a Safety ID gets one.

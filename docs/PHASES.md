@@ -115,3 +115,19 @@ base apps, tests for identifier generation. Detailed checklist: [`PHASE-1.md`](.
 - Ops: `scripts/production-smoke.sh`, `scripts/ozzo-health-report.sh`,
   `scripts/pilot-metrics.sql`; RELEASE-CHECKLIST, CHANGELOG (v1.0.0), PILOT, support SOP,
   manufacturing SOP additions (test helmets, physical PIN options).
+
+## P9 — Safety ID architecture + standalone emergency QR _(complete — see [`PHASE-9.md`](./PHASE-9.md))_
+
+- The **Safety ID** (`SI-XXXX-XXXX`) owns the QR token, Activation PIN (+ escrow), owner,
+  per-Safety-ID emergency sharing, scans and risk; a helmet keeps product identity, warranty
+  and lifecycle and can be linked to one Safety ID. Standalone Safety IDs (stickers, cards) work
+  without any helmet.
+- Generation: standalone / helmet-linked Safety ID batches and "Generate a Safety ID for each
+  helmet" (default on); CSV + print sheet; escrow purged on mark printed.
+- Expand / migrate / switch migration with nothing dropped: tokens identical, unused PINs keep
+  working, owners and sharing unchanged; verify, reconcile and public replay scripts.
+- Person-focused emergency page; standalone verify message; activation, sharing, transfer
+  (Transfer Code), analytics and risk per Safety ID; My Safety IDs; admin Safety IDs and Safety
+  ID Batches; RBAC, audit, account export.
+- Docs: [SAFETY-ID](./SAFETY-ID.md), [SAFETY-ID-MANUFACTURING](./SAFETY-ID-MANUFACTURING.md),
+  [SAFETY-ID-MIGRATION](./SAFETY-ID-MIGRATION.md). Not deployed yet (high-risk deployment plan).

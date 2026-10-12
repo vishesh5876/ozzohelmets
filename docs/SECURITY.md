@@ -357,3 +357,23 @@ Summary (details in [PHASE-7](PHASE-7.md), [VPS-DEPLOYMENT](VPS-DEPLOYMENT.md),
   lines with zero sensitive values found.
 - **Dependencies:** audit reduced to 0 critical; the remaining findings are dev-only or the Prisma
   CLI (see PHASE-7).
+
+## 18. Phase 9 — Safety IDs
+
+- **Same identifier and PIN security as Phase 1**, now on `safety_ids`: 22-symbol base62 token
+  (~131 bits), checksummed `SI-` code (not a secret), 8-symbol PIN as Argon2id + pepper,
+  per-Safety-ID attempt counter and lock, global Argon2 concurrency cap.
+- **No oracle**: before the PIN is proven, unknown, consumed, unprinted, deactivated and
+  conflicting (linked helmet owned by someone else) Safety IDs all get the same answer.
+- **PIN escrow**: AES-256-GCM with AAD = Safety ID id (migrated rows keep the helmet UUID, so the
+  ciphertext stays valid); purged on mark printed or activation; rotated by
+  `cli rotate-encryption` together with the helmet escrow.
+- **Exports** (`safety-ids:export`): audited with the number of PINs, `no-store`, attachment; the
+  print sheet has a strict CSP (`default-src 'none'`), escaped content, no scripts.
+- **Authorisation**: customer endpoints check current ownership and answer 404 for anything else
+  (no ownership oracle); Transfer Codes need recent password confirmation, are shown once,
+  stored hashed and expire; admin deactivate and revoke ownership need recent admin
+  re-authentication; every admin action is audited.
+- **Emergency payload minimisation**: no product fields; `/verify` never shows personal data.
+- **Account deletion** switches off sharing on every Safety ID and helmet; the account export
+  includes Safety IDs and their ownership history.

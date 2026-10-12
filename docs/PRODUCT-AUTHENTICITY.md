@@ -117,3 +117,14 @@ helmets are probably not on the owner's head; replaced/retired ones are out of s
   about the physical helmet. Suspicious scan activity does not prove a helmet is counterfeit.
 - The helmet analytics page shows product reports next to scan signals with a correlation note
   ("Review recommended"), never a verdict.
+
+## Phase 9 notes
+
+- `/verify/<token>` resolves the **Safety ID**. Linked: "✓ Product identity verified" with the
+  helmet's model, batch, warranty and lifecycle as before. Standalone: "✓ Safety ID verified —
+  This Safety ID is registered with Ozzo. No registered product is currently linked to this
+  Safety ID." Either way the page never claims more than "registered identity verified".
+- The emergency page carries no product data; it links to the verify page ("View product
+  information") only when a helmet is linked.
+- Product reports from a QR record the Safety ID (`product_reports.safety_id`) and the linked
+  helmet when there is one.

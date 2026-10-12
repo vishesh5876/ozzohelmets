@@ -145,3 +145,22 @@ DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<db>?schema=public&sslm
 
 `migrate deploy` only applies committed migrations (non-destructive). Never run the dev seed
 against a shared or production database.
+
+## Phase 9: Safety ID tables
+
+| Table                                                                          | Purpose / key constraints                                                                                                                          |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safety_ids`                                                                   | `safety_code` unique (format check `SI-XXXX-XXXX`), `public_token` unique, `status`, PIN hash, used flag, attempts, lock, QR integrity, `batch_id` |
+| `safety_id_activation_secrets`                                                 | PIN escrow (AES-256-GCM, AAD = Safety ID id); deleted on mark printed or activation                                                                |
+| `safety_id_batches`                                                            | `SID-YYYY-NNNNN` (sequence `safety_id_batch_code_seq`), mode STANDALONE / HELMET_LINKED, optional `helmet_batch_id`, durable progress              |
+| `safety_id_helmet_links`                                                       | link history; partial unique indexes: one current link per Safety ID and per helmet                                                                |
+| `safety_id_ownerships`                                                         | ownership history; partial unique: one ACTIVE owner per Safety ID; source ACTIVATION / TRANSFER / ADMIN_ASSIGNMENT / MIGRATION                     |
+| `safety_id_emergency_settings`                                                 | unique (Safety ID, user): the per-Safety-ID sharing switch                                                                                         |
+| `safety_id_transfers`                                                          | Transfer Codes (hashed, expiring) for standalone Safety IDs                                                                                        |
+| `safety_id_scan_daily`, `safety_id_risk_assessments`, `safety_id_risk_signals` | analytics and risk per Safety ID                                                                                                                   |
+
+Additive changes: `helmet_scans.safety_id` (FK, indexed; `helmet_id` now nullable),
+`risk_alerts.safety_id` (subject check widened in `20261012090000`), `product_reports.safety_id`,
+`helmet_batches.with_safety_ids`; `helmets.public_token` and `helmets.activation_pin_hash`
+nullable (a helmet may have no QR). Nothing was dropped. Migration and backfill:
+[SAFETY-ID-MIGRATION](SAFETY-ID-MIGRATION.md).

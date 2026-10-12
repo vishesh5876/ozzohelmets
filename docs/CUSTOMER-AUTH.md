@@ -169,3 +169,15 @@ customer`, `sid` (token family = session id). Held in SPA memory only. `Customer
 The SPA restores the session with one silent refresh on load, retries a 401 once after a
 single-flight refresh (parallel refreshes would trip reuse detection), and never writes tokens to
 storage. The `next` parameter after login only accepts same-site relative paths.
+
+## Phase 9 notes (Safety IDs)
+
+- Activation creates the account from a **Safety ID** and its PIN ("Activate your Safety ID");
+  a signed-in customer adds more Safety IDs with only the PIN (`/add-safety-id`). The account
+  email rules are unchanged.
+- Sign-in identifiers are unchanged: email, Customer ID or the Helmet ID of a helmet the customer
+  owns. Safety ID codes are **not** sign-in identifiers (a sticker code is easy to read off).
+- Claiming a standalone Safety ID with a Transfer Code can create an account
+  (`/customer/safety-id-transfers/claim/register`): email + password + a new recovery code shown
+  once, exactly like activation.
+- Security events: `SAFETY_ID_ACTIVATED`, `SAFETY_ID_TRANSFERRED_OUT`, `SAFETY_ID_RECEIVED`.

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AdminRole } from '@helmet/types';
+import { RiskEvaluationService } from '../src/modules/analytics/risk-evaluation.service';
 import { EncryptionService } from '../src/security/encryption.service';
 import {
   bearer,
@@ -179,6 +180,27 @@ describe('Phase 9 — Safety ID (e2e)', () => {
         .get(`/api/v1/customer/safety-ids/${solo.id}`)
         .set(bearer(other.token))
         .expect(404);
+    });
+    it('raises a deduplicated risk alert about a standalone Safety ID (no helmet subject)', async () => {
+      const s = await createTestSafetyId(ctx);
+      await ctx.prisma.helmetScan.createMany({
+        data: Array.from({ length: 25 }, (_, i) => ({
+          helmetId: null,
+          safetyId: s.id,
+          scanType: 'EMERGENCY_PAGE' as const,
+          scannedAt: new Date(Date.now() - (i % 50) * 1000),
+          ipHash: 'a'.repeat(64),
+          userAgent: 'Mobile Safari on iOS',
+          deviceCategory: 'MOBILE' as const,
+        })),
+      });
+      const risk = ctx.app.get(RiskEvaluationService);
+      await risk.evaluate();
+      await risk.evaluate();
+      const alerts = await ctx.prisma.riskAlert.findMany();
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toMatchObject({ safetyId: s.id, helmetId: null });
+      expect(alerts[0]!.dedupKey).toBe(`safety:${s.id}:volume`);
     });
   });
 

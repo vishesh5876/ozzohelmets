@@ -131,3 +131,22 @@ first; everything else returns a status message only. See
 - Account suspension/lock never changes helmet status or public visibility. Marking an account
   deleted moves its ACTIVE helmets back to ACTIVATED (sharing off) with reason code
   `EMERGENCY_DISABLED`; ownership is retained.
+
+## Phase 9: helmet lifecycle and the linked Safety ID
+
+The helmet lifecycle is unchanged and stays a **product** lifecycle. The emergency QR now
+belongs to the linked Safety ID ([SAFETY-ID](SAFETY-ID.md)); the helmet status affects it only
+through the public-state rule:
+
+| Linked helmet status   | Emergency page of the linked Safety ID                |
+| ---------------------- | ----------------------------------------------------- |
+| LOST / STOLEN          | "reported lost / stolen", no profile (as before)      |
+| DAMAGED / RECALLED     | profile shown if shared, with the warning (as before) |
+| REPLACED / DEACTIVATED | "no longer active", no profile                        |
+| other                  | Safety ID status and sharing decide                   |
+
+Owner actions keep mirroring onto the Safety ID: marking lost or stolen keeps the sharing switch
+(the page shows the lost/stolen notice), found/recovered restores the profile, retiring the
+helmet or replacing it ends the link's public effect, a helmet transfer moves the linked Safety
+ID with sharing off for the new owner. A standalone Safety ID never has helmet states. ACTIVE /
+ACTIVATED on the helmet are kept in step with the Safety ID's sharing (dual-write).

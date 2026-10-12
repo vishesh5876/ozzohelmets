@@ -1,15 +1,18 @@
 # Helmet Emergency Identity & Product Authentication Platform
 
-Every physical helmet gets a unique, cryptographically generated identity — internal UUID,
-human-readable Helmet ID (`HM-A8F3-KL92`), ≥128-bit QR token, Code128 barcode, one-time
-activation PIN, serial number — bound to a model/SKU and a manufacturing batch. Customers activate
-and own helmets; first responders scan the QR code to see only what the owner chose to share.
+A **Safety ID** (`SI-A8F3-KL92`) is an emergency QR identity: a ≥128-bit QR token and a one-time
+Activation PIN, owned by a person. First responders scan it and see only what the owner chose to
+share. A Safety ID can come with a helmet or on its own as a sticker or card. Every physical
+helmet keeps its product identity — internal UUID, Helmet ID (`HM-A8F3-KL92`), Code128 barcode,
+serial number, model/SKU, batch, warranty and lifecycle — and can be linked to one Safety ID.
 
-**Status: P1–P6 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
+**Status: P1–P9 complete** — foundation + manufacturing, customer activation (QR + one-time PIN
 → email + password account) + emergency profile, ownership + lifecycle, warranty + product
-authenticity, customer experience + admin support + security hardening, and analytics + QR abuse
-detection (with a scheduled worker process). Three surfaces only: Admin, Customer, public QR. See
-[`docs/PHASES.md`](docs/PHASES.md).
+authenticity, customer experience + admin support + security hardening, analytics + QR abuse
+detection (with a scheduled worker process), VPS production deployment, production acceptance,
+and the **Safety ID architecture with standalone emergency QR** (Phase 9). Three surfaces only:
+Admin, Customer, public QR. See [`docs/PHASES.md`](docs/PHASES.md) and
+[`docs/SAFETY-ID.md`](docs/SAFETY-ID.md).
 
 ```
 apps/
@@ -160,9 +163,26 @@ QR label test are required before public customers
 3. **Helmet analytics page**: 30-day scan chart, signals with observed value vs threshold, alerts
    (acknowledge / investigate / assign / resolve or dismiss with a reason), product reports and
    the admin-only **QR integrity** marker (normal / under review / compromised).
-4. **Customer helmet page**: a neutral "Your helmet QR was accessed N times in the last 30 days."
+4. **Customer Safety ID and helmet pages**: a neutral "Your Safety ID QR was accessed N times in the last 30 days."
 5. Emergency pages are never disabled by analytics. Suspicious scan activity does **not** prove a
    physical helmet is counterfeit — everything is "review recommended".
+
+## Phase 9 walkthrough (Safety IDs)
+
+1. **Admin → Safety ID Batches → New**: a standalone batch (stickers / cards) generates Safety
+   IDs in the background; export the CSV or the print sheet ("Use this PIN once to activate your
+   Safety ID."), then **Mark printed** (the PIN escrow is destroyed). Helmet batches have
+   "Generate a Safety ID for each helmet" on by default.
+2. Scan a printed QR: "Safety ID not activated" → **Activate Safety ID** → PIN → account →
+   "Your Safety ID is activated." (Emergency Sharing: Not enabled yet) → emergency setup.
+3. The emergency page shows the person (facts, contacts, call buttons) and the Safety ID at the
+   bottom; "View product information" appears only when a helmet is linked.
+4. **My Safety IDs**: every Safety ID with its own sharing switch; standalone ones can be given
+   away with a one-time Transfer Code (`/claim?type=safety-id`).
+5. **Admin → Safety IDs**: search by Safety ID, Helmet ID, Customer ID or batch; PIN state,
+   owner, linked helmet, history; deactivate / reactivate / link / unlink / QR integrity.
+6. Upgrading an existing installation: [SAFETY-ID-MIGRATION](docs/SAFETY-ID-MIGRATION.md)
+   (existing printed QR codes and unused PINs keep working).
 
 ## Quality gates
 
@@ -175,6 +195,7 @@ pnpm test:e2e:browser    # Playwright journey (with `pnpm dev` running)
 ## Key decisions (details in docs)
 
 - **Modular monolith** with service-shaped NestJS modules — [ARCHITECTURE](docs/ARCHITECTURE.md)
+- **Safety ID = emergency identity, helmet = optional linked product**: the Safety ID owns the QR token, Activation PIN, owner, per-Safety-ID sharing, scans and risk; migrated without changing a single printed token or PIN — [SAFETY-ID](docs/SAFETY-ID.md), [SAFETY-ID-MIGRATION](docs/SAFETY-ID-MIGRATION.md)
 - **Helmet ID** `HM-XXXX-XXXY`: 7 CSPRNG symbols from an unambiguous 31-char alphabet + a mod-31
   weighted check symbol; **QR token** 22 base62 chars (~131 bits) — [SECURITY §2](docs/SECURITY.md)
 - **Activation PINs** stored only as Argon2id + pepper; plaintext kept in a short-lived AES-256-GCM
@@ -237,4 +258,6 @@ retention period, owner notifications, QR replacement process),
 [Runbooks](docs/runbooks/) · **Phase 8:** [Phase 8](docs/PHASE-8.md) ·
 [Release checklist](docs/RELEASE-CHECKLIST.md) · [Pilot](docs/PILOT.md) ·
 [Support SOP](docs/runbooks/support.md) · [PM2 deployment](docs/PM2-DEPLOYMENT.md) ·
-[Changelog](CHANGELOG.md)
+[Changelog](CHANGELOG.md) · **Phase 9:** [Phase 9](docs/PHASE-9.md) ·
+[Safety ID](docs/SAFETY-ID.md) · [Safety ID manufacturing](docs/SAFETY-ID-MANUFACTURING.md) ·
+[Safety ID migration](docs/SAFETY-ID-MIGRATION.md)

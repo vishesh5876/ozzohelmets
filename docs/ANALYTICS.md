@@ -85,7 +85,7 @@ No IP, location, device or risk detail; customers are never notified automatical
 
 ## Performance
 
-`apps/api/scripts/perf-analytics.ts` seeds a dedicated `*_perf` database (refuses any other) and
+Phase 6 baseline: `apps/api/scripts/perf-analytics.ts` (replaced in Phase 9 by `perf-safety-id.ts`, see below) seeded a dedicated `*_perf` database (refuses any other) and
 times the jobs and read paths, counting every SQL statement. Results for 1,000 helmets / 100,000
 scans (10 deliberately hot helmets) on the development container:
 
@@ -122,3 +122,34 @@ testing are counted in "new customers" (accounts are not tied to a model). Alert
 staff scanning a test helmet are closed with **Dismiss as internal acceptance test**, which is
 kept in history. Already-aggregated past days keep their numbers until re-aggregated; the
 worker recomputes today and yesterday on every run.
+
+## Phase 9: analytics per Safety ID
+
+Scans record `safety_id` (plus `helmet_id` when linked). Aggregates move to
+`safety_id_scan_daily`; admin "QR activity" (`/admin/analytics/safety-ids`) lists Safety IDs
+with their linked helmet or "Standalone"; the detail page is keyed by `SI-` code (helmet routes
+stay as aliases). Platform stats: active emergency profiles = ACTIVE Safety IDs; unique QRs
+scanned = unique Safety IDs. The customer summary is per Safety ID ("Your Safety ID QR was
+accessed N times in the last 30 days."). `helmet_scan_daily` is still built, as the per-helmet product view of scans made while a QR was linked to that helmet.
+
+Performance (Phase 9 script `apps/api/scripts/perf-safety-id.ts`, 6,000 Safety IDs, 100,000
+scans, 10 hot Safety IDs; replaces `perf-analytics.ts`, whose numbers above are the Phase 6
+baseline for 1,000 helmets):
+
+| Step                                      | ms    | queries |
+| ----------------------------------------- | ----- | ------- |
+| aggregate: 30-day backfill (31 days)      | 2,479 | 96      |
+| aggregate: steady state (today+yesterday) | 146   | 7       |
+| risk.evaluate (first run, 10 flagged)     | 407   | 294     |
+| risk.evaluate (repeat, dedup)             | 264   | 234     |
+| retention.cleanup                         | 30    | 5       |
+| GET overview 30d                          | 18    | 9       |
+| GET scans 30d                             | 136   | 11      |
+| GET QR activity (25)                      | 14    | 8       |
+| GET Safety ID analytics detail            | 13    | 12      |
+| GET Safety ID scans (50)                  | 6     | 3       |
+| GET risk alerts (25)                      | 4     | 3       |
+
+The backfill and "scans 30d" are slower than the Phase 6 baseline: six times as many QR
+identities, and the 30-day scan view counts distinct Safety IDs. Both stay well inside the
+worker interval and admin page budgets; read queries remain constant-count.

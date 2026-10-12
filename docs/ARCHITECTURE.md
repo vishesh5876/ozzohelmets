@@ -322,3 +322,31 @@ entrypoint `dist/cli.js` of the same image), `security/concurrency-limiter` (Arg
 | 57  | **Migrations as a one-off deploy step, never on boot in production** | Explicit, logged, preceded by a backup; read-only containers.                                      |
 | 58  | **In-house Prometheus registry with route-template labels**          | No new dependency, no high-cardinality or personal data in metrics.                                |
 | 59  | **Local filesystem uploads behind the existing storage abstraction** | No object-store dependency; S3-compatible storage stays a drop-in option.                          |
+
+## Phase 9 additions (Safety ID)
+
+The emergency QR identity moved from the helmet to a first-class **Safety ID**
+([SAFETY-ID](SAFETY-ID.md), [PHASE-9](PHASE-9.md)):
+
+```
+Customer ─ profile, contacts, visibility (account-wide)
+   ├─ SafetyIdOwnership ─ Safety ID ─ token, PIN (+escrow), status, sharing switch, scans, risk
+   │                          └─ SafetyIdHelmetLink (0..1) ─┐
+   └─ HelmetOwnership ──────────────────────────────── Helmet ─ product, warranty, lifecycle
+```
+
+- `modules/safety-ids`: `SafetyIdCoreService` (global; locking, status transitions, sharing
+  switch with dual-write to the linked helmet, ownership start/end, link/unlink),
+  `SafetyIdGenerationService` (global; chunked resumable generation), customer and admin
+  controllers, batches, Standalone transfer service.
+- Activation, emergency profile enable/disable, readiness, public emergency/verify, exports,
+  batches, analytics, risk, product reports, customer account (health, export) and admin
+  customers resolve the Safety ID first; helmet lifecycle, replacement, ownership admin and
+  helmet transfers mirror their effect onto the linked Safety ID.
+- Lock order everywhere: helmet → helmet ownership → Safety ID → Safety ID ownership.
+- Public data flow: `/e/<token>` → Safety ID by token → status → linked helmet lifecycle →
+  owner → sharing switch → sanitised person-only payload (`public-emergency:v3` cache).
+- Expand / migrate / switch: the Phase 8 helmet columns and tables stay (dual-write for linked
+  Safety IDs) for one release so the previous build can be rolled back to
+  ([SAFETY-ID-MIGRATION](SAFETY-ID-MIGRATION.md)).
+- Decisions 60–73 in [PHASE-9](PHASE-9.md#3-key-decisions).

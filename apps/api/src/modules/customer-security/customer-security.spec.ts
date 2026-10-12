@@ -111,7 +111,7 @@ describe('public emergency summary', () => {
         'Allergies: Penicillin',
         'Medical Conditions: Asthma',
         'Emergency Contact: Rajesh Sharma (Brother) +919800000001',
-        'Provided by the helmet owner; not verified.',
+        'Provided by the owner; not verified.',
       ].join('\n'),
     );
     expect(buildEmergencySummaryText({})).toBe('');

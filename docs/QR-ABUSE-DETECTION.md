@@ -79,3 +79,14 @@ while no proxy is trusted. See DEPLOYMENT.md.
 `risk-alerts.spec.ts` (transitions, dedup, suppression), `phase6-analytics.e2e-spec.ts`
 (enumeration and scraping over HTTP with cached emergency page still served, alert workflow,
 QR integrity with emergency page unaffected), Playwright `phase6-analytics.spec.ts`.
+
+## Phase 9 notes
+
+- Copied-code and scraping detection now key on the **Safety ID** behind the token; the token
+  itself is still never stored in analytics, and IPs only as HMAC.
+- QR integrity (normal / under review / compromised) belongs to the Safety ID
+  (`POST /admin/safety-ids/:id/qr-integrity`, or the analytics page). A compromised standalone
+  sticker is handled the same way: notice on `/verify` only, emergency page unchanged; support
+  can deactivate it (password confirmed) and issue a new one.
+- Enumeration limits are unchanged; unknown `SI-` codes typed into activation or claim forms get
+  the same generic answers as unknown tokens.

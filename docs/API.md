@@ -312,3 +312,26 @@ database-served public emergency read.
 ## Planned
 
 Label printing; warranty claims.
+
+## Phase 9 — Safety IDs
+
+Full table: [SAFETY-ID → API](SAFETY-ID.md#8-api). Summary:
+
+- Public URLs unchanged (`/public/emergency/:token`, `/public/verify/:token`). The emergency
+  payload is person-only: `state`, `message`, `profile`, `contacts`, `warning`,
+  `safetyId: { code }`, `linkedProduct: boolean`. The verify payload adds
+  `safetyId: { code }` and, for a standalone Safety ID, no `product`.
+- Customer: `GET /customer/safety-ids[/:id]`, `GET …/:id/qr`, `POST …/:id/emergency/enable|disable`,
+  `POST|DELETE …/:id/transfer` (recent auth), `POST /customer/safety-id-transfers/claim[/register]`,
+  `GET …/:id/scan-summary`; activation `POST /customer/activation/add-safety-id`
+  (`add-helmet` kept as an alias); `POST /customer/emergency-profile/enable` accepts
+  `{ safetyIds?, helmetIds? }`; the dashboard returns `safetyIds` and
+  `safetyIdSummary { total, active, needsSetup }`.
+- Admin: `/admin/safety-ids` (list, search, metrics, detail, qr, deactivate, reactivate,
+  qr-integrity, link, unlink, revoke-ownership, cancel transfer) and `/admin/safety-id-batches`
+  (list, create, generate, mark-printed, CSV, print sheet); analytics
+  `/admin/analytics/safety-ids[/:code[/scans|/qr-integrity]]` with `/helmets/…` aliases. Helmet
+  batch create accepts `withSafetyIds` (default `true`).
+- New error codes: `SAFETY_ID_NOT_FOUND`, `SAFETY_ID_ALREADY_ACTIVATED`,
+  `SAFETY_ID_NOT_ACTIVATABLE`, `SAFETY_ID_HAS_OWNER`, `SAFETY_ID_LINK_CONFLICT`,
+  `SAFETY_ID_ACTION_NOT_ALLOWED`, `SAFETY_ID_NOT_TRANSFERABLE`.
