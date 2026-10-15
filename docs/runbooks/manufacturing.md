@@ -96,12 +96,18 @@ and in the manufacturing contract.
 
 1. Admin → **Safety ID Batches** → **New Safety ID batch** → mode _Standalone_, quantity, notes →
    **Create and generate**. Wait until the batch shows all Safety IDs generated.
-2. **Export CSV** (`safetyCode,qrUrl,activationPin,linkedHelmetCode,linkedHelmetSerial,model,batchCode`)
-   or **Print sheet** (HTML labels: QR, Safety ID and PIN with "Use this PIN once to activate
-   your Safety ID."). Both are audited and contain plaintext PINs: same handling as above.
-3. Print; scan five random labels (`/e/<token>` → "Safety ID not activated"; `/verify/<token>`
-   → "Safety ID verified", no product linked).
-4. **Mark printed** (escrow destroyed, Safety IDs become activatable). Destroy the files.
+2. Review the **Print sheets** card: sheet count (`ceil(units / 48)`, last sheet units), the
+   48-up warning, **Preview unit** / **Preview sheet** (sample data) and the vendor layout
+   (defaults: 12 × 18 in, 4 × 12, no margins/gutters). The OZZO logo asset must show as loaded.
+3. **Export CSV** (`safetyCode,publicQrUrl,activationPin,qrPayload,batchCode,unitIndex,sheet,sheetRow,sheetColumn,linkedHelmetCode,linkedHelmetSerial,model`;
+   import `activationPin` as **text** — six digits with leading zeros) and **Download 12 × 18
+   Print PDF** (true size: print at 100 %, never "fit to page"). Send **Download cut guide** if
+   the vendor needs the die lines. Both PIN files are audited: same handling as above.
+4. Physical QA on the first real sheet: measurements, cover fit and the five-point scan test
+   ([SAFETY-ID-PRINT § 9](../SAFETY-ID-PRINT.md#9-physical-qa-required-before-mass-production)).
+   Reprints with the same PINs are possible until step 5.
+5. **Mark printed** → confirm "Printing completed?" (escrow destroyed for good, Safety IDs become
+   activatable; downloading never does this). Destroy the files.
 
 For an existing helmet batch made without Safety IDs: Safety ID Batches → New → mode _For an
 existing helmet batch_ → pick the batch. Each helmet without a Safety ID gets one.

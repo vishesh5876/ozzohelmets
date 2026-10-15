@@ -9,6 +9,7 @@ helmet, or to none (a free standalone sticker or card). Existing printed QR code
 unused PINs keep working unchanged.
 
 Detailed references: [SAFETY-ID](SAFETY-ID.md) (domain and rules) ·
+[SAFETY-ID-PRINT](SAFETY-ID-PRINT.md) (final sticker, six-digit PIN, 48-up print, physical QA) ·
 [SAFETY-ID-MIGRATION](SAFETY-ID-MIGRATION.md) (Phase 8 → 9 data migration and deployment) ·
 [SAFETY-ID-MANUFACTURING](SAFETY-ID-MANUFACTURING.md) (generation, print, PIN escrow).
 
@@ -107,6 +108,43 @@ Not deployed by this phase.
   its helmet.
 - The old helmet QR/PIN columns and `helmet_*` emergency/analytics tables are still written
   (dual-write) and must be removed in a later, separate cleanup release.
-- Physical label format for standalone stickers/cards and the PIN presentation are open
-  business decisions (runbooks/manufacturing.md).
+- Physical label format: decided by the final print update (§ 5 below).
 - Generation speed is bound by Argon2id (about 27 PINs/s on 4 vCPU with the default cap).
+
+## 5. Final print update: Safety ID sticker, six-digit PIN, 48-up
+
+Overrides the earlier physical-print sections (A4 HTML sheet removed). Architecture unchanged:
+Safety ID standalone or linked, person-first emergency page, product data only on `/verify`.
+Details: [SAFETY-ID-PRINT](SAFETY-ID-PRINT.md).
+
+| #   | Decision                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 74  | **New PINs: exactly six digits**, `crypto.randomInt(0, 10^6)` zero-padded, always a string. Same Argon2id + pepper hash and AES-GCM escrow. Legacy 8-symbol PINs still verify (no forced change).                  |
+| 75  | **Third lockout layer: IP + Safety ID** (Redis, escalating, temporary) next to the per-Safety-ID row lock and per-IP/customer budgets; success clears the row and pair counters.                                   |
+| 76  | **One answer before the PIN is proven**: unknown, wrong PIN and ineligible all return `INVALID_ACTIVATION_PIN` (unknown also pays one dummy Argon2 verify). Supersedes the generic NOT_ACTIVATABLE pre-PIN answer. |
+| 77  | **`unit_index`** (additive migration `20261015090000`, backfilled in previous export order): deterministic print/export order; CSV rows = PDF positions.                                                           |
+| 78  | **Print engine = display list → pdfkit (vector, true size) and SVG (preview only)**; geometry derived from `sticker-design.ts` and validated (cover = target + 1.5 mm, quiet zone untouched).                      |
+| 79  | **Rotated Safety ID** on the credential panel so it stays visible beside the cover and the QR keeps the full height (19.15 mm incl. quiet zone).                                                                   |
+| 80  | **Logo only from the original vector asset** (`PRINT_LOGO_SVG_PATH`, strict loader, first Z recoloured `#EC1C22`); production PDFs refused without it. The asset was not available in this phase.                  |
+| 81  | **No PIN-bearing reprint after escrow purge** (`PIN_ESCROW_PURGED`); export never marks printed.                                                                                                                   |
+
+### Acceptance additions
+
+| Requirement                                         | Status / evidence                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| All new PINs six numeric digits; leading zeros work | ✅ unit (format, CSPRNG, chi-square, `004281`) + integration (`004281` activates, `4281` doesn't)                   |
+| Legacy PINs remain valid                            | ✅ integration (`K7M2PQ9X`) + every older suite's fixtures use legacy PINs                                          |
+| Unit exactly 4.5 × 1 in, cover inside, not 5.5 in   | ✅ unit tests (324 × 72 pt, zones sum to 4.5 in)                                                                    |
+| Cover targets QR/PIN, contains no PIN               | ✅ geometry rules + unit tests (cover = target + 1.5 mm; cover words only REMOVE/ONLY IN/EMERGENCY/OPEN)            |
+| Logo geometry preserved; first Z `#EC1C22`          | ⚠️ engine verified with a test fixture; **original OZZO vector not supplied** — production PDFs refused until it is |
+| 12 × 18 48-up PDF; 48 = complete units              | ✅ unit + integration (1/4/47/48/49/96/100/1000/5000 units; page 1296 × 864 pt; blanks blank)                       |
+| QR = real production URL; true-size PDF             | ✅ decoded from rendered output (unit test) and from the real PDF at 300 dpi at five sheet positions                |
+| PDF/CSV order match; export audited; escrow purge   | ✅ integration (`phase9-print.e2e-spec.ts`)                                                                         |
+| Physical cover-alignment checklist exists           | ✅ SAFETY-ID-PRINT § 9                                                                                              |
+| Real printed-sheet test before mass production      | ❌ **not done** — requires a printed 12 × 18 sheet on production material                                           |
+
+**Not print-ready for mass production** until the original logo asset is configured and one
+physical sheet has been printed, measured, covered/uncovered and scanned.
+
+Tests after this update: unit 350 (42 suites), integration 211 (21 suites, incl.
+`phase9-print.e2e-spec.ts`), Playwright 80; typecheck, lint, format and build clean.

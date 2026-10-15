@@ -23,12 +23,12 @@ See also: [PHASE-9](PHASE-9.md) (decisions, status) ·
 
 ## 1. Identifiers
 
-| Identifier     | Format                                       | Notes                                                                                                                                        |
-| -------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Safety ID code | `SI-` + 4 + `-` + 3 + check symbol (mod 31)  | Same alphabet and check as Helmet ID. New codes are random; migrated codes are `SI-` + the Helmet ID body (`HM-CD69-GXXR` → `SI-CD69-GXXR`). |
-| Public token   | 22 base62 symbols (~131 bits)                | Unique across Safety IDs. Migrated Safety IDs keep the helmet's token, so printed labels keep working.                                       |
-| Activation PIN | 8 symbols (~39.6 bits), unambiguous alphabet | Printed once. Stored only as Argon2id + `PIN_HASH_PEPPER`. Escrowed (AES-256-GCM, AAD = Safety ID id) until the batch is printed.            |
-| Transfer Code  | one-time code, peppered hash, expiry         | Standalone Safety ID transfers only.                                                                                                         |
+| Identifier     | Format                                                                                          | Notes                                                                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Safety ID code | `SI-` + 4 + `-` + 3 + check symbol (mod 31)                                                     | Same alphabet and check as Helmet ID. New codes are random; migrated codes are `SI-` + the Helmet ID body (`HM-CD69-GXXR` → `SI-CD69-GXXR`).                                                    |
+| Public token   | 22 base62 symbols (~131 bits)                                                                   | Unique across Safety IDs. Migrated Safety IDs keep the helmet's token, so printed labels keep working.                                                                                          |
+| Activation PIN | **6 numeric digits** (string, `000000`–`999999`, ~19.9 bits); legacy 8-symbol PINs still verify | Printed once. Stored only as Argon2id + `PIN_HASH_PEPPER`. Escrowed (AES-256-GCM, AAD = Safety ID id) until the batch is printed. Lockouts: [ACTIVATION](ACTIVATION.md#brute-force-protection). |
+| Transfer Code  | one-time code, peppered hash, expiry                                                            | Standalone Safety ID transfers only.                                                                                                                                                            |
 
 ## 2. Status
 
@@ -147,24 +147,25 @@ included.
 
 ## 8. API
 
-| Method + path                                                                                   | Who                            | Purpose                                    |
-| ----------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------ |
-| `GET /public/emergency/:token`, `GET /public/verify/:token`                                     | public                         | unchanged URLs; Safety-ID-centric payloads |
-| `POST /customer/activation/validate`, `/register`, `/add-safety-id`                             | public / customer              | activation (`/add-helmet` = alias)         |
-| `GET /customer/safety-ids`, `GET /customer/safety-ids/:id`                                      | customer                       | My Safety IDs, detail                      |
-| `GET /customer/safety-ids/:id/qr`                                                               | customer                       | QR PNG                                     |
-| `POST /customer/safety-ids/:id/emergency/enable` / `disable`                                    | customer                       | per-Safety-ID sharing                      |
-| `POST` / `DELETE /customer/safety-ids/:id/transfer`                                             | customer (recent auth)         | Transfer Code (standalone only)            |
-| `POST /customer/safety-id-transfers/claim`, `/claim/register`                                   | customer / public              | claim with Safety ID + Transfer Code       |
-| `GET /customer/safety-ids/:id/scan-summary`                                                     | customer                       | neutral scan count                         |
-| `GET /admin/safety-ids`, `/metrics`, `/:id`, `/:id/qr`                                          | `safety-ids:read`              | list / search / detail                     |
-| `POST /admin/safety-ids/:id/deactivate` (recent auth), `/reactivate`, `/link`, `/unlink`        | `safety-ids:manage`            | support actions                            |
-| `POST /admin/safety-ids/:id/qr-integrity`                                                       | `qr-integrity:manage`          | QR integrity                               |
-| `POST /admin/safety-ids/:id/revoke-ownership` (recent auth)                                     | `ownership:revoke`             | standalone only                            |
-| `DELETE /admin/safety-ids/:id/transfer`                                                         | `transfer:cancel`              | cancel a pending transfer                  |
-| `GET/POST /admin/safety-id-batches`, `GET /:id`, `POST /:id/generate`, `POST /:id/mark-printed` | `safety-ids:read` / `generate` | batches                                    |
-| `GET /admin/safety-id-batches/:id/export/safety-ids.csv`, `/print-sheet.html`                   | `safety-ids:export`            | PIN exports (until printed)                |
-| `GET /admin/analytics/safety-ids[/:code]`, `…/:code/scans`, `PATCH …/:code/qr-integrity`        | `analytics:view`               | QR activity; `/helmets/…` kept as aliases  |
+| Method + path                                                                                    | Who                            | Purpose                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------------------ | ------------------------------------------ |
+| `GET /public/emergency/:token`, `GET /public/verify/:token`                                      | public                         | unchanged URLs; Safety-ID-centric payloads |
+| `POST /customer/activation/validate`, `/register`, `/add-safety-id`                              | public / customer              | activation (`/add-helmet` = alias)         |
+| `GET /customer/safety-ids`, `GET /customer/safety-ids/:id`                                       | customer                       | My Safety IDs, detail                      |
+| `GET /customer/safety-ids/:id/qr`                                                                | customer                       | QR PNG                                     |
+| `POST /customer/safety-ids/:id/emergency/enable` / `disable`                                     | customer                       | per-Safety-ID sharing                      |
+| `POST` / `DELETE /customer/safety-ids/:id/transfer`                                              | customer (recent auth)         | Transfer Code (standalone only)            |
+| `POST /customer/safety-id-transfers/claim`, `/claim/register`                                    | customer / public              | claim with Safety ID + Transfer Code       |
+| `GET /customer/safety-ids/:id/scan-summary`                                                      | customer                       | neutral scan count                         |
+| `GET /admin/safety-ids`, `/metrics`, `/:id`, `/:id/qr`                                           | `safety-ids:read`              | list / search / detail                     |
+| `POST /admin/safety-ids/:id/deactivate` (recent auth), `/reactivate`, `/link`, `/unlink`         | `safety-ids:manage`            | support actions                            |
+| `POST /admin/safety-ids/:id/qr-integrity`                                                        | `qr-integrity:manage`          | QR integrity                               |
+| `POST /admin/safety-ids/:id/revoke-ownership` (recent auth)                                      | `ownership:revoke`             | standalone only                            |
+| `DELETE /admin/safety-ids/:id/transfer`                                                          | `transfer:cancel`              | cancel a pending transfer                  |
+| `GET/POST /admin/safety-id-batches`, `GET /:id`, `POST /:id/generate`, `POST /:id/mark-printed`  | `safety-ids:read` / `generate` | batches                                    |
+| `GET /admin/safety-id-batches/:id/export/safety-ids.csv`, `/print.pdf` (layout query fields)     | `safety-ids:export`            | PIN exports (PDF only before escrow purge) |
+| `GET /admin/safety-id-print/status`, `/preview/unit.svg`, `/preview/sheet.svg`, `/cut-guide.pdf` | `safety-ids:read`              | print engine, sample previews (no PINs)    |
+| `GET /admin/analytics/safety-ids[/:code]`, `…/:code/scans`, `PATCH …/:code/qr-integrity`         | `analytics:view`               | QR activity; `/helmets/…` kept as aliases  |
 
 Error codes: `SAFETY_ID_NOT_FOUND`, `SAFETY_ID_ALREADY_ACTIVATED`, `SAFETY_ID_NOT_ACTIVATABLE`,
 `SAFETY_ID_HAS_OWNER`, `SAFETY_ID_LINK_CONFLICT`, `SAFETY_ID_ACTION_NOT_ALLOWED`,
@@ -189,7 +190,7 @@ accessed N times in the last 30 days.").
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Generate 5,000 standalone Safety IDs (real job, 73 queries)           | 188 s, COMPLETED, 5,000 escrowed PINs                                                |
 | Export CSV, 5,000 rows (stream)                                       | 0.3 s, 440 KB                                                                        |
-| Print sheet, 5,000 labels (stream)                                    | 4.7 s, 10.7 MB HTML                                                                  |
+| Print PDF, 5,000 units, 12 × 18 in 48-up (stream, final print update) | 8.6 s, 105 pages, 3.3 MB, 38 MB heap                                                 |
 | Mark printed (status + escrow purge)                                  | 0.15 s, escrow 0                                                                     |
 | 6,000 Safety IDs / 100,000 scans: 30-day aggregation backfill         | 2.5 s (96 queries); steady state 0.15 s                                              |
 | Risk evaluation (10 hot Safety IDs), first / repeat                   | 0.41 s / 0.26 s, 10 deduplicated alerts                                              |

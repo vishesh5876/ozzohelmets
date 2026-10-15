@@ -18,13 +18,13 @@ decision. Report vulnerabilities privately to the security owner; never open a p
 All identifiers use Node's CSPRNG (`crypto.randomBytes`) with **rejection sampling**, so every
 symbol is uniformly distributed (no modulo bias). None are derived from database IDs or counters.
 
-| Identifier      | Format                     | Entropy                                 | Secret?      | Notes                                                                                                                                                              |
-| --------------- | -------------------------- | --------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Helmet ID       | `HM-XXXX-XXXY`             | 7 × log2(31) ≈ 34.7 bits + check symbol | No (printed) | Unambiguous alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ`. Check symbol = weighted sum mod 31 (prime) → detects every single substitution and adjacent transposition. |
-| Public QR token | 22 × base62                | ≈ 130.9 bits                            | Bearer-ish   | Only value in the QR URL. Unguessable; enumeration infeasible.                                                                                                     |
-| Activation PIN  | 8 symbols, same alphabet   | ≈ 39.6 bits                             | **Yes**      | Never stored in plaintext.                                                                                                                                         |
-| Serial number   | `<batchCode>-<000001>`     | —                                       | No           | Manufacturing reference; deliberately sequential within a batch (flagged decision).                                                                                |
-| Refresh token   | 32 random bytes, base64url | 256 bits                                | **Yes**      | Stored as SHA-256.                                                                                                                                                 |
+| Identifier      | Format                                                 | Entropy                                 | Secret?      | Notes                                                                                                                                                              |
+| --------------- | ------------------------------------------------------ | --------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Helmet ID       | `HM-XXXX-XXXY`                                         | 7 × log2(31) ≈ 34.7 bits + check symbol | No (printed) | Unambiguous alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ`. Check symbol = weighted sum mod 31 (prime) → detects every single substitution and adjacent transposition. |
+| Public QR token | 22 × base62                                            | ≈ 130.9 bits                            | Bearer-ish   | Only value in the QR URL. Unguessable; enumeration infeasible.                                                                                                     |
+| Activation PIN  | 6 digits (Phase 9 final); legacy 8 symbols still valid | ≈ 19.9 bits (legacy ≈ 39.6)             | **Yes**      | Never stored in plaintext. Small space defended by per-Safety-ID, per-IP+Safety-ID and per-IP lockouts (ACTIVATION.md).                                            |
+| Serial number   | `<batchCode>-<000001>`                                 | —                                       | No           | Manufacturing reference; deliberately sequential within a batch (flagged decision).                                                                                |
+| Refresh token   | 32 random bytes, base64url                             | 256 bits                                | **Yes**      | Stored as SHA-256.                                                                                                                                                 |
 
 Uniqueness is guaranteed by database `UNIQUE` constraints; the generator retries a chunk with
 fresh identifiers on collision (expected probability is negligible but handled).
@@ -68,7 +68,7 @@ account password.
 **Lost escrow.** If PINs are needed after purge (reprint), Phase 3 adds an audited "re-issue PIN"
 action for _unactivated_ helmets: generates a new PIN, replaces the hash, escrows it again.
 
-**Online guessing.** 39.6 bits with Argon2id verification; the PIN is only checked in the
+**Online guessing.** Six digits (10^6, Phase 9 final print) or 39.6 bits (legacy) with Argon2id verification; the PIN is only checked in the
 under a row lock with every failure committed; escalating (never permanent) per-helmet lockouts
 (`activation_attempts`, `activation_locked_until`), per-customer and per-IP failure budgets and
 route throttling make brute force impractical. See `ACTIVATION.md`.
@@ -361,7 +361,7 @@ Summary (details in [PHASE-7](PHASE-7.md), [VPS-DEPLOYMENT](VPS-DEPLOYMENT.md),
 ## 18. Phase 9 — Safety IDs
 
 - **Same identifier and PIN security as Phase 1**, now on `safety_ids`: 22-symbol base62 token
-  (~131 bits), checksummed `SI-` code (not a secret), 8-symbol PIN as Argon2id + pepper,
+  (~131 bits), checksummed `SI-` code (not a secret), six-digit PIN (legacy 8-symbol still valid) as Argon2id + pepper,
   per-Safety-ID attempt counter and lock, global Argon2 concurrency cap.
 - **No oracle**: before the PIN is proven, unknown, consumed, unprinted, deactivated and
   conflicting (linked helmet owned by someone else) Safety IDs all get the same answer.

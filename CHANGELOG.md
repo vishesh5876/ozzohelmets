@@ -7,7 +7,7 @@ Release procedure: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 **Status:** not deployed. High-risk data migration: follow
 [SAFETY-ID-MIGRATION → Deployment plan](docs/SAFETY-ID-MIGRATION.md#3-deployment-plan).
-Latest migration: `20261012090000_phase9_risk_alert_subject`.
+Latest migration: `20261015090000_phase9_print_unit_index`.
 
 - **Safety ID** (`SI-XXXX-XXXX`) is the emergency QR identity: QR token, Activation PIN,
   owner, per-Safety-ID emergency sharing, scans and risk. Helmets keep product identity,
@@ -27,6 +27,13 @@ Latest migration: `20261012090000_phase9_risk_alert_subject`.
 - Migration: expand / migrate / switch, nothing dropped; existing printed QR codes and unused
   PINs keep working (verify, reconcile and replay scripts).
 - Fixed: risk alerts about standalone Safety IDs; admin alert workflow refresh.
+- **Final print update** ([docs/SAFETY-ID-PRINT.md](docs/SAFETY-ID-PRINT.md)): new Activation
+  PINs are six digits (legacy PINs still work) with an extra IP + Safety ID lockout and one
+  answer for unknown ID / wrong PIN; one 4.5 × 1 in sticker unit with integrated yellow cover;
+  true-size vector 12 × 18 in 48-up print PDF, unit/sheet previews, cut guide, vendor layout
+  validation; CSV in print order (`unitIndex`, sheet positions; columns renamed); A4 HTML print
+  sheet removed. Migration `20261015090000_phase9_print_unit_index`. Requires the original OZZO
+  logo vector (`PRINT_LOGO_SVG_PATH`) before production printing.
 
 ## v1.0.0: first production release (pilot)
 

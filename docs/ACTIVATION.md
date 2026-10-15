@@ -99,22 +99,38 @@ activated_at IS NOT NULL)` backs it up.
 
 ## Brute-force protection
 
-| Layer                 | Limit                                                                                                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Route (`auth` policy) | 10 req/min/IP on validate, register and add-helmet, 5-min block                                                                                                                 |
-| Per helmet / token    | every `ACTIVATION_FAILURES_BEFORE_LOCK` (5) wrong PINs locks the helmet for `ACTIVATION_LOCKOUT_BASE_SECONDS` × 2^(n−1) (15 min, 30 min, 1 h … capped at 24 h, never permanent) |
-| Per IP hash           | `ACTIVATION_MAX_FAILURES_PER_IP_PER_HOUR` (20) wrong PINs across all helmets                                                                                                    |
-| Per customer          | `ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR` (10) for signed-in add-helmet                                                                                                   |
-| Audit                 | every failure and lock is audited with the IP hash and attempt count — never the PIN                                                                                            |
+| Layer                 | Limit                                                                                                                                                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Route (`auth` policy) | 10 req/min/IP on validate, register and add-helmet, 5-min block                                                                                                                                                                                                           |
+| Per helmet / token    | every `ACTIVATION_FAILURES_BEFORE_LOCK` (5) wrong PINs locks the helmet for `ACTIVATION_LOCKOUT_BASE_SECONDS` × 2^(n−1) (15 min, 30 min, 1 h … capped at 24 h, never permanent)                                                                                           |
+| Per IP + Safety ID    | Phase 9 six-digit PINs: every `ACTIVATION_IP_SAFETY_ID_FAILURES_BEFORE_LOCK` (5) failures from one IP on one Safety ID locks that pair for `ACTIVATION_IP_SAFETY_ID_LOCKOUT_BASE_SECONDS` × 2^(n−1) (Redis, capped at 24 h). Other IPs (the real owner) are not affected. |
+| Per IP hash           | `ACTIVATION_MAX_FAILURES_PER_IP_PER_HOUR` (20) wrong PINs (or unknown Safety IDs) across all Safety IDs                                                                                                                                                                   |
+| Per customer          | `ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR` (10) for signed-in add-helmet                                                                                                                                                                                             |
+| Audit                 | every failure and lock is audited with the IP hash and attempt count — never the PIN                                                                                                                                                                                      |
 
-The lock is persisted in `helmets.activation_locked_until`, so it applies whether the helmet is
-addressed by QR token or by Helmet ID. With ~39.6 bits of PIN entropy and these limits online
-guessing is infeasible.
+The per-Safety-ID lock is persisted on the row (`safety_ids.activation_locked_until`), so it
+applies however the Safety ID is addressed. A successful activation resets the row counter and
+the IP + Safety ID lock; the broad per-IP budget is not reset (an attacker could otherwise clear
+it by activating their own sticker). All locks are temporary.
+
+**Six-digit PINs (Phase 9 final print).** New Safety IDs get exactly six digits (`000000`–
+`999999`, CSPRNG via `crypto.randomInt`, always a string — leading zeros count). That is only
+10^6 values, so the limits matter: with 5 tries per 15 min, doubling, capped at 24 h, one Safety
+ID admits at most a few dozen guesses per day from all IPs combined — an expected ~500,000 guesses
+are years away. Legacy 8-symbol PINs (~39.6 bits) printed before this release still verify
+against the same hash.
+
+**One answer before the PIN is proven.** An unknown Safety ID, a wrong PIN, and an ineligible
+Safety ID (consumed, owned, not printed, deactivated) all return the same
+`INVALID_ACTIVATION_PIN` with the same message; unknown Safety IDs also cost one Argon2 verify
+(dummy hash) so timing matches. Only with the correct PIN does the response say why activation
+is refused. A malformed Safety ID (checksum) is rejected as a validation error — a pure format
+check, not an existence oracle.
 
 ## Enumeration resistance
 
-`validate` returns the same `HELMET_NOT_ACTIVATABLE` (same message) for unknown tokens/codes,
-ineligible statuses and already-owned helmets, and never reveals owner information.
+Phase 9 final: see "One answer before the PIN is proven" above (supersedes the earlier
+`HELMET_NOT_ACTIVATABLE` rule). Owner information is never revealed.
 
 ## Ownership
 
