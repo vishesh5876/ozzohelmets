@@ -334,8 +334,21 @@ export class BatchesService {
       { n: bigint }[]
     >`SELECT nextval('safety_id_batch_code_seq') AS n`;
     const batchCode = `SID-${new Date().getUTCFullYear()}-${String(row?.n ?? 0).padStart(5, '0')}`;
+    // The companion batch binds the ACTIVE print design version (none = built-in layout).
+    const design = await tx.printDesign.findFirst({
+      where: { status: 'ACTIVE' },
+      select: { id: true, version: true },
+    });
     await tx.safetyIdBatch.create({
-      data: { batchCode, mode: 'HELMET_LINKED', helmetBatchId, quantity, createdBy: adminId },
+      data: {
+        batchCode,
+        mode: 'HELMET_LINKED',
+        helmetBatchId,
+        quantity,
+        createdBy: adminId,
+        printDesignId: design?.id ?? null,
+        printDesignVersion: design?.version ?? null,
+      },
     });
   }
 

@@ -133,6 +133,13 @@ export class CreateSafetyIdBatchDto {
   @IsUUID()
   helmetBatchId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Print design version to bind (default: the ACTIVE design). Immutable afterwards.',
+  })
+  @IsOptional()
+  @IsUUID()
+  printDesignId?: string;
+
   @ApiPropertyOptional({ maxLength: 1000 })
   @IsOptional()
   @IsString()

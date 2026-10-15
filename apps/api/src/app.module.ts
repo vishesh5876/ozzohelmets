@@ -34,6 +34,7 @@ import { PublicEmergencyModule } from './modules/public-emergency/public-emergen
 import { PublicEmergencyCacheModule } from './modules/public-emergency-cache/public-emergency-cache.module';
 import { SafetyIdCoreModule } from './modules/safety-ids/safety-id-core.module';
 import { SafetyIdsModule } from './modules/safety-ids/safety-ids.module';
+import { PrintDesignsModule } from './modules/print-designs/print-designs.module';
 import { SecurityModule } from './security/security.module';
 
 @Module({
@@ -62,6 +63,7 @@ import { SecurityModule } from './security/security.module';
     BatchesModule,
     HelmetsModule,
     SafetyIdsModule,
+    PrintDesignsModule,
     PublicEmergencyModule,
     CustomerHelmetsModule,
     CustomerAccountModule,

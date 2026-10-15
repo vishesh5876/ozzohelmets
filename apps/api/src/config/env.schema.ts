@@ -219,6 +219,27 @@ export const envSchema = z
       .transform((v) => (v && v.trim() ? v.trim() : '#FFD100'))
       .pipe(z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'PRINT_COVER_YELLOW must be #RRGGBB')),
 
+    /** Print Designs: upload limits (artwork is untrusted input; decoded size is checked too). */
+    PRINT_ARTWORK_SVG_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(50_000_000)
+      .default(5_242_880),
+    PRINT_ARTWORK_PNG_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(50_000_000)
+      .default(15_728_640),
+    PRINT_ARTWORK_PNG_MAX_PIXELS: z.coerce
+      .number()
+      .int()
+      .min(100_000)
+      .max(200_000_000)
+      .default(40_000_000),
+    PRINT_ARTWORK_SVG_MAX_ELEMENTS: z.coerce.number().int().min(100).max(500_000).default(50_000),
+
     BATCH_MAX_QUANTITY: z.coerce.number().int().min(1).max(1_000_000).default(50_000),
     BATCH_GENERATION_CHUNK_SIZE: z.coerce.number().int().min(10).max(5000).default(500),
 

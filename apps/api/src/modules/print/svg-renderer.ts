@@ -53,6 +53,21 @@ export function elementsToSvg(elements: DrawElement[]): string {
           `<rect x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" fill="none" stroke="#000" stroke-width="0.4" stroke-dasharray="1"/>` +
           `<text x="${n(el.x + 1.5)}" y="${n(el.y + el.h / 2 + 1.4)}" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="4">LOGO ASSET MISSING</text>`;
         break;
+      case 'artwork': {
+        // Clip window in unit coordinates; artwork drawn at its exact (uniform) box inside it.
+        const c = el.clip;
+        let inner: string;
+        if (el.artwork.format === 'SVG') {
+          inner = el.artwork.svg!.replace(
+            /^<svg /,
+            `<svg x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" preserveAspectRatio="xMidYMid meet" `,
+          );
+        } else {
+          inner = `<image x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,${el.artwork.png!.toString('base64')}"/>`;
+        }
+        out += `<svg x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" viewBox="${n(c.x)} ${n(c.y)} ${n(c.w)} ${n(c.h)}" overflow="hidden">${inner}</svg>`;
+        break;
+      }
       case 'qr': {
         const size = el.matrix.size;
         const mod = el.size / (size + 2 * el.quietZoneModules);

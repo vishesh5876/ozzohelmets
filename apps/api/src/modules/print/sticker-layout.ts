@@ -1,5 +1,12 @@
 import { mmToPt } from '@helmet/types';
 import * as QRCode from 'qrcode';
+import {
+  type ArtworkAsset,
+  type ArtworkPosition,
+  placeBaseArtwork,
+  placeCoverArtwork,
+  artworkAspect,
+} from './artwork';
 import type { LogoAsset } from './logo-asset';
 import {
   COVER_OVERLAP,
@@ -74,6 +81,18 @@ export type DrawElement =
     }
   | { kind: 'logo'; role: string; x: number; y: number; scale: number; logo: LogoAsset }
   | { kind: 'logo-placeholder'; role: string; x: number; y: number; w: number; h: number }
+  | {
+      /** Admin artwork drawn into (x, y, w, h) — always the artwork's own aspect ratio — and
+       *  clipped to `clip`. SVG stays vector; PNG is embedded losslessly. */
+      kind: 'artwork';
+      role: string;
+      artwork: ArtworkAsset;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      clip: Box;
+    }
   | {
       kind: 'qr';
       role: string;
@@ -231,6 +250,16 @@ export interface LayoutContext {
   yellow?: string;
   /** Adds QA-only outlines (target, cover footprint, cover die). Never in production files. */
   proof?: boolean;
+  /** Admin preview "Show Guides" (same outlines as proof, plus safe area and dynamic areas). */
+  guides?: boolean;
+  /** Print Design artwork. Without it the built-in (legacy) emergency panel is drawn. */
+  artwork?: {
+    base: ArtworkAsset;
+    cover: ArtworkAsset | null;
+    position: ArtworkPosition;
+  };
+  /** Sample-data test print: every unit is visibly marked TEST PRINT. */
+  testPrint?: boolean;
 }
 
 /** Minimum printed QR module (Safety ID scans must work from a phone at arm's length). */
@@ -275,104 +304,119 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
   };
   const cap = (weight: Weight, size: number) => m.capHeight(weight) * size;
 
-  // ── Emergency panel ────────────────────────────────────────────────────────────────────────
-  const E = D.emergency;
-  const ez = g.zones.emergency;
-  const x0 = safe;
-  let y = safe;
-  if (ctx.logo) {
-    const vb = ctx.logo.viewBox;
-    const scale = E.logoHeightPt / vb.height; // uniform: never stretched
+  if (ctx.artwork) {
+    // ── Admin artwork (Print Design) ─────────────────────────────────────────────────────────
+    const art = ctx.artwork.base;
     out.push({
-      kind: 'logo',
-      role: 'logo',
-      x: x0 - vb.x * scale,
-      y: y - vb.y * scale,
-      scale,
-      logo: ctx.logo,
+      kind: 'artwork',
+      role: 'artwork-base',
+      artwork: art,
+      ...placeBaseArtwork(artworkAspect(art), ctx.artwork.position),
+      clip: { x: 0, y: 0, w: UNIT_W, h: UNIT_H },
     });
+    // System-controlled white credential panel: no artwork colour or texture behind the ID,
+    // PIN, QR or its quiet zone, whatever the design.
+    out.push({ kind: 'rect', role: 'credential-panel', ...g.zones.credential, fill: white });
   } else {
+    // ── Emergency panel ────────────────────────────────────────────────────────────────────────
+    const E = D.emergency;
+    const ez = g.zones.emergency;
+    const x0 = safe;
+    let y = safe;
+    if (ctx.logo) {
+      const vb = ctx.logo.viewBox;
+      const scale = E.logoHeightPt / vb.height; // uniform: never stretched
+      out.push({
+        kind: 'logo',
+        role: 'logo',
+        x: x0 - vb.x * scale,
+        y: y - vb.y * scale,
+        scale,
+        logo: ctx.logo,
+      });
+    } else {
+      out.push({
+        kind: 'logo-placeholder',
+        role: 'logo',
+        x: x0,
+        y,
+        w: E.logoHeightPt * 3.6,
+        h: E.logoHeightPt,
+      });
+    }
+    y += E.logoHeightPt + E.gapAfterLogoPt;
+    let baseline = y + cap('bold', E.inCaseOfPt);
+    text('emergency-heading', 'IN CASE OF', x0, baseline, 'bold', E.inCaseOfPt, black);
+    baseline += E.lineGapPt + cap('bold', E.emergencyPt);
+    text('emergency-heading', 'EMERGENCY', x0, baseline, 'bold', E.emergencyPt, red);
+    baseline += E.gapAfterEmergencyPt + cap('bold', E.medicalPt);
+    const medical = text(
+      'emergency-medical',
+      'FOR MY MEDICAL INFORMATION',
+      x0,
+      baseline,
+      'bold',
+      E.medicalPt,
+      black,
+    );
+    const pillTop = UNIT_H - safe - E.pillHeightPt;
+    if (medical.y + 1.5 > pillTop) throw new StickerLayoutError('Emergency panel text overflows.');
+    const scanW = m.width('SCAN ME', 'bold', E.scanMePt, 0.3);
+    const pillW = scanW + 2 * E.pillPaddingXPt;
     out.push({
-      kind: 'logo-placeholder',
-      role: 'logo',
+      kind: 'rect',
+      role: 'scan-me-pill',
       x: x0,
-      y,
-      w: E.logoHeightPt * 3.6,
-      h: E.logoHeightPt,
+      y: pillTop,
+      w: pillW,
+      h: E.pillHeightPt,
+      fill: black,
+      radius: E.pillHeightPt / 2,
+    });
+    const pillMid = pillTop + E.pillHeightPt / 2;
+    text(
+      'scan-me',
+      'SCAN ME',
+      x0 + pillW / 2,
+      pillMid + cap('bold', E.scanMePt) / 2,
+      'bold',
+      E.scanMePt,
+      white,
+      { anchor: 'middle', characterSpacing: 0.3 },
+    );
+    const tip = ez.x + ez.w - E.arrowEndGapPt;
+    const shaftStart = x0 + pillW + E.arrowGapPt;
+    const headBase = tip - E.arrowHeadPt;
+    if (headBase - shaftStart < 6) throw new StickerLayoutError('No room for the SCAN ME arrow.');
+    out.push({
+      kind: 'rect',
+      role: 'scan-arrow',
+      x: shaftStart,
+      y: pillMid - E.arrowShaftPt / 2,
+      w: headBase - shaftStart + 0.2,
+      h: E.arrowShaftPt,
+      fill: red,
+    });
+    out.push({
+      kind: 'polygon',
+      role: 'scan-arrow',
+      points: [
+        [tip, pillMid],
+        [headBase, pillMid - E.arrowHeadPt / 2],
+        [headBase, pillMid + E.arrowHeadPt / 2],
+      ],
+      fill: red,
+    });
+    out.push({
+      kind: 'rect',
+      role: 'divider',
+      x: ez.x + ez.w - 0.25,
+      y: safe,
+      w: 0.5,
+      h: UNIT_H - 2 * safe,
+      fill: E.dividerColor,
     });
   }
-  y += E.logoHeightPt + E.gapAfterLogoPt;
-  let baseline = y + cap('bold', E.inCaseOfPt);
-  text('emergency-heading', 'IN CASE OF', x0, baseline, 'bold', E.inCaseOfPt, black);
-  baseline += E.lineGapPt + cap('bold', E.emergencyPt);
-  text('emergency-heading', 'EMERGENCY', x0, baseline, 'bold', E.emergencyPt, red);
-  baseline += E.gapAfterEmergencyPt + cap('bold', E.medicalPt);
-  const medical = text(
-    'emergency-medical',
-    'FOR MY MEDICAL INFORMATION',
-    x0,
-    baseline,
-    'bold',
-    E.medicalPt,
-    black,
-  );
-  const pillTop = UNIT_H - safe - E.pillHeightPt;
-  if (medical.y + 1.5 > pillTop) throw new StickerLayoutError('Emergency panel text overflows.');
-  const scanW = m.width('SCAN ME', 'bold', E.scanMePt, 0.3);
-  const pillW = scanW + 2 * E.pillPaddingXPt;
-  out.push({
-    kind: 'rect',
-    role: 'scan-me-pill',
-    x: x0,
-    y: pillTop,
-    w: pillW,
-    h: E.pillHeightPt,
-    fill: black,
-    radius: E.pillHeightPt / 2,
-  });
-  const pillMid = pillTop + E.pillHeightPt / 2;
-  text(
-    'scan-me',
-    'SCAN ME',
-    x0 + pillW / 2,
-    pillMid + cap('bold', E.scanMePt) / 2,
-    'bold',
-    E.scanMePt,
-    white,
-    { anchor: 'middle', characterSpacing: 0.3 },
-  );
-  const tip = ez.x + ez.w - E.arrowEndGapPt;
-  const shaftStart = x0 + pillW + E.arrowGapPt;
-  const headBase = tip - E.arrowHeadPt;
-  if (headBase - shaftStart < 6) throw new StickerLayoutError('No room for the SCAN ME arrow.');
-  out.push({
-    kind: 'rect',
-    role: 'scan-arrow',
-    x: shaftStart,
-    y: pillMid - E.arrowShaftPt / 2,
-    w: headBase - shaftStart + 0.2,
-    h: E.arrowShaftPt,
-    fill: red,
-  });
-  out.push({
-    kind: 'polygon',
-    role: 'scan-arrow',
-    points: [
-      [tip, pillMid],
-      [headBase, pillMid - E.arrowHeadPt / 2],
-      [headBase, pillMid + E.arrowHeadPt / 2],
-    ],
-    fill: red,
-  });
-  out.push({
-    kind: 'rect',
-    role: 'divider',
-    x: ez.x + ez.w - 0.25,
-    y: safe,
-    w: 0.5,
-    h: UNIT_H - 2 * safe,
-    fill: E.dividerColor,
-  });
 
   // ── Credential panel (permanent base sticker) ──────────────────────────────────────────────
   const idText = `ID: ${data.safetyCode}`;
@@ -445,86 +489,162 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
     });
   }
 
-  // ── Removable yellow cover (same unit, own die line) ───────────────────────────────────────
-  const C = D.cover;
-  const die = g.coverDie;
-  out.push({ kind: 'rect', role: 'cover', ...g.coverYellow, fill: yellow });
-  const tabTop = die.y + die.h - C.tabHeightPt;
-  out.push({
-    kind: 'rect',
-    role: 'cover-tab',
-    x: g.coverYellow.x,
-    y: tabTop,
-    w: g.coverYellow.w,
-    h: g.coverYellow.y + g.coverYellow.h - tabTop,
-    fill: black,
-  });
-  const lines: [string, number][] = [
-    ['REMOVE', C.removePt],
-    ['ONLY IN', C.onlyInPt],
-    ['EMERGENCY', C.emergencyPt],
-  ];
-  const blockH =
-    lines.reduce((a, [, s]) => a + cap('bold', s), 0) + C.lineGapPt * (lines.length - 1);
-  const areaTop = die.y + safe;
-  const areaBottom = tabTop - 2;
-  if (blockH > areaBottom - areaTop) throw new StickerLayoutError('Cover text overflows.');
-  let ly = areaTop + (areaBottom - areaTop - blockH) / 2;
-  const cx = die.x + die.w / 2;
-  for (const [value, size] of lines) {
-    ly += cap('bold', size);
-    const t = text('cover-text', value, cx, ly, 'bold', size, black, { anchor: 'middle' });
-    if (t.width > die.w - 2 * safe) throw new StickerLayoutError('Cover text is too wide.');
-    ly += C.lineGapPt;
+  if (ctx.artwork?.cover) {
+    // ── Custom cover artwork: fills the cover print box (uniform, centred, clipped) ──────────
+    const art = ctx.artwork.cover;
+    out.push({
+      kind: 'artwork',
+      role: 'cover-artwork',
+      artwork: art,
+      ...placeCoverArtwork(artworkAspect(art), g.coverYellow),
+      clip: g.coverYellow,
+    });
+  } else {
+    // ── Removable yellow cover (same unit, own die line) ───────────────────────────────────────
+    const C = D.cover;
+    const die = g.coverDie;
+    out.push({ kind: 'rect', role: 'cover', ...g.coverYellow, fill: yellow });
+    const tabTop = die.y + die.h - C.tabHeightPt;
+    out.push({
+      kind: 'rect',
+      role: 'cover-tab',
+      x: g.coverYellow.x,
+      y: tabTop,
+      w: g.coverYellow.w,
+      h: g.coverYellow.y + g.coverYellow.h - tabTop,
+      fill: black,
+    });
+    const lines: [string, number][] = [
+      ['REMOVE', C.removePt],
+      ['ONLY IN', C.onlyInPt],
+      ['EMERGENCY', C.emergencyPt],
+    ];
+    const blockH =
+      lines.reduce((a, [, s]) => a + cap('bold', s), 0) + C.lineGapPt * (lines.length - 1);
+    const areaTop = die.y + safe;
+    const areaBottom = tabTop - 2;
+    if (blockH > areaBottom - areaTop) throw new StickerLayoutError('Cover text overflows.');
+    let ly = areaTop + (areaBottom - areaTop - blockH) / 2;
+    const cx = die.x + die.w / 2;
+    for (const [value, size] of lines) {
+      ly += cap('bold', size);
+      const t = text('cover-text', value, cx, ly, 'bold', size, black, { anchor: 'middle' });
+      if (t.width > die.w - 2 * safe) throw new StickerLayoutError('Cover text is too wide.');
+      ly += C.lineGapPt;
+    }
+    // "▲ OPEN" tab: a vector triangle (no font glyph dependency) + text, centred in the band.
+    const openW = m.width('OPEN', 'bold', C.openPt, 0.4);
+    const tri = cap('bold', C.openPt) * 1.15;
+    const groupW = tri + 2 + openW;
+    const gx = cx - groupW / 2;
+    const tabMid = tabTop + (die.y + die.h - tabTop) / 2;
+    const openBase = tabMid + cap('bold', C.openPt) / 2;
+    out.push({
+      kind: 'polygon',
+      role: 'cover-open',
+      points: [
+        [gx + tri / 2, openBase - tri * 0.95],
+        [gx, openBase],
+        [gx + tri, openBase],
+      ],
+      fill: yellow,
+    });
+    text('cover-open', 'OPEN', gx + tri + 2, openBase, 'bold', C.openPt, yellow, {
+      characterSpacing: 0.4,
+    });
   }
-  // "▲ OPEN" tab: a vector triangle (no font glyph dependency) + text, centred in the band.
-  const openW = m.width('OPEN', 'bold', C.openPt, 0.4);
-  const tri = cap('bold', C.openPt) * 1.15;
-  const groupW = tri + 2 + openW;
-  const gx = cx - groupW / 2;
-  const tabMid = tabTop + (die.y + die.h - tabTop) / 2;
-  const openBase = tabMid + cap('bold', C.openPt) / 2;
-  out.push({
-    kind: 'polygon',
-    role: 'cover-open',
-    points: [
-      [gx + tri / 2, openBase - tri * 0.95],
-      [gx, openBase],
-      [gx + tri, openBase],
-    ],
-    fill: yellow,
-  });
-  text('cover-open', 'OPEN', gx + tri + 2, openBase, 'bold', C.openPt, yellow, {
-    characterSpacing: 0.4,
-  });
 
-  if (ctx.proof) {
+  if (ctx.testPrint) {
+    // Clearly marked sample: never mistaken for a real Safety ID.
+    const label = 'TEST PRINT';
+    const w = m.width(label, 'bold', 6, 0.5) + 6;
+    const tx = g.zones.credential.x - w - 3;
     out.push({
       kind: 'rect',
-      role: 'proof-target',
-      ...g.target,
-      stroke: '#FF00FF',
-      lineWidth: 0.3,
-      dash: 1,
+      role: 'test-print',
+      x: tx,
+      y: safe,
+      w,
+      h: 9,
+      fill: white,
+      stroke: red,
+      lineWidth: 0.8,
     });
-    out.push({
-      kind: 'rect',
-      role: 'proof-footprint',
-      ...g.coverFootprint,
-      stroke: '#00A0FF',
-      lineWidth: 0.3,
-      dash: 1,
-    });
-    out.push({
-      kind: 'rect',
-      role: 'proof-die',
-      ...die,
-      stroke: '#00A0FF',
-      lineWidth: 0.3,
-      radius: mmToPt(D.coverCornerRadiusMm),
+    out.push({ kind: 'rect', role: 'test-print', x: tx, y: safe, w, h: 9, fill: red });
+    text('test-print', label, tx + w / 2, safe + 4.5 + cap('bold', 6) / 2, 'bold', 6, white, {
+      anchor: 'middle',
+      characterSpacing: 0.5,
     });
   }
+  if (ctx.proof || ctx.guides) out.push(...guideElements(g, m));
   return out;
+}
+
+/** Guide colours (also shown as the admin preview legend). */
+export const GUIDE_COLORS = {
+  'guide-unit': '#5F6368',
+  'guide-safe-area': '#34A853',
+  'guide-credential-panel': '#9AA0A6',
+  'guide-id-area': '#F29900',
+  'guide-target': '#FF00FF',
+  'guide-quiet-zone': '#7B1FA2',
+  'guide-qr': '#7B1FA2',
+  'guide-cover-placement': '#00A0FF',
+  'guide-cover-cut': '#00A0FF',
+} as const;
+
+/**
+ * "Show Guides" / proof overlay: unit boundary, safe area, credential panel, dynamic ID area,
+ * protected target, QR + quiet zone, cover placement target and the cover cut. QA only — never
+ * part of production artwork.
+ */
+export function guideElements(g: StickerGeometry, m: TextMetrics): DrawElement[] {
+  const s = (
+    role: keyof typeof GUIDE_COLORS,
+    b: Box,
+    dash?: number,
+    radius?: number,
+  ): DrawElement => ({
+    kind: 'rect',
+    role,
+    ...b,
+    stroke: GUIDE_COLORS[role],
+    lineWidth: 0.3,
+    dash,
+    radius,
+  });
+  const qz = D.qr.quietZoneModules;
+  // Symbol box for a typical (version 5, 37-module) code: quiet zone = the ring around it.
+  const mod = g.qrBox.w / (37 + 2 * qz);
+  const idCap = m.capHeight('bold') * D.id.fontPt;
+  return [
+    s('guide-unit', { x: 0.15, y: 0.15, w: UNIT_W - 0.3, h: UNIT_H - 0.3 }),
+    s(
+      'guide-safe-area',
+      { x: g.safeInset, y: g.safeInset, w: UNIT_W - 2 * g.safeInset, h: UNIT_H - 2 * g.safeInset },
+      1.5,
+    ),
+    s('guide-credential-panel', g.zones.credential, 0.8),
+    s(
+      'guide-id-area',
+      { x: g.idBaselineX - idCap - 0.5, y: g.safeInset, w: idCap + 1, h: UNIT_H - 2 * g.safeInset },
+      0.8,
+    ),
+    s('guide-target', g.target, 1),
+    s('guide-quiet-zone', g.qrBox),
+    s(
+      'guide-qr',
+      {
+        x: g.qrBox.x + qz * mod,
+        y: g.qrBox.y + qz * mod,
+        w: g.qrBox.w - 2 * qz * mod,
+        h: g.qrBox.h - 2 * qz * mod,
+      },
+      0.6,
+    ),
+    s('guide-cover-placement', g.coverFootprint, 1),
+    s('guide-cover-cut', g.coverDie, undefined, mmToPt(D.coverCornerRadiusMm)),
+  ];
 }
 
 /** Axis-aligned bounds of an element in unit coordinates (used by layout validation/tests). */
@@ -533,6 +653,17 @@ export function elementBounds(el: DrawElement): Box {
     case 'rect':
     case 'logo-placeholder':
       return { x: el.x, y: el.y, w: el.w, h: el.h };
+    case 'artwork': {
+      // Visible extent = drawn box ∩ clip.
+      const x = Math.max(el.x, el.clip.x);
+      const y = Math.max(el.y, el.clip.y);
+      return {
+        x,
+        y,
+        w: Math.max(0, Math.min(el.x + el.w, el.clip.x + el.clip.w) - x),
+        h: Math.max(0, Math.min(el.y + el.h, el.clip.y + el.clip.h) - y),
+      };
+    }
     case 'qr':
       return { x: el.x, y: el.y, w: el.size, h: el.size };
     case 'polygon': {

@@ -117,5 +117,15 @@ export const AuditAction = {
   /** Phase 9 final print: true-size 12 × 18 in 48-up PDF with Activation PINs. */
   SAFETY_ID_BATCH_PRINT_PDF: 'safety_id.batch.print_pdf',
   SAFETY_ID_BATCH_PRINTED: 'safety_id.batch.printed',
+  // Phase 9 — Print Designs (admin artwork).
+  PRINT_ARTWORK_UPLOADED: 'print_design.artwork_uploaded',
+  PRINT_DESIGN_CREATED: 'print_design.created',
+  PRINT_DESIGN_UPDATED: 'print_design.updated',
+  PRINT_DESIGN_VERSION_CREATED: 'print_design.version_created',
+  PRINT_DESIGN_DUPLICATED: 'print_design.duplicated',
+  PRINT_DESIGN_ACTIVATED: 'print_design.activated',
+  PRINT_DESIGN_ARCHIVED: 'print_design.archived',
+  PRINT_DESIGN_DELETED: 'print_design.deleted',
+  PRINT_DESIGN_TEST_PRINT: 'print_design.test_print',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];

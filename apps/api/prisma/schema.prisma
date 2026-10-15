@@ -310,6 +310,17 @@ enum SafetyIdBatchMode {
   HELMET_LINKED
 }
 
+enum PrintDesignStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum PrintArtworkFormat {
+  SVG
+  PNG
+}
+
 model AdminUser {
   id           String          @id @default(uuid(7)) @db.Uuid
   name         String          @db.VarChar(120)
@@ -325,6 +336,8 @@ model AdminUser {
   auditLogs                AuditLog[]
   createdBatches           HelmetBatch[]
   createdSafetyIdBatches   SafetyIdBatch[]
+  printArtworkUploads      PrintArtworkFile[]
+  printDesignsCreated      PrintDesign[]
   replacements             HelmetReplacement[]
   productReports           ProductReport[]
   assignedReports          ProductReport[]          @relation("ProductReportAssignee")
@@ -1205,6 +1218,10 @@ model SafetyIdBatch {
   generationCompletedAt DateTime?             @map("generation_completed_at") @db.Timestamptz(3)
   printStatus           BatchPrintStatus      @default(NOT_PRINTED) @map("print_status")
   printedAt             DateTime?             @map("printed_at") @db.Timestamptz(3)
+  /// Print Design version bound at creation (immutable). NULL = built-in legacy layout.
+  printDesignId         String?               @map("print_design_id") @db.Uuid
+  /// Denormalised for traceability; always equals the referenced design's version.
+  printDesignVersion    Int?                  @map("print_design_version")
   notes                 String?               @db.VarChar(1000)
   createdBy             String?               @map("created_by") @db.Uuid
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1212,11 +1229,13 @@ model SafetyIdBatch {
 
   creator     AdminUser?   @relation(fields: [createdBy], references: [id], onDelete: SetNull)
   helmetBatch HelmetBatch? @relation(fields: [helmetBatchId], references: [id], onDelete: Restrict)
+  printDesign PrintDesign? @relation(fields: [printDesignId], references: [id], onDelete: Restrict)
   safetyIds   SafetyId[]
 
   @@index([helmetBatchId])
   @@index([generationStatus])
   @@index([createdAt])
+  @@index([printDesignId])
   @@map("safety_id_batches")
 }
 
@@ -1365,4 +1384,69 @@ model SafetyIdRiskSignal {
   @@index([safetyId, status])
   @@index([status, lastDetectedAt])
   @@map("safety_id_risk_signals")
+}
+
+/// Uploaded print artwork (immutable; content-addressed by SHA-256). The bytes live in file
+/// storage under `print-designs/`; every field here is inspected server-side.
+model PrintArtworkFile {
+  id               String             @id @default(uuid(7)) @db.Uuid
+  storageKey       String             @unique @map("storage_key") @db.VarChar(120)
+  format           PrintArtworkFormat
+  originalFilename String             @map("original_filename") @db.VarChar(255)
+  mimeType         String             @map("mime_type") @db.VarChar(40)
+  /// SHA-256 of the stored (for SVG: sanitized) bytes — verified before every print.
+  sha256           String             @unique @db.Char(64)
+  /// SHA-256 of the file exactly as uploaded (traceability to the designer's source file).
+  sourceSha256     String             @map("source_sha256") @db.Char(64)
+  sizeBytes        Int                @map("size_bytes")
+  widthPx          Int?               @map("width_px")
+  heightPx         Int?               @map("height_px")
+  svgViewBox       String?            @map("svg_view_box") @db.VarChar(120)
+  /// PNG only: DPI when the image spans the full 4.5 in unit width (scale 100 %).
+  effectiveDpi     Int?               @map("effective_dpi")
+  /// SUPER_ADMIN-approved upload below the production minimum: previews/test prints only.
+  testOnly         Boolean            @default(false) @map("test_only")
+  warnings         Json               @default("[]")
+  uploadedBy       String?            @map("uploaded_by") @db.Uuid
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  uploader       AdminUser?    @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  baseOfDesigns  PrintDesign[] @relation("PrintDesignBase")
+  coverOfDesigns PrintDesign[] @relation("PrintDesignCover")
+
+  @@map("print_artwork_files")
+}
+
+/// Versioned Safety ID artwork. A version used by a batch (or no longer DRAFT) is immutable;
+/// edits create a new version in the same family. One ACTIVE design at most (partial index).
+model PrintDesign {
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  familyId           String             @map("family_id") @db.Uuid
+  name               String             @db.VarChar(120)
+  version            Int
+  status             PrintDesignStatus  @default(DRAFT)
+  artworkType        PrintArtworkFormat @map("artwork_type")
+  baseArtworkFileId  String             @map("base_artwork_file_id") @db.Uuid
+  coverArtworkFileId String?            @map("cover_artwork_file_id") @db.Uuid
+  /// Uniform scale in percent (aspect ratio locked) and offsets in millimetres.
+  scalePercent       Float              @default(100) @map("scale_percent")
+  offsetXMm          Float              @default(0) @map("offset_x_mm")
+  offsetYMm          Float              @default(0) @map("offset_y_mm")
+  validationErrors   Json               @default("[]") @map("validation_errors")
+  validationWarnings Json               @default("[]") @map("validation_warnings")
+  createdByAdminId   String?            @map("created_by_admin_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  activatedAt        DateTime?          @map("activated_at") @db.Timestamptz(3)
+  archivedAt         DateTime?          @map("archived_at") @db.Timestamptz(3)
+
+  baseArtwork  PrintArtworkFile  @relation("PrintDesignBase", fields: [baseArtworkFileId], references: [id], onDelete: Restrict)
+  coverArtwork PrintArtworkFile? @relation("PrintDesignCover", fields: [coverArtworkFileId], references: [id], onDelete: Restrict)
+  creator      AdminUser?        @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  batches      SafetyIdBatch[]
+
+  @@unique([familyId, version])
+  @@index([status])
+  @@index([createdAt])
+  @@map("print_designs")
 }

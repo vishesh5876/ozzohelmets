@@ -59,6 +59,13 @@ export const Permission = {
   SAFETY_IDS_EXPORT: 'safety-ids:export',
   /** Deactivate a Safety ID; link or unlink it to a helmet. */
   SAFETY_IDS_MANAGE: 'safety-ids:manage',
+  // Phase 9 — Print Designs (admin-controlled Safety ID artwork).
+  /** View designs and previews; choose a design for a new Safety ID batch. */
+  PRINT_DESIGN_VIEW: 'print-design:view',
+  /** Upload artwork, create drafts and new versions, duplicate, archive. */
+  PRINT_DESIGN_MANAGE: 'print-design:manage',
+  /** Make a design the default for future batches. */
+  PRINT_DESIGN_ACTIVATE: 'print-design:activate',
 } as const;
 export type Permission = (typeof Permission)[keyof typeof Permission];
 
@@ -93,6 +100,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     Permission.SAFETY_IDS_READ,
     Permission.SAFETY_IDS_GENERATE,
     Permission.SAFETY_IDS_EXPORT,
+    Permission.PRINT_DESIGN_VIEW,
   ],
   SUPPORT: [
     Permission.DASHBOARD_READ,

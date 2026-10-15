@@ -10,6 +10,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import type { AuthenticatedAdmin } from '../admin-auth/admin-auth.types';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
+import { PrintDesignsService } from '../print-designs/print-designs.service';
 import type { CreateSafetyIdBatchDto, SafetyIdBatchQueryDto } from './dto/safety-id.dto';
 import {
   SafetyIdGenerationService,
@@ -19,6 +20,7 @@ import {
 const include = {
   creator: { select: { id: true, name: true } },
   helmetBatch: { select: { id: true, batchCode: true, withSafetyIds: true } },
+  printDesign: { select: { id: true, name: true, version: true, status: true, artworkType: true } },
 } satisfies Prisma.SafetyIdBatchInclude;
 
 type Row = Prisma.SafetyIdBatchGetPayload<{ include: typeof include }>;
@@ -43,6 +45,7 @@ export class SafetyIdBatchesService {
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
     private readonly generator: SafetyIdGenerationService,
+    private readonly designs: PrintDesignsService,
   ) {}
 
   async list(query: SafetyIdBatchQueryDto): Promise<PaginatedResult<SafetyIdBatchDto>> {
@@ -133,6 +136,8 @@ export class SafetyIdBatchesService {
         );
       helmetBatchId = dto.helmetBatchId;
     }
+    // Bind an exact, validated design version now; later design edits never affect this batch.
+    const design = await this.designs.resolveForNewBatch(dto.printDesignId);
     const id = await this.prisma.$transaction(async (tx) => {
       const [row] = await tx.$queryRaw<
         { n: bigint }[]
@@ -146,6 +151,8 @@ export class SafetyIdBatchesService {
           quantity,
           notes: dto.notes,
           createdBy: admin.id,
+          printDesignId: design?.id ?? null,
+          printDesignVersion: design?.version ?? null,
         },
         select: { id: true },
       });
@@ -156,7 +163,14 @@ export class SafetyIdBatchesService {
           entityId: batch.id,
           adminId: admin.id,
           ipHash: meta.ipHash,
-          metadata: { batchCode, mode: dto.mode, quantity, helmetBatchId },
+          metadata: {
+            batchCode,
+            mode: dto.mode,
+            quantity,
+            helmetBatchId,
+            printDesignId: design?.id ?? null,
+            printDesignVersion: design?.version ?? null,
+          },
         },
         tx,
       );
@@ -299,6 +313,7 @@ export class SafetyIdBatchesService {
       printStatus: b.printStatus,
       printedAt: b.printedAt?.toISOString() ?? null,
       pinsEscrowed,
+      printDesign: b.printDesign,
       exportCount: exports.count,
       lastExportedAt: exports.lastAt?.toISOString() ?? null,
       notes: b.notes,

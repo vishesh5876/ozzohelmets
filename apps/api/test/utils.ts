@@ -52,7 +52,7 @@ export async function resetState(ctx: TestContext): Promise<void> {
   if (!dbName.endsWith('_test'))
     throw new Error(`Refusing to truncate non-test database "${dbName}"`);
   await ctx.prisma.$executeRawUnsafe(
-    'TRUNCATE helmet_scans, safety_id_batches, safety_ids, risk_alerts, platform_daily_stats, worker_job_runs, worker_heartbeats, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
+    'TRUNCATE helmet_scans, safety_id_batches, print_designs, print_artwork_files, safety_ids, risk_alerts, platform_daily_stats, worker_job_runs, worker_heartbeats, helmet_transfers, helmet_replacements, helmet_emergency_settings, customer_refresh_tokens, emergency_contacts, emergency_visibility, emergency_profiles, helmet_status_history, helmet_activation_secrets, helmet_ownerships, helmets, helmet_batches, helmet_models, audit_logs, admin_refresh_tokens, admin_users, users CASCADE',
   );
   await ctx.redis.flushdb();
 }

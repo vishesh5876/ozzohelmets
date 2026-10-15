@@ -57,6 +57,13 @@ export const ErrorCode = {
   PRINT_LAYOUT_INVALID: 'PRINT_LAYOUT_INVALID',
   /** Production print refused: the faithful OZZO logo vector asset is not configured. */
   PRINT_LOGO_MISSING: 'PRINT_LOGO_MISSING',
+  PRINT_DESIGN_NOT_FOUND: 'PRINT_DESIGN_NOT_FOUND',
+  /** The design (or its artwork) used by a batch is missing or its hash no longer matches. */
+  PRINT_DESIGN_UNAVAILABLE: 'PRINT_DESIGN_UNAVAILABLE',
+  /** Design is locked (used by a batch, or not a draft): create a new version instead. */
+  PRINT_DESIGN_LOCKED: 'PRINT_DESIGN_LOCKED',
+  PRINT_DESIGN_INVALID: 'PRINT_DESIGN_INVALID',
+  INVALID_ARTWORK: 'INVALID_ARTWORK',
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
   HELMET_ALREADY_ACTIVATED: 'HELMET_ALREADY_ACTIVATED',
   HELMET_NOT_ACTIVATABLE: 'HELMET_NOT_ACTIVATABLE',

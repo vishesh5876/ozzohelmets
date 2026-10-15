@@ -8,3 +8,4 @@ export * from './support';
 export * from './analytics';
 export * from './safety-id';
 export * from './print-layout';
+export * from './print-design';

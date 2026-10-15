@@ -1,4 +1,6 @@
 import PDFDocument from 'pdfkit';
+import SVGtoPDF from 'svg-to-pdfkit';
+import type { ArtworkAsset } from './artwork';
 import { type PrintSheetLayout, placeUnit } from '@helmet/types';
 import { planCuts, sheetSizePt } from './cut-lines';
 import type { DrawElement, StickerGeometry, TextMetrics, Weight } from './sticker-layout';
@@ -43,6 +45,123 @@ export function createTextMetrics(fonts: PrintFonts): TextMetrics {
       return c;
     },
   };
+}
+
+/**
+ * Standard-font mapping for live text in admin SVG artwork. Never a file path or a registered
+ * name derived from the artwork, so `font-family` can't make pdfkit read files.
+ */
+function standardFont(family: string | undefined, bold: boolean, italic: boolean): string {
+  const f = (family ?? '').toLowerCase();
+  const base = /times|serif(?!.*sans)|georgia|garamond/.test(f)
+    ? ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic']
+    : /courier|mono/.test(f)
+      ? ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique']
+      : ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'];
+  return base[(bold ? 1 : 0) + (italic ? 2 : 0)]!;
+}
+
+type PdfInternals = PDFKit.PDFDocument & {
+  page: { xobjects: Record<string, unknown>; margins: unknown } & object;
+  _ctm: number[];
+  ref(data: Record<string, unknown>): { end(): void };
+  addContent(data: string): void;
+  openImage(src: Buffer): unknown;
+};
+
+/** Per-document artwork cache: each artwork is embedded ONCE per PDF and reused by every unit. */
+const artworkCache = new WeakMap<PDFKit.PDFDocument, Map<string, { name: string; ref: unknown }>>();
+
+/**
+ * Renders sanitized SVG into a Form XObject (vector), in viewBox units. svg-to-pdfkit draws onto
+ * `doc.page`, so a stand-in page whose content stream and resources are the form's is swapped in
+ * for the duration of the call. Loaders are disabled: no images, fonts or documents can be
+ * fetched, whatever the SVG says (it was sanitized already; this is defence in depth).
+ */
+function svgForm(doc: PdfInternals, a: ArtworkAsset): unknown {
+  const vb = a.viewBox!;
+  const resources = doc.ref({ ProcSet: ['PDF', 'Text', 'ImageB', 'ImageC', 'ImageI'] });
+  const form = doc.ref({
+    Type: 'XObject',
+    Subtype: 'Form',
+    FormType: 1,
+    BBox: [0, 0, vb.width, vb.height],
+    Resources: resources,
+  });
+  const page = doc.page;
+  const ctm = doc._ctm;
+  const stand = Object.create(Object.getPrototypeOf(page) as object) as Record<string, unknown>;
+  Object.assign(stand, {
+    document: doc,
+    content: form,
+    resources,
+    width: vb.width,
+    height: vb.height,
+    margins: page.margins,
+    dictionary: { data: {} },
+    markings: [],
+  });
+  const warnings: string[] = [];
+  (doc as unknown as { page: unknown }).page = stand;
+  doc._ctm = [1, 0, 0, 1, 0, 0];
+  try {
+    doc.save();
+    doc.transform(1, 0, 0, -1, 0, vb.height);
+    SVGtoPDF(doc, a.svg!, 0, 0, {
+      width: vb.width,
+      height: vb.height,
+      preserveAspectRatio: 'xMidYMid meet',
+      fontCallback: standardFont,
+      imageCallback: () => {
+        throw new Error('images are not allowed in SVG artwork');
+      },
+      documentCallback: () => {
+        throw new Error('external documents are not allowed in SVG artwork');
+      },
+      warningCallback: (w: string) => warnings.push(w),
+    });
+    doc.restore();
+  } finally {
+    (doc as unknown as { page: unknown }).page = page;
+    doc._ctm = ctm;
+  }
+  resources.end();
+  form.end();
+  if (warnings.length) lastSvgWarnings.set(a.key, warnings);
+  return form;
+}
+
+/** Renderer warnings per artwork (validation surfaces them). */
+export const lastSvgWarnings = new Map<string, string[]>();
+
+function drawArtwork(
+  doc: PDFKit.PDFDocument,
+  el: Extract<DrawElement, { kind: 'artwork' }>,
+  ox: number,
+  oy: number,
+): void {
+  const d = doc as PdfInternals;
+  let cache = artworkCache.get(doc);
+  if (!cache) artworkCache.set(doc, (cache = new Map()));
+  let entry = cache.get(el.artwork.key);
+  if (!entry) {
+    const ref = el.artwork.format === 'SVG' ? svgForm(d, el.artwork) : d.openImage(el.artwork.png!);
+    entry = { name: `Art${cache.size + 1}`, ref };
+    cache.set(el.artwork.key, entry);
+  }
+  doc.save();
+  doc.rect(ox + el.clip.x, oy + el.clip.y, el.clip.w, el.clip.h).clip();
+  if (el.artwork.format === 'SVG') {
+    // Uniform scale: one factor for both axes (h = vbH × s by construction).
+    const s = el.w / el.artwork.viewBox!.width;
+    d.page.xobjects[entry.name] = entry.ref;
+    doc.transform(s, 0, 0, -s, ox + el.x, oy + el.y + el.artwork.viewBox!.height * s);
+    d.addContent(`/${entry.name} Do`);
+  } else {
+    // Lossless: the PNG's own data, drawn at exactly the placed box (its aspect ratio).
+    doc.image(entry.ref as Buffer, ox + el.x, oy + el.y, { width: el.w, height: el.h });
+  }
+  doc.restore();
 }
 
 /** Draws a display list with its origin at (ox, oy). */
@@ -114,6 +233,9 @@ export function drawElements(
             baseline: 'alphabetic',
           });
         doc.restore();
+        break;
+      case 'artwork':
+        drawArtwork(doc, el, ox, oy);
         break;
       case 'qr': {
         const n = el.matrix.size;

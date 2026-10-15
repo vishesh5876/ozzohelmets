@@ -5,6 +5,7 @@
 import { HELMET_CODE_RANDOM_LENGTH, helmetCodeCheckSymbol } from './identifiers';
 import type { HelmetStatus, WarrantyStatus } from './enums';
 import type { PrintSheetLayout } from './print-layout';
+import type { BatchPrintDesignDto } from './print-design';
 type IsoDateString = string;
 
 export const SAFETY_CODE_PREFIX = 'SI';
@@ -192,6 +193,8 @@ export interface SafetyIdBatchDto {
   printStatus: 'NOT_PRINTED' | 'PRINTED';
   printedAt: IsoDateString | null;
   pinsEscrowed: number;
+  /** Artwork version bound at creation; null = built-in legacy layout (pre-Print-Designs). */
+  printDesign: BatchPrintDesignDto | null;
   exportCount: number;
   lastExportedAt: IsoDateString | null;
   notes: string | null;
@@ -206,6 +209,8 @@ export interface CreateSafetyIdBatchRequest {
   quantity?: number;
   /** HELMET_LINKED only: one Safety ID for every helmet of this batch that has none yet. */
   helmetBatchId?: string;
+  /** Defaults to the ACTIVE print design. */
+  printDesignId?: string;
   notes?: string;
 }
 

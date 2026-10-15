@@ -31,12 +31,21 @@ import {
 import { sheetSvg, unitSvg } from './svg-renderer';
 
 const PT_TO_MM = 25.4 / 72;
+
+export interface ContextOptions {
+  proof?: boolean;
+  guides?: boolean;
+  artwork?: LayoutContext['artwork'];
+  testPrint?: boolean;
+}
 const mm = (pt: number) => Math.round(pt * PT_TO_MM * 100) / 100;
 
 /** Preview-only sample (never printed): a non-existent token, an obviously sample PIN. */
 const SAMPLE_TOKEN = 'PreviewSample000000000';
-const SAMPLE_CODE = 'SI-ABCD-EFGH';
-const SAMPLE_PIN = '123456';
+/** Test prints encode a distinct, equally non-existent token. */
+const TEST_PRINT_TOKEN = 'TestPrintSample0000000';
+const SAMPLE_CODE = 'SI-7958-72SA';
+const SAMPLE_PIN = '146628';
 
 /**
  * Loads the print assets once (logo, fonts, cover colour) and builds layout contexts for the PDF
@@ -101,13 +110,16 @@ export class PrintService {
     return g;
   }
 
-  context(layout: PrintSheetLayout, opts: { proof?: boolean } = {}): LayoutContext {
+  context(layout: PrintSheetLayout, opts: ContextOptions = {}): LayoutContext {
     return {
       geometry: this.geometry(layout),
       metrics: this.metrics,
       logo: this.logo,
       yellow: this.yellow,
       proof: opts.proof,
+      guides: opts.guides,
+      artwork: opts.artwork,
+      testPrint: opts.testPrint,
     };
   }
 
@@ -172,22 +184,23 @@ export class PrintService {
     };
   }
 
-  sampleUnit(): UnitData {
+  /** Sample data only (never a real Safety ID or PIN): previews and test prints. */
+  sampleUnit(testPrint = false): UnitData {
     return {
       safetyCode: SAMPLE_CODE,
       pin: SAMPLE_PIN,
-      qrPayload: this.config.publicHelmetUrl(SAMPLE_TOKEN),
+      qrPayload: this.config.publicHelmetUrl(testPrint ? TEST_PRINT_TOKEN : SAMPLE_TOKEN),
     };
   }
 
-  previewUnitSvg(layout: PrintSheetLayout, proof = false): string {
-    return unitSvg(layoutUnit(this.sampleUnit(), this.context(layout, { proof })), {
+  previewUnitSvg(layout: PrintSheetLayout, opts: ContextOptions = {}): string {
+    return unitSvg(layoutUnit(this.sampleUnit(), this.context(layout, opts)), {
       outline: true,
     });
   }
 
-  previewSheetSvg(layout: PrintSheetLayout, filled: number): string {
-    const ctx = this.context(layout);
+  previewSheetSvg(layout: PrintSheetLayout, filled: number, opts: ContextOptions = {}): string {
+    const ctx = this.context(layout, opts);
     return sheetSvg(layout, ctx.geometry, layoutUnit(this.sampleUnit(), ctx), filled);
   }
 

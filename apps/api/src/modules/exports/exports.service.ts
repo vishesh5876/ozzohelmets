@@ -18,6 +18,7 @@ import { AuditAction } from '../audit/audit-actions';
 import { AuditService } from '../audit/audit.service';
 import { SheetPdf } from '../print/pdf-renderer';
 import { PrintService } from '../print/print.service';
+import { PrintDesignsService, type RenderableDesign } from '../print-designs/print-designs.service';
 import { layoutUnit, StickerLayoutError } from '../print/sticker-layout';
 import { csvRow } from './csv';
 
@@ -58,6 +59,7 @@ export class ExportsService {
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
     private readonly print: PrintService,
+    private readonly designs: PrintDesignsService,
   ) {}
 
   /** Helmet batch CSV: one row per helmet with its linked Safety ID's QR URL and PIN. */
@@ -169,7 +171,13 @@ export class ExportsService {
       entityId: batchId,
       adminId: admin.id,
       ipHash: meta.ipHash,
-      metadata: { batchCode: batch.batchCode, safetyIds: batch.generatedCount, pinsIncluded },
+      metadata: {
+        batchCode: batch.batchCode,
+        safetyIds: batch.generatedCount,
+        pinsIncluded,
+        designId: batch.printDesignId,
+        designVersion: batch.printDesignVersion,
+      },
     });
     this.startDownload(res, 'text/csv; charset=utf-8', `${batch.batchCode}-safety-ids.csv`);
     res.setHeader('X-Pins-Included', String(pinsIncluded));
@@ -232,8 +240,17 @@ export class ExportsService {
       throw this.escrowPurged(
         `${units - pinsIncluded} Safety ID(s) of this batch no longer have a recoverable PIN.`,
       );
-    this.print.assertProductionReady();
-    const ctx = this.print.context(layout, { proof: opts.proof });
+    // The batch's own design version, verified byte-for-byte — never the currently active one,
+    // never a silent substitute. No design = built-in layout (pre-Print-Designs batches).
+    const design = batch.printDesignId
+      ? await this.designs.loadRenderable(batch.printDesignId)
+      : null;
+    if (design && design.version !== batch.printDesignVersion) throw this.designs.unavailable();
+    if (!design) this.print.assertProductionReady();
+    const ctx = this.print.context(
+      layout,
+      design ? this.designs.contextOptions(design, { proof: opts.proof }) : { proof: opts.proof },
+    );
     const plan = planSheets(units, unitsPerSheet(layout));
 
     // Lay out the first unit before anything is sent, so a layout problem is a clean error.
@@ -266,7 +283,8 @@ export class ExportsService {
         unitsPerSheet: plan.unitsPerSheet,
         layout: `${layout.sheetWidthIn}x${layout.sheetHeightIn}in ${layout.columns}x${layout.rows}`,
         proof: opts.proof === true,
-        logoSha256: ctx.logo?.sha256 ?? null,
+        ...this.designAudit(design),
+        logoSha256: design ? null : (ctx.logo?.sha256 ?? null),
       },
     });
 
@@ -306,6 +324,16 @@ export class ExportsService {
     }
   }
 
+  /** Manufacturing record of the artwork used (never a PIN). */
+  private designAudit(design: RenderableDesign | null) {
+    return {
+      designId: design?.id ?? null,
+      designVersion: design?.version ?? null,
+      designName: design?.name ?? null,
+      designSha256: design?.sha256 ?? null,
+    };
+  }
+
   private escrowPurged(detail: string): AppException {
     return new AppException(
       ErrorCode.PIN_ESCROW_PURGED,
@@ -317,7 +345,14 @@ export class ExportsService {
   private async safetyBatchForExport(batchId: string) {
     const batch = await this.prisma.safetyIdBatch.findUnique({
       where: { id: batchId },
-      select: { batchCode: true, generatedCount: true, generationStatus: true, printStatus: true },
+      select: {
+        batchCode: true,
+        generatedCount: true,
+        generationStatus: true,
+        printStatus: true,
+        printDesignId: true,
+        printDesignVersion: true,
+      },
     });
     if (!batch) throw AppException.notFound(ErrorCode.BATCH_NOT_FOUND, 'Batch not found.');
     if (batch.generationStatus !== 'COMPLETED')

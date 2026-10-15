@@ -29,7 +29,9 @@ export class AdminSafetyIdPrintController {
   @RawResponse()
   @ApiProduces('image/svg+xml')
   unit(@Query() query: Record<string, string>, @Res() res: Response): void {
-    const svg = this.print.previewUnitSvg(this.print.resolveLayout(query), query.proof === '1');
+    const svg = this.print.previewUnitSvg(this.print.resolveLayout(query), {
+      guides: query.proof === '1' || query.guides === '1',
+    });
     this.svg(res, svg);
   }
 
@@ -70,7 +72,10 @@ export class AdminSafetyIdPrintController {
 
   private svg(res: Response, svg: string): void {
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    );
     res.type('image/svg+xml').send(svg);
   }
 }

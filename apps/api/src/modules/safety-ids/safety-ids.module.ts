@@ -3,6 +3,7 @@ import { EmergencyModule } from '../emergency/emergency.module';
 import { ExportsModule } from '../exports/exports.module';
 import { LabelsModule } from '../labels/labels.module';
 import { PrintModule } from '../print/print.module';
+import { PrintDesignsModule } from '../print-designs/print-designs.module';
 import {
   AdminSafetyIdBatchesController,
   AdminSafetyIdsController,
@@ -18,7 +19,7 @@ import { SafetyIdTransferService } from './safety-id-transfer.service';
 
 /** Customer and admin Safety ID features (core transaction rules live in SafetyIdCoreModule). */
 @Module({
-  imports: [EmergencyModule, ExportsModule, LabelsModule, PrintModule],
+  imports: [EmergencyModule, ExportsModule, LabelsModule, PrintModule, PrintDesignsModule],
   controllers: [
     CustomerSafetyIdsController,
     SafetyIdClaimController,
