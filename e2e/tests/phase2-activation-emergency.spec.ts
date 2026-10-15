@@ -73,7 +73,7 @@ test.describe
       .split('\r\n');
     const [helmetCode, , , , qrUrl, pin] = csv[1]!.split(',');
     helmet = { helmetCode: helmetCode!, qrUrl: qrUrl!, pin: pin! };
-    expect(helmet.pin).toMatch(/^[23456789A-HJ-NP-Z]{8}$/);
+    expect(helmet.pin).toMatch(/^[0-9]{6}$/);
 
     // Labels printed → escrow purged; then warehouse → sold.
     await page.getByRole('button', { name: 'Mark printed' }).click();

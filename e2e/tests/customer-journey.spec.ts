@@ -84,7 +84,7 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
         return { helmetCode: helmetCode!, qrUrl: qrUrl!, pin: pin! };
       });
     [first, second] = rows as [Helmet, Helmet];
-    for (const h of rows) expect(h.pin).toMatch(/^[23456789A-HJ-NP-Z]{8}$/);
+    for (const h of rows) expect(h.pin).toMatch(/^[0-9]{6}$/);
 
     // Labels printed (escrow purged). No inventory or sale step follows.
     await page.getByRole('button', { name: 'Mark printed' }).click();

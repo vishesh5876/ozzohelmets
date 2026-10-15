@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertTriangle, Download, Play, Printer } from 'lucide-react';
+import { AlertTriangle, Download, FileDown, Play } from 'lucide-react';
 import { Permission, type SafetyIdBatchDto } from '@helmet/types';
 import {
   Button,
@@ -24,11 +24,14 @@ import {
   formatNumber,
 } from '../../lib/format';
 import { GenerationBadge, PrintBadge, ProgressBar } from '../batches/BatchStatus';
+import { SafetyIdPrintPanel } from './SafetyIdPrintPanel';
+import { usePrintLayout } from './usePrintLayout';
 
 export function SafetyIdBatchDetailPage() {
   const { id = '' } = useParams();
   const qc = useQueryClient();
   const [confirmPrint, setConfirmPrint] = useState(false);
+  const [print, setLayout] = usePrintLayout();
   const {
     data: b,
     isLoading,
@@ -52,17 +55,18 @@ export function SafetyIdBatchDetailPage() {
     },
   });
   const download = useMutation({
-    mutationFn: async (kind: 'csv' | 'sheet') => {
+    mutationFn: async (kind: 'csv' | 'pdf') => {
+      // CSV and PDF use the same layout, so CSV sheet positions match the PDF.
       const path =
         kind === 'csv'
           ? `/admin/safety-id-batches/${id}/export/safety-ids.csv`
-          : `/admin/safety-id-batches/${id}/export/print-sheet.html`;
-      const { blob, headers } = await apiBlob(path);
+          : `/admin/safety-id-batches/${id}/export/print.pdf`;
+      const { blob, headers } = await apiBlob(path, { query: print.query });
       downloadBlob(
         blob,
         filenameFromDisposition(
           headers.get('Content-Disposition'),
-          `${b?.batchCode ?? 'safety-ids'}.${kind === 'csv' ? 'csv' : 'html'}`,
+          `${b?.batchCode ?? 'safety-ids'}.${kind}`,
         ),
       );
       await refresh();
@@ -115,10 +119,17 @@ export function SafetyIdBatchDetailPage() {
                 </Button>
                 <Button
                   variant="subtle"
-                  onClick={() => download.mutate('sheet')}
-                  loading={download.isPending && download.variables === 'sheet'}
+                  disabled={!print.valid || b.printStatus === 'PRINTED' || b.pinsEscrowed === 0}
+                  title={
+                    b.printStatus === 'PRINTED'
+                      ? 'PIN escrow purged: a reprint with the original PINs is impossible.'
+                      : undefined
+                  }
+                  onClick={() => download.mutate('pdf')}
+                  loading={download.isPending && download.variables === 'pdf'}
                 >
-                  <Printer className="h-4 w-4" aria-hidden /> Print sheet
+                  <FileDown className="h-4 w-4" aria-hidden /> Download {print.layout.sheetHeightIn}{' '}
+                  × {print.layout.sheetWidthIn} Print PDF
                 </Button>
               </RequirePermission>
             )}
@@ -186,6 +197,7 @@ export function SafetyIdBatchDetailPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
             <Row label="Print status" value={<PrintBadge status={b.printStatus} />} />
+            <Row label="Activation PIN" value={pinState(b)} />
             <Row label="PINs in escrow" value={formatNumber(b.pinsEscrowed)} />
             <Row
               label="Exports"
@@ -199,24 +211,38 @@ export function SafetyIdBatchDetailPage() {
           </CardContent>
         </Card>
       </div>
+      {completed && (
+        <SafetyIdPrintPanel generated={b.generatedCount} print={print} onLayoutChange={setLayout} />
+      )}
       <Dialog
         open={confirmPrint}
         onClose={() => setConfirmPrint(false)}
-        title="Mark this batch printed?"
-        description="Safety IDs move to Printed and the Activation PIN escrow is destroyed for good. PINs can no longer be exported or printed."
+        title="Printing completed?"
+        description="Marking this Safety ID batch as printed will permanently delete the recoverable Activation PIN escrow. The printed PIN will continue to work, but it cannot be displayed or exported again."
       >
+        <p className="mb-3 text-sm text-body">
+          Only confirm after the physical sheets were printed, checked and scanned. Downloading the
+          PDF does not mark anything printed.
+        </p>
         <InlineError error={markPrinted.error} />
         <div className="flex justify-end gap-2">
           <Button variant="subtle" onClick={() => setConfirmPrint(false)}>
             Cancel
           </Button>
           <Button loading={markPrinted.isPending} onClick={() => markPrinted.mutate()}>
-            Confirm printed
+            Confirm printed and purge escrow
           </Button>
         </div>
       </Dialog>
     </>
   );
+}
+
+/** Batch-level Activation PIN state (the PIN itself is never shown). */
+function pinState(b: SafetyIdBatchDto): string {
+  if (b.printStatus === 'PRINTED') return 'Unused · escrow purged';
+  if (b.pinsEscrowed === 0) return 'No PIN in escrow';
+  return b.exportCount > 0 ? 'Exported for printing' : 'Available for printing';
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {

@@ -132,7 +132,7 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
     batchUrl = admin.url();
   });
 
-  test('2: the Safety ID CSV carries one-time PINs; the print sheet has the PIN instruction', async () => {
+  test('2: the CSV carries six-digit PINs in print order; the 12 × 18 PDF is true size', async () => {
     const api = await playwrightRequest.newContext();
     const auth = await adminAuth(api);
     const batchId = batchUrl.split('/').pop()!;
@@ -143,13 +143,17 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
     expect(res.headers()['x-pins-included']).toBe('2');
     expect(res.headers()['cache-control']).toContain('no-store');
     const lines = (await res.text()).trim().split('\r\n');
-    expect(lines[0]!.startsWith('safetyCode,')).toBe(true);
+    expect(lines[0]).toBe(
+      'safetyCode,publicQrUrl,activationPin,qrPayload,batchCode,unitIndex,sheet,sheetRow,sheetColumn,linkedHelmetCode,linkedHelmetSerial,model',
+    );
     const rows = lines.slice(1).map((l) => l.split(','));
     expect(rows).toHaveLength(2);
-    const [safetyCode, qrUrl, pin, helmetCode] = rows[0]!;
+    const [safetyCode, qrUrl, pin, qrPayload, , unitIndex] = rows[0]!;
     expect(safetyCode).toMatch(/^SI-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
-    expect(pin).toMatch(/^[23456789A-HJ-NP-Z]{8}$/);
-    expect(helmetCode).toBe('');
+    expect(pin).toMatch(/^[0-9]{6}$/);
+    expect(qrPayload).toBe(qrUrl);
+    expect(unitIndex).toBe('1');
+    expect(rows[0]![9]).toBe('');
     standalone = {
       safetyCode: safetyCode!,
       qrUrl: qrUrl!,
@@ -157,16 +161,24 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
       pin: pin!,
     };
 
-    const sheet = await api.get(
-      `${API}/admin/safety-id-batches/${batchId}/export/print-sheet.html`,
-      { headers: auth },
-    );
-    expect(sheet.ok()).toBeTruthy();
-    expect(sheet.headers()['cache-control']).toContain('no-store');
-    const html = await sheet.text();
-    expect(html).toContain('Use this PIN once to activate your Safety ID.');
-    expect(html).toContain(standalone.safetyCode);
+    const pdf = await api.get(`${API}/admin/safety-id-batches/${batchId}/export/print.pdf`, {
+      headers: auth,
+    });
+    expect(pdf.ok()).toBeTruthy();
+    expect(pdf.headers()['content-type']).toBe('application/pdf');
+    expect(pdf.headers()['cache-control']).toContain('no-store');
+    expect(pdf.headers()['x-print-sheets']).toBe('1');
+    const body = (await pdf.body()).toString('latin1');
+    expect(body).toContain('/MediaBox [0 0 1296 864]');
     await api.dispose();
+
+    // The batch page shows the sheet plan, the 48-up warning and a true-proportion preview.
+    await admin.goto(batchUrl);
+    await expect(admin.getByText('48-up uses the full 12 × 18 inch sheet')).toBeVisible();
+    await expect(admin.getByText('Exported for printing')).toBeVisible();
+    await admin.getByRole('button', { name: 'Preview unit' }).click();
+    await expect(admin.getByRole('img', { name: 'Safety ID sticker unit preview' })).toBeVisible();
+    await admin.keyboard.press('Escape');
   });
 
   test('3: marking the batch printed destroys the PIN escrow', async () => {
@@ -191,7 +203,7 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
       .getByTestId('safety-id-row')
       .getByRole('link', { name: standalone.safetyCode })
       .click();
-    await expect(admin.getByTestId('pin-state')).toHaveText('Escrow purged');
+    await expect(admin.getByTestId('pin-state')).toHaveText('Unused · escrow purged');
     await expect(admin.getByTestId('safety-linked-helmet')).toContainText(/standalone|not linked/i);
   });
 

@@ -29,7 +29,7 @@ import { formatDate, formatDateTime, formatNumber } from '../../lib/format';
 const PIN_STATE: Record<AdminSafetyIdDetailDto['pinState'], string> = {
   AVAILABLE: 'Available for printing',
   EXPORTED: 'Exported for printing',
-  PURGED: 'Escrow purged',
+  PURGED: 'Unused · escrow purged',
   CONSUMED: 'Consumed',
 };
 

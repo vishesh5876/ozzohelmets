@@ -11,6 +11,7 @@ import {
   isValidSafetyCode,
   normalizeHelmetCode,
   normalizeSafetyCode,
+  isAcceptedActivationPin,
 } from '@helmet/types';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
 import { InlineError, LoadingState } from '../../components/States';
@@ -236,7 +237,7 @@ export function ActivatePage() {
                 <Field
                   label="Activation PIN"
                   htmlFor="pin"
-                  hint="Enter the Activation PIN printed with your Safety ID. It works only once."
+                  hint="Enter the Activation PIN printed with your Safety ID. New stickers have a 6-digit PIN. It works only once."
                 >
                   <Input
                     id="pin"
@@ -251,7 +252,12 @@ export function ActivatePage() {
                   />
                 </Field>
                 <InlineError error={validate.error ?? addHelmet.error} />
-                <Button type="submit" size="lg" disabled={pin.length < 8} loading={busy}>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={!isAcceptedActivationPin(pin)}
+                  loading={busy}
+                >
                   {signedIn ? 'Add Safety ID to my account' : 'Continue'}
                 </Button>
                 {!signedIn && (

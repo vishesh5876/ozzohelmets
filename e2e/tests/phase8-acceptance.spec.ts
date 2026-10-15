@@ -114,7 +114,7 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
       'Step 1 of 6: Verify Safety ID',
     );
 
-    await owner.fill('#pin', '0000AAAA');
+    await owner.fill('#pin', '000000');
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(
       owner.getByText('The Activation PIN could not be verified.', { exact: false }),
