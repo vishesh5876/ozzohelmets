@@ -28,6 +28,16 @@ const SafetyIdBatchDetailPage = lazy(() =>
     default: m.SafetyIdBatchDetailPage,
   })),
 );
+const PrintDesignsPage = lazy(() =>
+  import('./features/print-designs/PrintDesignsPage').then((m) => ({
+    default: m.PrintDesignsPage,
+  })),
+);
+const PrintDesignEditorPage = lazy(() =>
+  import('./features/print-designs/PrintDesignEditorPage').then((m) => ({
+    default: m.PrintDesignEditorPage,
+  })),
+);
 const AuditLogsPage = lazy(() =>
   import('./features/audit/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })),
 );
@@ -191,6 +201,22 @@ export function App() {
           element={
             <Guard permission={Permission.SAFETY_IDS_READ}>
               <SafetyIdBatchesPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="print-designs"
+          element={
+            <Guard permission={Permission.PRINT_DESIGN_VIEW}>
+              <PrintDesignsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="print-designs/:id"
+          element={
+            <Guard permission={Permission.PRINT_DESIGN_VIEW}>
+              <PrintDesignEditorPage />
             </Guard>
           }
         />

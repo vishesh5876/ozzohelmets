@@ -15,6 +15,9 @@ export const api = {
   get: client.get,
   post: client.post,
   patch: client.patch,
+  delete: client.delete,
+  /** Multipart POST (artwork uploads). */
+  upload: <T>(path: string, form: FormData) => client.upload<T>(path, form, 'POST'),
   page: <T>(path: string, query?: RequestOptions['query']) =>
     client.page<T>(path, { method: 'GET', query }),
 };

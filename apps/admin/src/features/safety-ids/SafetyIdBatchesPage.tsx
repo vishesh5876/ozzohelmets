@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { type BatchDto, Permission, type SafetyIdBatchDto } from '@helmet/types';
+import {
+  type BatchDto,
+  Permission,
+  type PrintDesignDto,
+  type SafetyIdBatchDto,
+} from '@helmet/types';
 import { Button, Field, humanizeEnum, Input, Select, Textarea } from '@helmet/ui';
 import { Dialog } from '../../components/Dialog';
 import { PageHeader } from '../../components/PageHeader';
@@ -10,6 +15,8 @@ import { RequirePermission } from '../../components/RequirePermission';
 import { EmptyState, ErrorState, InlineError, LoadingState } from '../../components/States';
 import { Table, Td, Th, THead, Tr } from '../../components/Table';
 import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth-context';
+import { DesignPreview } from '../print-designs/shared';
 import { formatDateTime, formatNumber } from '../../lib/format';
 import { GenerationBadge, PrintBadge } from '../batches/BatchStatus';
 
@@ -101,6 +108,20 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
   const [quantity, setQuantity] = useState('100');
   const [helmetBatchId, setHelmetBatchId] = useState('');
   const [notes, setNotes] = useState('');
+  const { can } = useAuth();
+  const canChooseDesign = can(Permission.PRINT_DESIGN_VIEW);
+  const [designId, setDesignId] = useState<string>('');
+  const [previewDesign, setPreviewDesign] = useState(false);
+  const designs = useQuery({
+    queryKey: ['print-designs', 'selectable'],
+    queryFn: () => api.get<PrintDesignDto[]>('/admin/print-designs'),
+    enabled: canChooseDesign,
+  });
+  const selectable = (designs.data ?? []).filter(
+    (d) => d.status === 'ACTIVE' || (d.status === 'DRAFT' && d.validationErrors.length === 0),
+  );
+  const activeDesign = selectable.find((d) => d.status === 'ACTIVE');
+  const chosen = selectable.find((d) => d.id === designId) ?? activeDesign;
   const helmetBatches = useQuery({
     queryKey: ['batches', 'safety-id-options'],
     queryFn: () =>
@@ -112,6 +133,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
       const batch = await api.post<SafetyIdBatchDto>('/admin/safety-id-batches', {
         mode,
         ...(mode === 'STANDALONE' ? { quantity: Number(quantity) } : { helmetBatchId }),
+        printDesignId: designId || undefined,
         notes: notes.trim() || undefined,
       });
       await api.post(`/admin/safety-id-batches/${batch.id}/generate`);
@@ -169,6 +191,49 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
                 </option>
               ))}
             </Select>
+          </Field>
+        )}
+        {canChooseDesign && (
+          <Field
+            label="Print Design"
+            htmlFor="sib-design"
+            hint="The batch keeps this exact design version forever; later design changes never affect it."
+          >
+            <div className="flex items-center gap-2">
+              <Select
+                id="sib-design"
+                value={designId}
+                onChange={(e) => setDesignId(e.target.value)}
+              >
+                <option value="">
+                  {activeDesign
+                    ? `${activeDesign.name} v${activeDesign.version} (Active)`
+                    : 'No active design — built-in layout'}
+                </option>
+                {selectable
+                  .filter((d) => d.status !== 'ACTIVE')
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} v{d.version} (Draft)
+                    </option>
+                  ))}
+              </Select>
+              {chosen && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="subtle"
+                  onClick={() => setPreviewDesign((v) => !v)}
+                >
+                  Preview
+                </Button>
+              )}
+            </div>
+            {chosen && previewDesign && (
+              <div className="mt-2">
+                <DesignPreview designId={chosen.id} kind="unit" version={chosen.updatedAt} />
+              </div>
+            )}
           </Field>
         )}
         <Field label="Notes (optional)" htmlFor="sib-notes">

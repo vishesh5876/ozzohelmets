@@ -43,6 +43,10 @@ const LABELS: Record<Permission, string> = {
   'safety-ids:generate': 'Create Safety ID batches and mark them printed',
   'safety-ids:export': 'Export / print Safety IDs with Activation PINs (audited)',
   'safety-ids:manage': 'Deactivate Safety IDs and link or unlink helmets',
+  'print-design:view': 'View print designs and previews; choose a design for a batch',
+  'print-design:manage':
+    'Upload artwork, create drafts and versions, duplicate and archive designs',
+  'print-design:activate': 'Make a print design the default for new batches',
 };
 
 export function RolesPage() {

@@ -26,6 +26,7 @@ import {
 import { GenerationBadge, PrintBadge, ProgressBar } from '../batches/BatchStatus';
 import { SafetyIdPrintPanel } from './SafetyIdPrintPanel';
 import { usePrintLayout } from './usePrintLayout';
+import { DesignPreview } from '../print-designs/shared';
 
 export function SafetyIdBatchDetailPage() {
   const { id = '' } = useParams();
@@ -211,6 +212,7 @@ export function SafetyIdBatchDetailPage() {
           </CardContent>
         </Card>
       </div>
+      <PrintDesignCard batch={b} />
       {completed && (
         <SafetyIdPrintPanel generated={b.generatedCount} print={print} onLayoutChange={setLayout} />
       )}
@@ -235,6 +237,54 @@ export function SafetyIdBatchDetailPage() {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** The exact artwork version bound at creation (manufacturing traceability). */
+function PrintDesignCard({ batch }: { batch: SafetyIdBatchDto }) {
+  const [open, setOpen] = useState(false);
+  const d = batch.printDesign;
+  return (
+    <Card className="mt-4" data-testid="batch-print-design">
+      <CardHeader>
+        <CardTitle>Print Design</CardTitle>
+        <CardDescription>
+          Fixed when the batch was created. Activating another design never changes this batch.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 text-sm">
+        {d ? (
+          <>
+            <Row
+              label="Design"
+              value={
+                <Link to={`/print-designs/${d.id}`} className="hover:underline">
+                  {d.name}
+                </Link>
+              }
+            />
+            <Row
+              label="Version"
+              value={<span data-testid="batch-design-version">{d.version}</span>}
+            />
+            <Row
+              label="Artwork"
+              value={d.artworkType === 'SVG' ? 'SVG / Vector' : 'PNG / Raster'}
+            />
+            <div>
+              <Button variant="subtle" size="sm" onClick={() => setOpen((v) => !v)}>
+                Preview
+              </Button>
+            </div>
+            {open && <DesignPreview designId={d.id} kind="unit" />}
+          </>
+        ) : (
+          <p className="text-body">
+            Built-in layout (created before Print Designs, or with no active design).
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

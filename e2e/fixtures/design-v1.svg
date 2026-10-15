@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEST FIXTURE: sample Safety ID background artwork (not OZZO branding). 4.5 : 1. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 100" width="4.5in" height="1in">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#111111"/>
+      <stop offset="1" stop-color="#3A3A3A"/>
+    </linearGradient>
+    <clipPath id="band"><rect x="0" y="0" width="450" height="100"/></clipPath>
+  </defs>
+  <rect width="450" height="100" fill="url(#bg)"/>
+  <g clip-path="url(#band)">
+    <path d="M0 78 L220 78 L220 100 L0 100 Z" fill="#EC1C22"/>
+    <circle cx="200" cy="18" r="40" fill="#FFFFFF" fill-opacity="0.08"/>
+  </g>
+  <rect x="12" y="12" width="60" height="16" rx="3" fill="#FFFFFF"/>
+  <path d="M12 40 h150 v6 h-150 z M12 52 h120 v6 h-120 z" fill="#FFFFFF"/>
+  <path d="M150 84 l12 5 l-12 5 z" fill="#FFFFFF"/>
+</svg>
