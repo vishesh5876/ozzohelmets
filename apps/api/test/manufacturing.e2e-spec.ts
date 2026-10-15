@@ -228,7 +228,8 @@ describe('Manufacturing flow (e2e)', () => {
 
     const [helmetCode, , model, , qrUrl, pin, safetyCode] = lines[1]!.split(',');
     expect(model).toBe('Roadster X1');
-    expect(pin).toMatch(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/);
+    // Phase 9 final format: six digits, kept as text (leading zeros count).
+    expect(pin).toMatch(/^[0-9]{6}$/);
     const helmet = await ctx.prisma.helmet.findUniqueOrThrow({ where: { helmetCode } });
     const safety = await ctx.prisma.safetyId.findUniqueOrThrow({ where: { safetyCode } });
     expect(qrUrl).toBe(`https://safe.example.test/e/${safety.publicToken}`);

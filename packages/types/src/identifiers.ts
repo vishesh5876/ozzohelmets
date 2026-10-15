@@ -11,8 +11,29 @@ export const HELMET_CODE_RANDOM_LENGTH = 7;
 export const HELMET_CODE_REGEX =
   /^HM-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
 
+/**
+ * Legacy (Phase 1–8) Activation PIN: 8 symbols of the unambiguous alphabet. No longer generated,
+ * but every printed, unconsumed legacy PIN keeps working.
+ */
 export const ACTIVATION_PIN_ALPHABET = HELMET_CODE_ALPHABET;
 export const ACTIVATION_PIN_LENGTH = 8;
+export const LEGACY_ACTIVATION_PIN_REGEX = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
+
+/**
+ * Phase 9 final format: every NEW Safety ID gets exactly six numeric digits (`000000`–`999999`).
+ * Always a string — leading zeros are significant and the value is never parsed as a number.
+ */
+export const SAFETY_ID_PIN_LENGTH = 6;
+export const SAFETY_ID_PIN_REGEX = /^[0-9]{6}$/;
+
+export function isSafetyIdPin(pin: string): boolean {
+  return SAFETY_ID_PIN_REGEX.test(pin);
+}
+
+/** Either accepted format (new six-digit or legacy). Callers normalise case/spaces first. */
+export function isAcceptedActivationPin(pin: string): boolean {
+  return SAFETY_ID_PIN_REGEX.test(pin) || LEGACY_ACTIVATION_PIN_REGEX.test(pin);
+}
 
 export const BASE62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 /** 22 base62 symbols ≈ 130.9 bits of entropy (requirement: ≥ 128). */

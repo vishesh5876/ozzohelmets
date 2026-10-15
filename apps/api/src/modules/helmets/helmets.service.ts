@@ -436,6 +436,11 @@ export async function lastPinExport(
             entityType: 'safety_id_batch',
             entityId: safetyBatchId,
           },
+          {
+            action: AuditAction.SAFETY_ID_BATCH_PRINT_PDF,
+            entityType: 'safety_id_batch',
+            entityId: safetyBatchId,
+          },
         ]
       : []),
   ];

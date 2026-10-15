@@ -417,10 +417,13 @@ describe('Phase 9 — Safety ID (e2e)', () => {
       expect(csv.headers['cache-control']).toBe('no-store');
       const lines = csv.text.trim().split('\r\n');
       expect(lines[0]).toBe(
-        'safetyCode,qrUrl,activationPin,linkedHelmetCode,linkedHelmetSerial,model,batchCode',
+        'safetyCode,publicQrUrl,activationPin,qrPayload,batchCode,unitIndex,sheet,sheetRow,sheetColumn,linkedHelmetCode,linkedHelmetSerial,model',
       );
       expect(lines).toHaveLength(13);
-      const [code, url, pin] = lines[1]!.split(',');
+      const [code, url, pin, payload, , unitIndex, sheet, sheetRow, col] = lines[1]!.split(',');
+      expect(pin).toMatch(/^[0-9]{6}$/);
+      expect(payload).toBe(url);
+      expect([unitIndex, sheet, sheetRow, col]).toEqual(['1', '1', '1', '1']);
       const row = await ctx.prisma.safetyId.findUniqueOrThrow({ where: { safetyCode: code } });
       expect(url).toBe(`https://safe.example.test/e/${row.publicToken}`);
       await expect(ctx.hashing.verifyPin(row.activationPinHash, pin!)).resolves.toBe(true);
@@ -432,20 +435,25 @@ describe('Phase 9 — Safety ID (e2e)', () => {
         ctx.app.get(EncryptionService).pinEscrow.decrypt(secret.pinCiphertext, 'another-safety-id'),
       ).toThrow();
 
-      const sheet = await ctx
+      const pdf = await ctx
         .http()
-        .get(`/api/v1/admin/safety-id-batches/${id}/export/print-sheet.html`)
+        .get(`/api/v1/admin/safety-id-batches/${id}/export/print.pdf`)
         .set(bearer(mfg.token))
+        .buffer(true)
+        .parse((res, cb) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => cb(null, Buffer.concat(chunks)));
+        })
         .expect(200);
-      expect(sheet.headers['content-type']).toMatch(/text\/html/);
-      expect(sheet.headers['cache-control']).toBe('no-store');
-      expect(sheet.text).toContain('Use this PIN once to activate your Safety ID.');
-      expect(sheet.text).toContain(code);
-      expect(sheet.text).toContain(pin);
-      expect(sheet.text).not.toMatch(/<script/i);
+      expect(pdf.headers['content-type']).toBe('application/pdf');
+      expect(pdf.headers['cache-control']).toBe('no-store');
+      expect(pdf.headers['x-print-sheets']).toBe('1');
+      expect(pdf.headers['x-pins-included']).toBe('12');
+      expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
       const audits = await ctx.prisma.auditLog.findMany({ where: { entityId: id } });
       expect(audits.map((a) => a.action)).toEqual(
-        expect.arrayContaining(['safety_id.batch.exported', 'safety_id.batch.print_sheet']),
+        expect.arrayContaining(['safety_id.batch.exported', 'safety_id.batch.print_pdf']),
       );
       expect(JSON.stringify(audits)).not.toContain(pin);
 

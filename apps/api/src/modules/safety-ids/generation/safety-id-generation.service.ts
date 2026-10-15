@@ -6,8 +6,8 @@ import { PrismaService, type PrismaTx } from '../../../infrastructure/prisma/pri
 import { EncryptionService } from '../../../security/encryption.service';
 import { HashingService } from '../../../security/hashing.service';
 import {
-  generateActivationPin,
   generatePublicToken,
+  generateSafetyIdPin,
   generateSafetyCode,
 } from '../../../security/helmet-identity.generator';
 import { uuidv7 } from '../../../security/uuid';
@@ -85,14 +85,17 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
       this.logger.warn(`Marked ${count} interrupted Safety ID generation(s) as FAILED`);
   }
 
-  /** PIN → Argon2id hash (verification) + AES-GCM escrow bound to the Safety ID id. */
+  /**
+   * Six-digit PIN (string) → Argon2id hash with the PIN pepper (verification) + AES-GCM escrow
+   * bound to the Safety ID id (printing). The plaintext exists only inside this function.
+   */
   async prepare(size: number): Promise<{ units: PreparedSafetyId[] }> {
     const units = await mapWithConcurrency(
       Array.from({ length: size }, (_, i) => i),
       HASH_CONCURRENCY,
       async () => {
         const id = uuidv7();
-        const pin = generateActivationPin();
+        const pin = generateSafetyIdPin();
         return {
           id,
           activationPinHash: await this.hashing.hashPin(pin),
@@ -105,12 +108,14 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
 
   /**
    * Inserts prepared Safety IDs (and links, when `helmetIds` is given — same order as `units`)
-   * inside the caller's transaction. A linked helmet mirrors the Safety ID's public token and
+   * inside the caller's transaction. `offset` is the batch's generated count before this chunk;
+   * unit N of the batch gets `unit_index` N (the deterministic print order). A linked helmet mirrors the Safety ID's public token and
    * PIN hash, so a Phase 8 rollback can still resolve and activate it.
    */
   async insert(
     tx: PrismaTx,
     batchId: string,
+    offset: number,
     units: PreparedSafetyId[],
     ids: SafetyIdIdentifiers[],
     helmetIds?: string[],
@@ -124,6 +129,8 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
         status: 'GENERATED',
         activationPinHash: u.activationPinHash,
         batchId,
+        // 1-based, contiguous per batch: the print/export order.
+        unitIndex: offset + i + 1,
       })),
     });
     await tx.safetyIdActivationSecret.createMany({
@@ -234,7 +241,7 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
       await this.prisma.$transaction(
         async (tx) => {
           await this.advance(tx, batchId, offset, size);
-          await this.insert(tx, batchId, units, ids);
+          await this.insert(tx, batchId, offset, units, ids);
         },
         { timeout: 60_000, maxWait: 10_000 },
       );
@@ -260,7 +267,7 @@ export class SafetyIdGenerationService implements OnApplicationBootstrap {
           const still = await this.helmetsWithoutSafetyId(tx, helmetBatchId, size);
           if (still.length !== helmets.length || still.some((h, i) => h !== helmets[i]))
             throw new Error('Helmet links changed concurrently');
-          await this.insert(tx, batchId, units, ids, helmets, 'GENERATED_FOR_HELMET');
+          await this.insert(tx, batchId, offset, units, ids, helmets, 'GENERATED_FOR_HELMET');
         },
         { timeout: 60_000, maxWait: 10_000 },
       );

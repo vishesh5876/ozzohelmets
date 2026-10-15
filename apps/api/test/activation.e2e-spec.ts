@@ -1,3 +1,4 @@
+import { generateSafetyCode } from '../src/security/helmet-identity.generator';
 import {
   bearer,
   createTestApp,
@@ -70,25 +71,29 @@ describe('Safety ID activation — PIN as proof of possession (e2e)', () => {
     ).toBe(1);
   });
 
-  it('validate gives one answer for unknown, ineligible and already-owned helmets', async () => {
+  it('before the PIN is proven, unknown, ineligible, owned and wrong-PIN all get one answer', async () => {
     const recalled = await createTestHelmet(ctx, 'RECALLED');
     const owned = await newCustomer(ctx);
-    const unknown = await validate({ publicToken: 'A'.repeat(22), pin: 'ABCD2345' }).expect(409);
-    const ineligible = await validate({
-      publicToken: recalled.publicToken,
-      pin: recalled.pin,
-    }).expect(409);
-    const taken = await validate({
-      publicToken: owned.helmet.publicToken,
-      pin: owned.helmet.pin,
-    }).expect(409);
-    for (const r of [unknown, ineligible, taken])
-      expect(r.body.error).toEqual(
-        expect.objectContaining({
-          code: 'SAFETY_ID_NOT_ACTIVATABLE',
-          message: unknown.body.error.message,
-        }),
-      );
+    const fresh = await createTestHelmet(ctx, 'SOLD');
+    const wrong = '999999';
+    const answers = [
+      await validate({ publicToken: 'A'.repeat(22), pin: wrong }).expect(400),
+      await validate({ safetyCode: generateSafetyCode(), pin: wrong }).expect(400),
+      await validate({ publicToken: recalled.publicToken, pin: wrong }).expect(400),
+      await validate({ publicToken: owned.helmet.publicToken, pin: wrong }).expect(400),
+      await validate({ publicToken: fresh.publicToken, pin: wrong }).expect(400),
+    ];
+    for (const r of answers)
+      expect(r.body.error).toEqual({
+        code: 'INVALID_ACTIVATION_PIN',
+        message: answers[0]!.body.error.message,
+        requestId: expect.any(String),
+      });
+    // With the right PIN the holder learns the (generic) reason.
+    for (const h of [recalled, owned.helmet]) {
+      const r = await validate({ publicToken: h.publicToken, pin: h.pin }).expect(409);
+      expect(r.body.error.code).toBe('SAFETY_ID_NOT_ACTIVATABLE');
+    }
   });
 
   it('first activation creates the account, ownership, consumes the PIN, purges escrow, ACTIVATED — atomically', async () => {

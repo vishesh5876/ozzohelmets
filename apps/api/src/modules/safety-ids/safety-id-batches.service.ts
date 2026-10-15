@@ -26,6 +26,7 @@ type Row = Prisma.SafetyIdBatchGetPayload<{ include: typeof include }>;
 const EXPORT_ACTIONS = [
   AuditAction.SAFETY_ID_BATCH_EXPORTED,
   AuditAction.SAFETY_ID_BATCH_PRINT_SHEET,
+  AuditAction.SAFETY_ID_BATCH_PRINT_PDF,
 ];
 
 /**

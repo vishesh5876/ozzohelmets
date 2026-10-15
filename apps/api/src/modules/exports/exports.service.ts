@@ -1,6 +1,13 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Response } from 'express';
-import { ErrorCode, SAFETY_ID_EXPORT_COLUMNS } from '@helmet/types';
+import {
+  ErrorCode,
+  placeUnit,
+  planSheets,
+  type PrintSheetLayout,
+  SAFETY_ID_EXPORT_COLUMNS,
+  unitsPerSheet,
+} from '@helmet/types';
 import { AppException } from '../../common/http/app.exception';
 import type { RequestMeta } from '../../common/utils/request-context';
 import { AppConfigService } from '../../config/app-config.service';
@@ -9,7 +16,9 @@ import { EncryptionService } from '../../security/encryption.service';
 import type { AuthenticatedAdmin } from '../admin-auth/admin-auth.types';
 import { AuditAction } from '../audit/audit-actions';
 import { AuditService } from '../audit/audit.service';
-import { LabelsService } from '../labels/labels.service';
+import { SheetPdf } from '../print/pdf-renderer';
+import { PrintService } from '../print/print.service';
+import { layoutUnit, StickerLayoutError } from '../print/sticker-layout';
 import { csvRow } from './csv';
 
 const PAGE_SIZE = 1000;
@@ -23,24 +32,16 @@ const HELMET_HEADER = [
   'activationPin',
   'safetyCode',
 ];
-/** Print sheet wording, verbatim from the Phase 9 specification. */
-export const PRINT_PIN_INSTRUCTION = 'Use this PIN once to activate your Safety ID.';
-
 interface SafetyExportRow {
   id: string;
   safetyCode: string;
   publicToken: string;
+  unitIndex: number | null;
   pinCiphertext: string | null;
   helmetCode: string | null;
   serialNumber: string | null;
   model: string | null;
 }
-
-const escapeHtml = (v: string) =>
-  v.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
 
 /**
  * Manufacturing exports. PINs are decrypted from escrow on the fly while streaming and are never
@@ -49,12 +50,14 @@ const escapeHtml = (v: string) =>
  */
 @Injectable()
 export class ExportsService {
+  private readonly logger = new Logger(ExportsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
-    private readonly labels: LabelsService,
+    private readonly print: PrintService,
   ) {}
 
   /** Helmet batch CSV: one row per helmet with its linked Safety ID's QR URL and PIN. */
@@ -145,12 +148,16 @@ export class ExportsService {
     res.end();
   }
 
-  /** Safety ID batch CSV (SAFETY_ID_EXPORT_COLUMNS). */
+  /**
+   * Safety ID batch CSV (SAFETY_ID_EXPORT_COLUMNS), in print order: one row per unit, the same
+   * order and sheet positions as the print PDF for the same layout.
+   */
   async streamSafetyIdCsv(
     batchId: string,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
     res: Response,
+    layout: PrintSheetLayout,
   ): Promise<void> {
     const batch = await this.safetyBatchForExport(batchId);
     const pinsIncluded = await this.prisma.safetyIdActivationSecret.count({
@@ -167,88 +174,150 @@ export class ExportsService {
     this.startDownload(res, 'text/csv; charset=utf-8', `${batch.batchCode}-safety-ids.csv`);
     res.setHeader('X-Pins-Included', String(pinsIncluded));
     res.write(csvRow(SAFETY_ID_EXPORT_COLUMNS));
+    let ordinal = 0;
     for await (const page of this.safetyPages(batchId)) {
       let chunk = '';
-      for (const r of page)
+      for (const r of page) {
+        const url = this.config.publicHelmetUrl(r.publicToken);
+        const at = placeUnit(ordinal++, layout);
         chunk += csvRow([
           r.safetyCode,
-          this.config.publicHelmetUrl(r.publicToken),
+          url,
           this.pin(r),
+          url,
+          batch.batchCode,
+          r.unitIndex ?? '',
+          at.sheet,
+          at.row,
+          at.column,
           r.helmetCode ?? '',
           r.serialNumber ?? '',
           r.model ?? '',
-          batch.batchCode,
         ]);
+      }
       if (!res.write(chunk)) await new Promise((resolve) => res.once('drain', resolve));
     }
     res.end();
   }
 
   /**
-   * Print-ready HTML sheet: QR + Safety ID + Activation PIN together on each label, with the
-   * one-time-use instruction. Opened in a browser and printed; nothing is stored server-side.
+   * True-size production PDF (default 12 × 18 in, 48-up): one 4.5 × 1 in unit per Safety ID —
+   * emergency panel, ID/PIN/QR credential panel and the integrated yellow cover — in unit-index
+   * order, row-major per sheet. Blank positions on the last sheet stay blank. Only while every
+   * unit's PIN is still in escrow: after "mark printed" a PIN-bearing reprint is impossible.
+   * Streamed straight to the response: no temp file, nothing persisted, PINs never logged.
    */
-  async streamSafetyIdPrintSheet(
+  async streamSafetyIdPrintPdf(
     batchId: string,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
     res: Response,
+    layout: PrintSheetLayout,
+    opts: { proof?: boolean; compress?: boolean } = {},
   ): Promise<void> {
     const batch = await this.safetyBatchForExport(batchId);
-    const pinsIncluded = await this.prisma.safetyIdActivationSecret.count({
-      where: { safetyIdRef: { batchId } },
+    if (batch.printStatus === 'PRINTED')
+      throw this.escrowPurged('This batch was marked printed and its PIN escrow purged.');
+    const [units, pinsIncluded] = await Promise.all([
+      this.prisma.safetyId.count({ where: { batchId } }),
+      this.prisma.safetyIdActivationSecret.count({ where: { safetyIdRef: { batchId } } }),
+    ]);
+    if (units === 0)
+      throw new AppException(
+        ErrorCode.CONFLICT,
+        'The batch has no Safety IDs.',
+        HttpStatus.CONFLICT,
+      );
+    if (pinsIncluded !== units)
+      throw this.escrowPurged(
+        `${units - pinsIncluded} Safety ID(s) of this batch no longer have a recoverable PIN.`,
+      );
+    this.print.assertProductionReady();
+    const ctx = this.print.context(layout, { proof: opts.proof });
+    const plan = planSheets(units, unitsPerSheet(layout));
+
+    // Lay out the first unit before anything is sent, so a layout problem is a clean error.
+    const first = await this.safetyPages(batchId).next();
+    const firstRows = first.done ? [] : first.value;
+    const unitData = (r: SafetyExportRow) => ({
+      safetyCode: r.safetyCode,
+      pin: this.pin(r),
+      qrPayload: this.config.publicHelmetUrl(r.publicToken),
     });
+    try {
+      layoutUnit(unitData(firstRows[0]!), ctx);
+    } catch (err) {
+      if (err instanceof StickerLayoutError)
+        throw new AppException(ErrorCode.PRINT_LAYOUT_INVALID, err.message, HttpStatus.CONFLICT);
+      throw err;
+    }
+
     await this.audit.record({
-      action: AuditAction.SAFETY_ID_BATCH_PRINT_SHEET,
+      action: AuditAction.SAFETY_ID_BATCH_PRINT_PDF,
       entityType: 'safety_id_batch',
       entityId: batchId,
       adminId: admin.id,
       ipHash: meta.ipHash,
-      metadata: { batchCode: batch.batchCode, safetyIds: batch.generatedCount, pinsIncluded },
+      metadata: {
+        batchCode: batch.batchCode,
+        units,
+        pinsIncluded,
+        sheets: plan.sheets,
+        unitsPerSheet: plan.unitsPerSheet,
+        layout: `${layout.sheetWidthIn}x${layout.sheetHeightIn}in ${layout.columns}x${layout.rows}`,
+        proof: opts.proof === true,
+        logoSha256: ctx.logo?.sha256 ?? null,
+      },
     });
-    this.startDownload(res, 'text/html; charset=utf-8', `${batch.batchCode}-print-sheet.html`);
-    // The sheet is self-contained: no scripts, no external resources.
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+
+    const suffix = opts.proof ? '-PROOF' : '';
+    const pdf = new SheetPdf({
+      layout,
+      fonts: this.print.fonts,
+      title: `${batch.batchCode} Safety ID print ${layout.sheetWidthIn}x${layout.sheetHeightIn} ${plan.unitsPerSheet}-up${suffix}`,
+      compress: opts.compress,
+      proofGuides: opts.proof ? ctx.geometry : undefined,
+    });
+    this.startDownload(
+      res,
+      'application/pdf',
+      `${batch.batchCode}-print-${layout.sheetWidthIn}x${layout.sheetHeightIn}-${plan.unitsPerSheet}up${suffix}.pdf`,
     );
-    res.write(`<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>${escapeHtml(batch.batchCode)} Safety ID labels</title>
-<style>
-  @page { size: A4; margin: 10mm; }
-  body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #000; }
-  h1 { font-size: 12pt; margin: 0 0 4mm; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
-  .label { border: 1px dashed #999; padding: 3mm; break-inside: avoid; text-align: center; }
-  .label svg { width: 32mm; height: 32mm; }
-  .code { font: bold 11pt monospace; letter-spacing: 0.5px; }
-  .pin { font: bold 13pt monospace; letter-spacing: 2px; margin-top: 2mm; }
-  .hint { font-size: 7pt; margin-top: 1mm; }
-  .helmet { font-size: 7pt; color: #333; margin-top: 1mm; }
-</style></head><body>
-<h1>${escapeHtml(batch.batchCode)} · ${batch.generatedCount} Safety IDs · ${pinsIncluded} PINs</h1>
-<div class="grid">
-`);
-    for await (const page of this.safetyPages(batchId)) {
-      let chunk = '';
-      for (const r of page) {
-        const qr = await this.labels.qrSvg(this.config.publicHelmetUrl(r.publicToken));
-        const pin = this.pin(r);
-        chunk += `<div class="label">${qr}<div class="code">${escapeHtml(r.safetyCode)}</div>${
-          pin
-            ? `<div class="pin">PIN ${escapeHtml(pin)}</div><div class="hint">${PRINT_PIN_INSTRUCTION}</div>`
-            : '<div class="hint">Activation PIN no longer available for printing.</div>'
-        }${r.helmetCode ? `<div class="helmet">Helmet ${escapeHtml(r.helmetCode)}</div>` : ''}</div>\n`;
+    res.setHeader('X-Pins-Included', String(pinsIncluded));
+    res.setHeader('X-Print-Sheets', String(plan.sheets));
+    res.setHeader('X-Print-Units', String(units));
+    pdf.doc.pipe(res);
+    try {
+      let index = 0;
+      const draw = (rows: SafetyExportRow[]) => {
+        for (const r of rows) pdf.addUnit(index++, layoutUnit(unitData(r), ctx));
+      };
+      draw(firstRows);
+      for await (const page of this.safetyPages(batchId, firstRows.length)) {
+        draw(page);
+        await new Promise((resolve) => setImmediate(resolve));
       }
-      if (!res.write(chunk)) await new Promise((resolve) => res.once('drain', resolve));
+      pdf.end();
+    } catch (err) {
+      // Headers are gone: abort the download rather than deliver an incomplete print file.
+      this.logger.error(`Print PDF for ${batch.batchCode} aborted: ${(err as Error).message}`);
+      pdf.doc.unpipe(res);
+      res.destroy(err as Error);
     }
-    res.end('</div></body></html>\n');
+  }
+
+  private escrowPurged(detail: string): AppException {
+    return new AppException(
+      ErrorCode.PIN_ESCROW_PURGED,
+      `${detail} A reprint containing the original Activation PINs is impossible; issue new Safety IDs instead.`,
+      HttpStatus.CONFLICT,
+    );
   }
 
   private async safetyBatchForExport(batchId: string) {
     const batch = await this.prisma.safetyIdBatch.findUnique({
       where: { id: batchId },
-      select: { batchCode: true, generatedCount: true, generationStatus: true },
+      select: { batchCode: true, generatedCount: true, generationStatus: true, printStatus: true },
     });
     if (!batch) throw AppException.notFound(ErrorCode.BATCH_NOT_FOUND, 'Batch not found.');
     if (batch.generationStatus !== 'COMPLETED')
@@ -260,18 +329,19 @@ export class ExportsService {
     return batch;
   }
 
-  private async *safetyPages(batchId: string): AsyncGenerator<SafetyExportRow[]> {
-    let cursor: string | undefined;
-    for (;;) {
+  /** Print order: unit index ascending (ties/legacy rows by id). Offset paging over a fixed set. */
+  private async *safetyPages(batchId: string, skip = 0): AsyncGenerator<SafetyExportRow[]> {
+    for (let offset = skip; ; offset += PAGE_SIZE) {
       const page = await this.prisma.safetyId.findMany({
         where: { batchId },
-        orderBy: { id: 'asc' },
+        orderBy: [{ unitIndex: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }],
+        skip: offset,
         take: PAGE_SIZE,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         select: {
           id: true,
           safetyCode: true,
           publicToken: true,
+          unitIndex: true,
           activationSecret: { select: { pinCiphertext: true } },
           helmetLinks: {
             where: { endedAt: null },
@@ -295,13 +365,13 @@ export class ExportsService {
           id: s.id,
           safetyCode: s.safetyCode,
           publicToken: s.publicToken,
+          unitIndex: s.unitIndex,
           pinCiphertext: s.activationSecret?.pinCiphertext ?? null,
           helmetCode: h?.helmetCode ?? null,
           serialNumber: h?.serialNumber ?? null,
           model: h?.helmetModel.name ?? null,
         };
       });
-      cursor = page[page.length - 1]!.id;
       if (page.length < PAGE_SIZE) return;
     }
   }

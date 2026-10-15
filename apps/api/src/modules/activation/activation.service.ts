@@ -1,13 +1,12 @@
 import { SecurityEventsService } from '../customer-security/security-events.service';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
-  ACTIVATION_PIN_ALPHABET,
-  ACTIVATION_PIN_LENGTH,
   type ActivationAddSafetyIdResponse,
   type ActivationRegisterResponse,
   type ActivationValidateResponse,
   ActorType,
   ErrorCode,
+  isAcceptedActivationPin,
   isValidPublicToken,
   isValidSafetyCode,
   normalizeSafetyCode,
@@ -21,6 +20,7 @@ import {
 } from '../../infrastructure/prisma/prisma-errors';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import { HashingService } from '../../security/hashing.service';
+import { LockoutService, type LockoutPolicy } from '../../security/lockout';
 import { RedisRateLimiter } from '../../security/redis-rate-limiter.service';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
@@ -46,8 +46,9 @@ import type {
   RegisterActivationDto,
 } from './dto/activation.dto';
 
-const PIN_REGEX = new RegExp(`^[${ACTIVATION_PIN_ALPHABET}]{${ACTIVATION_PIN_LENGTH}}$`);
 const HOUR = 3600;
+/** Hashed for timing equalisation only: unknown Safety IDs cost one Argon2 verify, like real ones. */
+const TIMING_DUMMY_PIN = '000000';
 
 /** Who becomes the owner: a brand-new account (first activation) or an existing customer. */
 type NewOwner =
@@ -64,10 +65,17 @@ interface ActivationOutcome {
 
 /**
  * Activation (Phase 9): starts from the Safety ID. The one-time Activation PIN printed with the
- * Safety ID is the proof of possession. Every PIN check — preliminary or final — runs under row
- * locks (linked helmet → Safety ID) and records failures for the progressive per-Safety-ID
- * lockout, plus per-IP (and per-customer) failure budgets. A linked, unowned helmet becomes the
- * same customer's in the same transaction; a linked helmet owned by someone else blocks it.
+ * Safety ID is the proof of possession: six digits for new Safety IDs, the 8-symbol legacy format
+ * for Phase 1–8 labels (both verify against the same Argon2id hash). Every PIN check runs under
+ * row locks (linked helmet → Safety ID). Six digits are only 10^6 values, so failures feed three
+ * independent, temporary, escalating limits:
+ *   1. per Safety ID (persistent counter on the row, ACTIVATION_FAILURES_BEFORE_LOCK),
+ *   2. per IP + Safety ID (Redis, ACTIVATION_IP_SAFETY_ID_FAILURES_BEFORE_LOCK),
+ *   3. per IP across all Safety IDs (and per signed-in customer), hourly budgets.
+ * An unknown Safety ID and a wrong PIN produce the same error (and similar timing), so the
+ * response never says which half was wrong. A successful activation clears limits 1 and 2.
+ * A linked, unowned helmet becomes the same customer's in the same transaction; a linked helmet
+ * owned by someone else blocks it.
  */
 @Injectable()
 export class ActivationService {
@@ -87,7 +95,10 @@ export class ActivationService {
     private readonly accounts: CustomerAccountsService,
     private readonly config: AppConfigService,
     private readonly events: SecurityEventsService,
+    private readonly lockout: LockoutService,
   ) {}
+
+  private dummyHash: Promise<string> | null = null;
 
   /**
    * Preliminary check before asking for a password: Safety ID eligible AND PIN correct. Does not
@@ -95,11 +106,13 @@ export class ActivationService {
    */
   async validate(dto: ActivationPinDto, meta: RequestMeta): Promise<ActivationValidateResponse> {
     await this.assertBudget(meta, null);
-    const safetyId = await this.resolveTarget(dto, { genericNotFound: true });
+    const safetyId = await this.resolveTarget(dto);
+    if (!safetyId) return this.unknownTarget(meta, null);
+    await this.assertPairBudget(meta, safetyId);
     const check = await this.prisma.$transaction((tx) =>
       this.checkPin(tx, safetyId, dto.pin, meta, null, { genericDenials: true }),
     );
-    if (!check.ok) return this.failed(meta, null, check.lockedUntil);
+    if (!check.ok) return this.failed(meta, null, check.lockedUntil, safetyId);
     // A linked helmet that is owned or not activatable: same generic answer (no oracle).
     if (
       this.policy.evaluateLink({
@@ -144,7 +157,9 @@ export class ActivationService {
     refresh: Awaited<ReturnType<CustomerAuthService['startSession']>>['refresh'];
   }> {
     await this.assertBudget(meta, null);
-    const safetyId = await this.resolveTarget(dto, { genericNotFound: false });
+    const safetyId = await this.resolveTarget(dto);
+    if (!safetyId) return this.unknownTarget(meta, null);
+    await this.assertPairBudget(meta, safetyId);
     const { safetyCode } = await this.prisma.safetyId.findUniqueOrThrow({
       where: { id: safetyId },
       select: { safetyCode: true },
@@ -181,7 +196,9 @@ export class ActivationService {
     meta: RequestMeta,
   ): Promise<ActivationAddSafetyIdResponse> {
     await this.assertBudget(meta, customer.id);
-    const safetyId = await this.resolveTarget(dto, { genericNotFound: false });
+    const safetyId = await this.resolveTarget(dto);
+    if (!safetyId) return this.unknownTarget(meta, customer.id);
+    await this.assertPairBudget(meta, safetyId);
     const outcome = await this.activate(safetyId, dto.pin, meta, {
       kind: 'existing',
       userId: customer.id,
@@ -335,7 +352,9 @@ export class ActivationService {
         );
       throw err;
     }
-    if (!outcome.ok) return this.failed(meta, actingUser, outcome.lockedUntil);
+    if (!outcome.ok) return this.failed(meta, actingUser, outcome.lockedUntil, safetyId);
+    // Success clears the temporary IP + Safety ID counter (the row counter was reset in the tx).
+    if (meta.ipHash) await this.lockout.reset(this.pairKey(meta.ipHash, safetyId));
     await this.events.record(outcome.userId, 'SAFETY_ID_ACTIVATED', meta);
     const { ok: _ok, ...result } = outcome;
     return result;
@@ -363,13 +382,20 @@ export class ActivationService {
       hasActiveOwner: state.ownership !== null,
       activationLockedUntil: sid.activationLockedUntil,
     });
+    // New six-digit and legacy PINs verify against the same hash; other shapes never match.
+    const pinMatches = async () =>
+      isAcceptedActivationPin(pin) && (await this.hashing.verifyPin(sid.activationPinHash, pin));
     if (denial) {
-      if (opts.genericDenials && denial.code !== ErrorCode.ACTIVATION_ATTEMPTS_EXCEEDED)
-        throw this.notActivatable();
+      // A lock is reported up front (no PIN work while locked).
+      if (denial.code === ErrorCode.ACTIVATION_ATTEMPTS_EXCEEDED)
+        throw new AppException(denial.code, denial.message, denial.status, denial.details);
+      // Ineligible (consumed, owned, not printed…): before the PIN is proven this looks exactly
+      // like a wrong PIN or an unknown Safety ID. Only the holder of the PIN learns why.
+      if (!(await pinMatches())) return { ok: false, lockedUntil: null };
+      if (opts.genericDenials) throw this.notActivatable();
       throw new AppException(denial.code, denial.message, denial.status, denial.details);
     }
-    if (PIN_REGEX.test(pin) && (await this.hashing.verifyPin(sid.activationPinHash, pin)))
-      return { ok: true, state };
+    if (await pinMatches()) return { ok: true, state };
 
     const attempts = sid.activationAttempts + 1;
     const lockedUntil = this.policy.lockoutAfterFailure(attempts);
@@ -408,12 +434,22 @@ export class ActivationService {
     return { ok: false, lockedUntil };
   }
 
-  /** Records a failed PIN against IP/customer budgets and throws the matching error. */
+  /**
+   * Records a failed PIN (or unknown Safety ID) against the IP + Safety ID lockout and the IP and
+   * customer budgets, then throws. The error never distinguishes "unknown Safety ID" from "wrong
+   * PIN".
+   */
   private async failed(
     meta: RequestMeta,
     userId: string | null,
     lockedUntil: Date | null,
+    safetyId: string | null,
   ): Promise<never> {
+    let pairRetryAfter = 0;
+    if (meta.ipHash && safetyId) {
+      const pair = await this.lockout.fail(this.pairKey(meta.ipHash, safetyId), this.pairPolicy());
+      if (pair.locked) pairRetryAfter = pair.retryAfter;
+    }
     if (meta.ipHash)
       await this.limiter.hit(
         `activation:fail:ip:${meta.ipHash}`,
@@ -426,23 +462,53 @@ export class ActivationService {
         this.config.get('ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR'),
         HOUR,
       );
-    if (lockedUntil)
-      throw this.attemptsExceeded(Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
+    const rowRetryAfter = lockedUntil ? Math.ceil((lockedUntil.getTime() - Date.now()) / 1000) : 0;
+    if (rowRetryAfter > 0 || pairRetryAfter > 0)
+      throw this.attemptsExceeded(Math.max(rowRetryAfter, pairRetryAfter));
     throw new AppException(
       ErrorCode.INVALID_ACTIVATION_PIN,
-      'The Activation PIN could not be verified. Check the PIN printed with your Safety ID.',
+      'The Activation PIN could not be verified. Check the Safety ID and the PIN printed with it.',
       HttpStatus.BAD_REQUEST,
     );
+  }
+
+  /** Unknown Safety ID: same cost (one Argon2 verify), budget and error as a wrong PIN. */
+  private async unknownTarget(meta: RequestMeta, userId: string | null): Promise<never> {
+    this.dummyHash ??= this.hashing.hashPin(TIMING_DUMMY_PIN);
+    try {
+      await this.hashing.verifyPin(await this.dummyHash, `${TIMING_DUMMY_PIN}x`);
+    } catch (err) {
+      this.dummyHash = null;
+      throw err;
+    }
+    return this.failed(meta, userId, null, null);
+  }
+
+  private pairKey(ipHash: string, safetyId: string): string {
+    return `activation:ip-sid:${ipHash}:${safetyId}`;
+  }
+
+  private pairPolicy(): LockoutPolicy {
+    return {
+      threshold: this.config.get('ACTIVATION_IP_SAFETY_ID_FAILURES_BEFORE_LOCK'),
+      baseSeconds: this.config.get('ACTIVATION_IP_SAFETY_ID_LOCKOUT_BASE_SECONDS'),
+      maxSeconds: 86_400,
+      memorySeconds: 86_400,
+    };
+  }
+
+  /** Before any PIN work: this IP is temporarily locked out of this Safety ID. */
+  private async assertPairBudget(meta: RequestMeta, safetyId: string): Promise<void> {
+    if (!meta.ipHash) return;
+    const state = await this.lockout.status(this.pairKey(meta.ipHash, safetyId));
+    if (state.locked) throw this.attemptsExceeded(state.retryAfter);
   }
 
   /**
    * Resolves the Safety ID from the QR token (scan flow), the printed Safety ID code, or — for
    * Phase 8 activation cards that print the Helmet ID — the helmet's linked Safety ID.
    */
-  private async resolveTarget(
-    target: ActivationTargetDto,
-    opts: { genericNotFound: boolean },
-  ): Promise<string> {
+  private async resolveTarget(target: ActivationTargetDto): Promise<string | null> {
     const given = [target.publicToken, target.safetyCode, target.helmetCode].filter(Boolean);
     if (given.length !== 1) {
       throw new AppException(
@@ -474,13 +540,6 @@ export class ActivationService {
       });
       id = helmet ? ((await this.core.linkedSafetyId(this.prisma, helmet.id))?.id ?? null) : null;
     }
-    if (!id)
-      throw opts.genericNotFound
-        ? this.notActivatable()
-        : AppException.notFound(
-            ErrorCode.SAFETY_ID_NOT_FOUND,
-            'We could not find this Safety ID. Check the characters printed next to the QR code.',
-          );
     return id;
   }
 

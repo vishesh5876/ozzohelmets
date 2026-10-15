@@ -29,6 +29,7 @@ import { AdminAuth } from '../admin-auth/decorators/admin-auth.decorator';
 import { CurrentAdmin } from '../admin-auth/decorators/current-admin.decorator';
 import { ExportsService } from '../exports/exports.service';
 import { LabelsService } from '../labels/labels.service';
+import { PrintService } from '../print/print.service';
 import { AdminSafetyIdsService } from './admin-safety-ids.service';
 import {
   AdminSafetyIdQueryDto,
@@ -184,6 +185,7 @@ export class AdminSafetyIdBatchesController {
   constructor(
     private readonly batches: SafetyIdBatchesService,
     private readonly exports: ExportsService,
+    private readonly print: PrintService,
   ) {}
 
   @Get()
@@ -223,7 +225,10 @@ export class AdminSafetyIdBatchesController {
   @Post(':id/mark-printed')
   @HttpCode(HttpStatus.OK)
   @AdminAuth(Permission.SAFETY_IDS_GENERATE)
-  @ApiOperation({ summary: 'Labels printed: Safety IDs → PRINTED and PIN escrow purged for good.' })
+  @ApiOperation({
+    summary:
+      'Operator confirms physical printing (never automatic on download): Safety IDs → PRINTED and PIN escrow purged for good.',
+  })
   markPrinted(
     @Param('id', new ParseUUIDPipe()) id: string,
     @CurrentAdmin() admin: AuthenticatedAdmin,
@@ -236,29 +241,44 @@ export class AdminSafetyIdBatchesController {
   @AdminAuth(Permission.SAFETY_IDS_EXPORT)
   @RawResponse()
   @ApiProduces('text/csv')
-  @ApiOperation({ summary: 'Manufacturing CSV with Activation PINs (while escrowed). Audited.' })
+  @ApiOperation({
+    summary:
+      'Manufacturing CSV with Activation PINs (while escrowed), in print order with sheet positions. Audited.',
+  })
   exportCsv(
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: Record<string, string>,
     @CurrentAdmin() admin: AuthenticatedAdmin,
     @ReqMeta() meta: RequestMeta,
     @Res() res: Response,
   ): Promise<void> {
-    return this.exports.streamSafetyIdCsv(id, admin, meta, res);
+    return this.exports.streamSafetyIdCsv(id, admin, meta, res, this.print.resolveLayout(query));
   }
 
-  @Get(':id/export/print-sheet.html')
+  @Get(':id/export/print.pdf')
   @AdminAuth(Permission.SAFETY_IDS_EXPORT)
   @RawResponse()
-  @ApiProduces('text/html')
+  @ApiProduces('application/pdf')
   @ApiOperation({
-    summary: 'Print-ready sheet: QR + Safety ID + Activation PIN per label. Audited.',
+    summary:
+      'True-size production PDF (default 12 × 18 in, 48 units of 4.5 × 1 in with integrated cover). Contains Activation PINs; only before escrow purge. Audited.',
   })
-  printSheet(
+  printPdf(
     @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: Record<string, string>,
     @CurrentAdmin() admin: AuthenticatedAdmin,
     @ReqMeta() meta: RequestMeta,
     @Res() res: Response,
   ): Promise<void> {
-    return this.exports.streamSafetyIdPrintSheet(id, admin, meta, res);
+    return this.exports.streamSafetyIdPrintPdf(
+      id,
+      admin,
+      meta,
+      res,
+      this.print.resolveLayout(query),
+      {
+        proof: query.proof === '1',
+      },
+    );
   }
 }

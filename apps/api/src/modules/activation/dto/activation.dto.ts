@@ -32,8 +32,9 @@ export class ActivationTargetDto {
 
 export class ActivationPinDto extends ActivationTargetDto {
   @ApiProperty({
-    example: '73KP84QX',
-    description: 'Activation PIN printed with the Safety ID (case and spaces ignored)',
+    example: '146628',
+    description:
+      'Activation PIN printed with the Safety ID: six digits (a string; leading zeros count), or the 8-symbol legacy format of Phase 1–8 labels. Spaces/dashes ignored.',
   })
   @Transform(pinTransform)
   @Matches(/^[A-Z0-9]{4,16}$/, {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TEST FIXTURE ONLY: four plain blocks with the letter ids the print engine expects.
+     It is NOT the OZZO logo and must never be used for production printing. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100">
+  <path id="ozzo-o1" fill-rule="evenodd" d="M0 0H90V100H0Z M20 20V80H70V20Z"/>
+  <path id="ozzo-z1" d="M103 0H193V100H103Z"/>
+  <path id="ozzo-z2" d="M206 0H296V100H206Z"/>
+  <path id="ozzo-o2" fill-rule="evenodd" d="M310 0H400V100H310Z M330 20V80H380V20Z"/>
+</svg>

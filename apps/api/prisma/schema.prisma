@@ -1151,6 +1151,8 @@ model SafetyId {
   qrIntegrityNote       String?           @map("qr_integrity_note") @db.VarChar(500)
   qrIntegrityChangedAt  DateTime?         @map("qr_integrity_changed_at") @db.Timestamptz(3)
   batchId               String?           @map("batch_id") @db.Uuid
+  /// 1-based position within its batch: the deterministic print / export order (unique per batch).
+  unitIndex             Int?              @map("unit_index")
   activatedAt           DateTime?         @map("activated_at") @db.Timestamptz(3)
   deactivatedAt         DateTime?         @map("deactivated_at") @db.Timestamptz(3)
   createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1169,6 +1171,7 @@ model SafetyId {
   riskAlerts        RiskAlert[]
   productReports    ProductReport[]
 
+  @@unique([batchId, unitIndex])
   @@index([status])
   @@index([batchId])
   @@index([createdAt])

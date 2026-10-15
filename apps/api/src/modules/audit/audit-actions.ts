@@ -112,7 +112,10 @@ export const AuditAction = {
   SAFETY_ID_BATCH_CREATED: 'safety_id.batch.created',
   SAFETY_ID_BATCH_GENERATED: 'safety_id.batch.generated',
   SAFETY_ID_BATCH_EXPORTED: 'safety_id.batch.exported',
+  /** Pre-final-print A4 HTML sheet (retired; kept so older export history still counts). */
   SAFETY_ID_BATCH_PRINT_SHEET: 'safety_id.batch.print_sheet',
+  /** Phase 9 final print: true-size 12 × 18 in 48-up PDF with Activation PINs. */
+  SAFETY_ID_BATCH_PRINT_PDF: 'safety_id.batch.print_pdf',
   SAFETY_ID_BATCH_PRINTED: 'safety_id.batch.printed',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];

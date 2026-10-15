@@ -1,8 +1,18 @@
+import * as crypto from 'node:crypto';
+
+// Pass-through mock: the real CSPRNG unless a test overrides one call.
+jest.mock('node:crypto', () => {
+  const actual = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+  return { ...actual, randomInt: jest.fn(actual.randomInt) };
+});
+const randomInt = crypto.randomInt as unknown as jest.Mock;
 import {
   ACTIVATION_PIN_ALPHABET,
   BASE62_ALPHABET,
   HELMET_CODE_ALPHABET,
   HELMET_CODE_REGEX,
+  isAcceptedActivationPin,
+  isSafetyIdPin,
   isValidHelmetCode,
   isValidPublicToken,
   PUBLIC_TOKEN_LENGTH,
@@ -10,7 +20,8 @@ import {
 import { entropyBits } from './secure-random';
 import {
   buildSerialNumber,
-  generateActivationPin,
+  generateLegacyActivationPin,
+  generateSafetyIdPin,
   generateHelmetCode,
   generatePublicToken,
 } from './helmet-identity.generator';
@@ -66,15 +77,65 @@ describe('generatePublicToken', () => {
   });
 });
 
-describe('generateActivationPin', () => {
-  it('is 8 symbols from the unambiguous alphabet', () => {
-    const allowed = new RegExp(`^[${ACTIVATION_PIN_ALPHABET}]{8}$`);
-    for (let i = 0; i < 1000; i++) expect(generateActivationPin()).toMatch(allowed);
+describe('generateSafetyIdPin (Phase 9 final format)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    randomInt.mockClear();
   });
 
-  it('is effectively unique', () => {
-    const pins = new Set(Array.from({ length: 20_000 }, generateActivationPin));
-    expect(pins.size).toBeGreaterThanOrEqual(19_999);
+  it('is exactly six numeric digits, always a string', () => {
+    for (let i = 0; i < 5000; i++) {
+      const pin = generateSafetyIdPin();
+      expect(typeof pin).toBe('string');
+      expect(pin).toMatch(/^[0-9]{6}$/);
+      expect(isSafetyIdPin(pin)).toBe(true);
+    }
+  });
+
+  it('keeps leading zeros (004281, 000000, 000017)', () => {
+    randomInt.mockReturnValueOnce(4281).mockReturnValueOnce(0).mockReturnValueOnce(17);
+    expect(generateSafetyIdPin()).toBe('004281');
+    expect(generateSafetyIdPin()).toBe('000000');
+    expect(generateSafetyIdPin()).toBe('000017');
+  });
+
+  it('draws from the CSPRNG over the full 000000–999999 range, never Math.random', () => {
+    const random = jest.spyOn(Math, 'random');
+    generateSafetyIdPin();
+    expect(randomInt).toHaveBeenCalledWith(0, 1_000_000);
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it('is uniform: every digit position passes a chi-square test', () => {
+    const N = 60_000;
+    const counts = Array.from({ length: 6 }, () => new Array<number>(10).fill(0));
+    for (let i = 0; i < N; i++) {
+      const pin = generateSafetyIdPin();
+      for (let p = 0; p < 6; p++) counts[p]![Number(pin[p])]! += 1;
+    }
+    const expected = N / 10;
+    for (const position of counts) {
+      const chi = position.reduce((a, c) => a + (c - expected) ** 2 / expected, 0);
+      // 9 degrees of freedom: p = 0.0001 critical value ≈ 33.7.
+      expect(chi).toBeLessThan(33.7);
+    }
+  });
+});
+
+describe('generateLegacyActivationPin (Phase 1–8, still verifiable)', () => {
+  it('is 8 symbols from the unambiguous alphabet', () => {
+    const allowed = new RegExp(`^[${ACTIVATION_PIN_ALPHABET}]{8}$`);
+    for (let i = 0; i < 1000; i++) expect(generateLegacyActivationPin()).toMatch(allowed);
+  });
+
+  it('is accepted by the activation format check alongside six-digit PINs', () => {
+    expect(isAcceptedActivationPin(generateLegacyActivationPin())).toBe(true);
+    expect(isAcceptedActivationPin('146628')).toBe(true);
+    expect(isAcceptedActivationPin('004281')).toBe(true);
+    expect(isAcceptedActivationPin('14662')).toBe(false);
+    expect(isAcceptedActivationPin('1466280')).toBe(false);
+    expect(isAcceptedActivationPin('14662A')).toBe(false);
+    expect(isSafetyIdPin('73KP84QX')).toBe(false);
   });
 
   it('uses the same alphabet as helmet codes', () => {

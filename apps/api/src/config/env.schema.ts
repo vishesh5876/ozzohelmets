@@ -166,6 +166,9 @@ export const envSchema = z
     ACTIVATION_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     ACTIVATION_MAX_FAILURES_PER_CUSTOMER_PER_HOUR: z.coerce.number().int().min(1).default(10),
     ACTIVATION_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(20),
+    /** Phase 9 six-digit PINs: temporary escalating lock for one IP on one Safety ID. */
+    ACTIVATION_IP_SAFETY_ID_FAILURES_BEFORE_LOCK: z.coerce.number().int().min(1).max(20).default(5),
+    ACTIVATION_IP_SAFETY_ID_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
 
     FILE_STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
     FILE_STORAGE_LOCAL_DIR: z.string().min(1).default('./storage'),
@@ -201,6 +204,20 @@ export const envSchema = z
      */
     ARGON2_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(1),
     ARGON2_MAX_QUEUE: z.coerce.number().int().min(1).max(1000).default(16),
+
+    /**
+     * Phase 9 print engine. PRINT_LOGO_SVG_PATH: vector OZZO logo derived from the original
+     * artwork (docs/SAFETY-ID-PRINT.md); without it production print PDFs are refused.
+     * Optional vendor-approved fonts to embed (default: PDF base-14 Helvetica, not embedded).
+     */
+    PRINT_LOGO_SVG_PATH: z.string().optional(),
+    PRINT_FONT_REGULAR_PATH: z.string().optional(),
+    PRINT_FONT_BOLD_PATH: z.string().optional(),
+    PRINT_COVER_YELLOW: z
+      .string()
+      .optional()
+      .transform((v) => (v && v.trim() ? v.trim() : '#FFD100'))
+      .pipe(z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'PRINT_COVER_YELLOW must be #RRGGBB')),
 
     BATCH_MAX_QUANTITY: z.coerce.number().int().min(1).max(1_000_000).default(50_000),
     BATCH_GENERATION_CHUNK_SIZE: z.coerce.number().int().min(10).max(5000).default(500),

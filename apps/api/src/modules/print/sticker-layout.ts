@@ -1,0 +1,567 @@
+import { mmToPt } from '@helmet/types';
+import * as QRCode from 'qrcode';
+import type { LogoAsset } from './logo-asset';
+import {
+  COVER_OVERLAP,
+  CUT_TOL,
+  DEFAULT_COVER_YELLOW,
+  STICKER_DESIGN as D,
+  UNIT_H,
+  UNIT_W,
+} from './sticker-design';
+
+/**
+ * Deterministic physical layout of ONE Safety ID unit, in PDF points from the unit's top-left
+ * (y grows downwards). Produces a renderer-neutral display list drawn identically by the PDF
+ * engine and the SVG preview. Positions never depend on any web/responsive layout.
+ */
+
+export type Weight = 'regular' | 'bold';
+
+/** Font metrics of the fonts the renderer will actually use (pdfkit AFM or embedded TTF). */
+export interface TextMetrics {
+  width(text: string, weight: Weight, size: number, characterSpacing?: number): number;
+  /** Cap height per 1 pt of font size. */
+  capHeight(weight: Weight): number;
+}
+
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface QrMatrix {
+  /** Modules per side (without quiet zone). */
+  size: number;
+  version: number;
+  /** Row-major, 1 = dark. */
+  data: Uint8Array;
+}
+
+export type DrawElement =
+  | {
+      kind: 'rect';
+      role: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      fill?: string;
+      stroke?: string;
+      lineWidth?: number;
+      radius?: number;
+      dash?: number;
+    }
+  | { kind: 'polygon'; role: string; points: [number, number][]; fill: string }
+  | {
+      kind: 'text';
+      role: string;
+      text: string;
+      /** Left of the baseline ('start') or its centre ('middle'); rotation origin. */
+      x: number;
+      y: number;
+      anchor: 'start' | 'middle';
+      rotate: 0 | -90;
+      weight: Weight;
+      size: number;
+      fill: string;
+      characterSpacing: number;
+      /** Measured advance width (renderers must reproduce it exactly). */
+      width: number;
+      capHeight: number;
+    }
+  | { kind: 'logo'; role: string; x: number; y: number; scale: number; logo: LogoAsset }
+  | { kind: 'logo-placeholder'; role: string; x: number; y: number; w: number; h: number }
+  | {
+      kind: 'qr';
+      role: string;
+      x: number;
+      y: number;
+      /** Symbol + quiet zone, square. */
+      size: number;
+      matrix: QrMatrix;
+      quietZoneModules: number;
+    };
+
+export interface StickerGeometry {
+  safeInset: number;
+  zones: { emergency: Box; credential: Box; cover: Box };
+  /** Baseline x of the rotated Safety ID (glyphs extend leftwards by the cap height). */
+  idBaselineX: number;
+  /** Protected credential target: PIN + QR + quiet zone. */
+  target: Box;
+  /** QR symbol + quiet zone (square, inside the target). */
+  qrBox: Box;
+  pinBaselineY: number;
+  /** Where the applied cover sits on the base sticker: target + overlap on every side. */
+  coverFootprint: Box;
+  /** The cover's die line inside the cover zone (same size as the footprint). */
+  coverDie: Box;
+  coverYellow: Box;
+}
+
+export interface UnitData {
+  safetyCode: string;
+  /** Plaintext PIN for this unit only (never logged). */
+  pin: string;
+  /** The exact QR content: the Safety ID's public URL. */
+  qrPayload: string;
+}
+
+export class StickerLayoutError extends Error {}
+
+const expand = (b: Box, by: number): Box => ({
+  x: b.x - by,
+  y: b.y - by,
+  w: b.w + 2 * by,
+  h: b.h + 2 * by,
+});
+
+/** Derives every physical size from STICKER_DESIGN and the safe area; validates the result. */
+export function computeStickerGeometry(safeAreaMm: number, metrics: TextMetrics): StickerGeometry {
+  const safe = mmToPt(safeAreaMm);
+  const ex = D.zones.emergencyIn * 72;
+  const cw = D.zones.credentialIn * 72;
+  const vw = D.zones.coverIn * 72;
+  if (Math.abs(ex + cw + vw - UNIT_W) > 1e-6)
+    throw new StickerLayoutError('Zone widths must add up to the 4.5 in unit.');
+  const zones = {
+    emergency: { x: 0, y: 0, w: ex, h: UNIT_H },
+    credential: { x: ex, y: 0, w: cw, h: UNIT_H },
+    cover: { x: ex + cw, y: 0, w: vw, h: UNIT_H },
+  };
+
+  const idBaselineX = ex + D.id.insetFromZonePt + metrics.capHeight('bold') * D.id.fontPt;
+  const footLeft = idBaselineX + D.id.gapToCoverPt;
+  const footRight = ex + cw - CUT_TOL;
+  // Applied cover never overhangs the base sticker: target + overlap stays CUT_TOL inside it.
+  const edge = CUT_TOL + COVER_OVERLAP;
+  const targetTop = Math.max(edge, safe);
+  const targetBottomLimit = UNIT_H - edge;
+  const pinBaselineY = targetTop + metrics.capHeight('bold') * D.pin.fontPt;
+  const qrTop = pinBaselineY + D.pin.gapToQrPt;
+  const maxTargetW = footRight - footLeft - 2 * COVER_OVERLAP;
+  // QR as large as the geometry allows (scan reliability first).
+  const qrSize = Math.min(targetBottomLimit - qrTop, maxTargetW);
+  if (qrSize <= 0) throw new StickerLayoutError('No room for the QR code.');
+  const targetX = footLeft + COVER_OVERLAP + (maxTargetW - qrSize) / 2;
+  const target = { x: targetX, y: targetTop, w: qrSize, h: qrTop + qrSize - targetTop };
+  const qrBox = { x: targetX, y: qrTop, w: qrSize, h: qrSize };
+  const coverFootprint = expand(target, COVER_OVERLAP);
+  const coverDie = {
+    x: zones.cover.x + (vw - coverFootprint.w) / 2,
+    y: (UNIT_H - coverFootprint.h) / 2,
+    w: coverFootprint.w,
+    h: coverFootprint.h,
+  };
+  const bleed = mmToPt(D.coverPrintBleedMm);
+  const yx0 = Math.max(zones.cover.x, coverDie.x - bleed);
+  const yy0 = Math.max(0, coverDie.y - bleed);
+  const coverYellow = {
+    x: yx0,
+    y: yy0,
+    w: Math.min(UNIT_W, coverDie.x + coverDie.w + bleed) - yx0,
+    h: Math.min(UNIT_H, coverDie.y + coverDie.h + bleed) - yy0,
+  };
+  const g: StickerGeometry = {
+    safeInset: safe,
+    zones,
+    idBaselineX,
+    target,
+    qrBox,
+    pinBaselineY,
+    coverFootprint,
+    coverDie,
+    coverYellow,
+  };
+  const issues = geometryIssues(g);
+  if (issues.length) throw new StickerLayoutError(issues.join(' '));
+  return g;
+}
+
+const EPS = 1e-6;
+const inside = (inner: Box, outer: Box, margin = 0) =>
+  inner.x >= outer.x + margin - EPS &&
+  inner.y >= outer.y + margin - EPS &&
+  inner.x + inner.w <= outer.x + outer.w - margin + EPS &&
+  inner.y + inner.h <= outer.y + outer.h - margin + EPS;
+
+/** The physical rules the cover/target design must satisfy (also asserted by unit tests). */
+export function geometryIssues(g: StickerGeometry): string[] {
+  const issues: string[] = [];
+  const cred = g.zones.credential;
+  const base = { x: 0, y: 0, w: cred.x + cred.w, h: UNIT_H };
+  if (!inside(g.qrBox, g.target)) issues.push('QR box must be inside the protected target.');
+  if (!inside(expand(g.target, COVER_OVERLAP - EPS), g.coverFootprint))
+    issues.push('Cover must exceed the target by the overlap on every side.');
+  if (
+    Math.abs(g.coverDie.w - g.coverFootprint.w) > EPS ||
+    Math.abs(g.coverDie.h - g.coverFootprint.h) > EPS
+  )
+    issues.push('Cover die size must equal the cover footprint.');
+  if (!inside(g.coverDie, g.zones.cover, CUT_TOL))
+    issues.push('Cover die must stay inside the cover zone, clear of every cut line.');
+  if (!inside(g.coverFootprint, base, CUT_TOL))
+    issues.push('Applied cover must not overhang the base sticker.');
+  if (g.coverFootprint.x < cred.x - EPS)
+    issues.push('Applied cover must not overlap the emergency panel.');
+  if (g.coverFootprint.x < g.idBaselineX - EPS)
+    issues.push('Applied cover must leave the Safety ID visible.');
+  if (!inside(g.coverYellow, g.zones.cover)) issues.push('Cover ink must stay in the cover zone.');
+  if (g.target.y < g.safeInset - EPS) issues.push('PIN must respect the safe area.');
+  return issues;
+}
+
+/** QR modules for the exact payload (error correction from STICKER_DESIGN). */
+export function qrMatrix(payload: string): QrMatrix {
+  const qr = QRCode.create(payload, { errorCorrectionLevel: D.qr.errorCorrection });
+  return {
+    size: qr.modules.size,
+    version: qr.version,
+    data: Uint8Array.from(qr.modules.data as ArrayLike<number>),
+  };
+}
+
+export interface LayoutContext {
+  geometry: StickerGeometry;
+  metrics: TextMetrics;
+  logo: LogoAsset | null;
+  yellow?: string;
+  /** Adds QA-only outlines (target, cover footprint, cover die). Never in production files. */
+  proof?: boolean;
+}
+
+/** Minimum printed QR module (Safety ID scans must work from a phone at arm's length). */
+export const MIN_QR_MODULE_MM = 0.33;
+export const MIN_PIN_FONT_PT = 5;
+
+/** Display list for one unit. Throws StickerLayoutError when the data can't be laid out. */
+export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
+  const { geometry: g, metrics: m } = ctx;
+  const { black, red, white } = D.colors;
+  const yellow = ctx.yellow ?? DEFAULT_COVER_YELLOW;
+  const out: DrawElement[] = [];
+  const safe = g.safeInset;
+  const text = (
+    role: string,
+    value: string,
+    x: number,
+    y: number,
+    weight: Weight,
+    size: number,
+    fill: string,
+    opts: { anchor?: 'start' | 'middle'; rotate?: 0 | -90; characterSpacing?: number } = {},
+  ) => {
+    const characterSpacing = opts.characterSpacing ?? 0;
+    const el: DrawElement = {
+      kind: 'text',
+      role,
+      text: value,
+      x,
+      y,
+      anchor: opts.anchor ?? 'start',
+      rotate: opts.rotate ?? 0,
+      weight,
+      size,
+      fill,
+      characterSpacing,
+      width: m.width(value, weight, size, characterSpacing),
+      capHeight: m.capHeight(weight) * size,
+    };
+    out.push(el);
+    return el;
+  };
+  const cap = (weight: Weight, size: number) => m.capHeight(weight) * size;
+
+  // ── Emergency panel ────────────────────────────────────────────────────────────────────────
+  const E = D.emergency;
+  const ez = g.zones.emergency;
+  const x0 = safe;
+  let y = safe;
+  if (ctx.logo) {
+    const vb = ctx.logo.viewBox;
+    const scale = E.logoHeightPt / vb.height; // uniform: never stretched
+    out.push({
+      kind: 'logo',
+      role: 'logo',
+      x: x0 - vb.x * scale,
+      y: y - vb.y * scale,
+      scale,
+      logo: ctx.logo,
+    });
+  } else {
+    out.push({
+      kind: 'logo-placeholder',
+      role: 'logo',
+      x: x0,
+      y,
+      w: E.logoHeightPt * 3.6,
+      h: E.logoHeightPt,
+    });
+  }
+  y += E.logoHeightPt + E.gapAfterLogoPt;
+  let baseline = y + cap('bold', E.inCaseOfPt);
+  text('emergency-heading', 'IN CASE OF', x0, baseline, 'bold', E.inCaseOfPt, black);
+  baseline += E.lineGapPt + cap('bold', E.emergencyPt);
+  text('emergency-heading', 'EMERGENCY', x0, baseline, 'bold', E.emergencyPt, red);
+  baseline += E.gapAfterEmergencyPt + cap('bold', E.medicalPt);
+  const medical = text(
+    'emergency-medical',
+    'FOR MY MEDICAL INFORMATION',
+    x0,
+    baseline,
+    'bold',
+    E.medicalPt,
+    black,
+  );
+  const pillTop = UNIT_H - safe - E.pillHeightPt;
+  if (medical.y + 1.5 > pillTop) throw new StickerLayoutError('Emergency panel text overflows.');
+  const scanW = m.width('SCAN ME', 'bold', E.scanMePt, 0.3);
+  const pillW = scanW + 2 * E.pillPaddingXPt;
+  out.push({
+    kind: 'rect',
+    role: 'scan-me-pill',
+    x: x0,
+    y: pillTop,
+    w: pillW,
+    h: E.pillHeightPt,
+    fill: black,
+    radius: E.pillHeightPt / 2,
+  });
+  const pillMid = pillTop + E.pillHeightPt / 2;
+  text(
+    'scan-me',
+    'SCAN ME',
+    x0 + pillW / 2,
+    pillMid + cap('bold', E.scanMePt) / 2,
+    'bold',
+    E.scanMePt,
+    white,
+    { anchor: 'middle', characterSpacing: 0.3 },
+  );
+  const tip = ez.x + ez.w - E.arrowEndGapPt;
+  const shaftStart = x0 + pillW + E.arrowGapPt;
+  const headBase = tip - E.arrowHeadPt;
+  if (headBase - shaftStart < 6) throw new StickerLayoutError('No room for the SCAN ME arrow.');
+  out.push({
+    kind: 'rect',
+    role: 'scan-arrow',
+    x: shaftStart,
+    y: pillMid - E.arrowShaftPt / 2,
+    w: headBase - shaftStart + 0.2,
+    h: E.arrowShaftPt,
+    fill: red,
+  });
+  out.push({
+    kind: 'polygon',
+    role: 'scan-arrow',
+    points: [
+      [tip, pillMid],
+      [headBase, pillMid - E.arrowHeadPt / 2],
+      [headBase, pillMid + E.arrowHeadPt / 2],
+    ],
+    fill: red,
+  });
+  out.push({
+    kind: 'rect',
+    role: 'divider',
+    x: ez.x + ez.w - 0.25,
+    y: safe,
+    w: 0.5,
+    h: UNIT_H - 2 * safe,
+    fill: E.dividerColor,
+  });
+
+  // ── Credential panel (permanent base sticker) ──────────────────────────────────────────────
+  const idText = `ID: ${data.safetyCode}`;
+  const idLen = m.width(idText, 'bold', D.id.fontPt);
+  if (idLen > UNIT_H - 2 * safe) throw new StickerLayoutError('Safety ID text is too long.');
+  text('safety-code', idText, g.idBaselineX, UNIT_H / 2 + idLen / 2, 'bold', D.id.fontPt, black, {
+    rotate: -90,
+  });
+  // Six-digit PINs always print at the design size. A wide legacy 8-symbol PIN (pre-release
+  // batch) steps the PIN text down until it fits the QR width — the unit itself never scales.
+  const pinText = `PIN: ${data.pin}`;
+  let pinSize: number = D.pin.fontPt;
+  let pinSpacing: number = D.pin.characterSpacingPt;
+  while (m.width(pinText, 'bold', pinSize, pinSpacing) > g.target.w) {
+    if (pinSpacing > 0) pinSpacing = 0;
+    else if (pinSize > MIN_PIN_FONT_PT) pinSize = Math.max(MIN_PIN_FONT_PT, pinSize - 0.2);
+    else throw new StickerLayoutError('PIN text is wider than the QR.');
+  }
+  text('pin', pinText, g.target.x + g.target.w / 2, g.pinBaselineY, 'bold', pinSize, black, {
+    anchor: 'middle',
+    characterSpacing: pinSpacing,
+  });
+
+  const matrix = qrMatrix(data.qrPayload);
+  const moduleMm = (g.qrBox.w / (matrix.size + 2 * D.qr.quietZoneModules)) * (25.4 / 72);
+  if (moduleMm < MIN_QR_MODULE_MM)
+    throw new StickerLayoutError(
+      `QR payload too long: modules would be ${moduleMm.toFixed(3)} mm (minimum ${MIN_QR_MODULE_MM} mm).`,
+    );
+  // Solid white behind symbol + quiet zone: nothing else may be drawn there.
+  out.push({ kind: 'rect', role: 'qr-backing', ...g.qrBox, fill: white });
+  out.push({
+    kind: 'qr',
+    role: 'qr',
+    x: g.qrBox.x,
+    y: g.qrBox.y,
+    size: g.qrBox.w,
+    matrix,
+    quietZoneModules: D.qr.quietZoneModules,
+  });
+
+  // Corner marks just inside the cover footprint: invisible once the cover sits correctly.
+  const A = D.alignmentMark;
+  const f = g.coverFootprint;
+  for (const [cx, cy, sx, sy] of [
+    [f.x, f.y, 1, 1],
+    [f.x + f.w, f.y, -1, 1],
+    [f.x, f.y + f.h, 1, -1],
+    [f.x + f.w, f.y + f.h, -1, -1],
+  ] as const) {
+    const hx = sx > 0 ? cx : cx - A.lengthPt;
+    const vy = sy > 0 ? cy : cy - A.lengthPt;
+    out.push({
+      kind: 'rect',
+      role: 'cover-mark',
+      x: hx,
+      y: sy > 0 ? cy : cy - A.widthPt,
+      w: A.lengthPt,
+      h: A.widthPt,
+      fill: A.color,
+    });
+    out.push({
+      kind: 'rect',
+      role: 'cover-mark',
+      x: sx > 0 ? cx : cx - A.widthPt,
+      y: vy,
+      w: A.widthPt,
+      h: A.lengthPt,
+      fill: A.color,
+    });
+  }
+
+  // ── Removable yellow cover (same unit, own die line) ───────────────────────────────────────
+  const C = D.cover;
+  const die = g.coverDie;
+  out.push({ kind: 'rect', role: 'cover', ...g.coverYellow, fill: yellow });
+  const tabTop = die.y + die.h - C.tabHeightPt;
+  out.push({
+    kind: 'rect',
+    role: 'cover-tab',
+    x: g.coverYellow.x,
+    y: tabTop,
+    w: g.coverYellow.w,
+    h: g.coverYellow.y + g.coverYellow.h - tabTop,
+    fill: black,
+  });
+  const lines: [string, number][] = [
+    ['REMOVE', C.removePt],
+    ['ONLY IN', C.onlyInPt],
+    ['EMERGENCY', C.emergencyPt],
+  ];
+  const blockH =
+    lines.reduce((a, [, s]) => a + cap('bold', s), 0) + C.lineGapPt * (lines.length - 1);
+  const areaTop = die.y + safe;
+  const areaBottom = tabTop - 2;
+  if (blockH > areaBottom - areaTop) throw new StickerLayoutError('Cover text overflows.');
+  let ly = areaTop + (areaBottom - areaTop - blockH) / 2;
+  const cx = die.x + die.w / 2;
+  for (const [value, size] of lines) {
+    ly += cap('bold', size);
+    const t = text('cover-text', value, cx, ly, 'bold', size, black, { anchor: 'middle' });
+    if (t.width > die.w - 2 * safe) throw new StickerLayoutError('Cover text is too wide.');
+    ly += C.lineGapPt;
+  }
+  // "▲ OPEN" tab: a vector triangle (no font glyph dependency) + text, centred in the band.
+  const openW = m.width('OPEN', 'bold', C.openPt, 0.4);
+  const tri = cap('bold', C.openPt) * 1.15;
+  const groupW = tri + 2 + openW;
+  const gx = cx - groupW / 2;
+  const tabMid = tabTop + (die.y + die.h - tabTop) / 2;
+  const openBase = tabMid + cap('bold', C.openPt) / 2;
+  out.push({
+    kind: 'polygon',
+    role: 'cover-open',
+    points: [
+      [gx + tri / 2, openBase - tri * 0.95],
+      [gx, openBase],
+      [gx + tri, openBase],
+    ],
+    fill: yellow,
+  });
+  text('cover-open', 'OPEN', gx + tri + 2, openBase, 'bold', C.openPt, yellow, {
+    characterSpacing: 0.4,
+  });
+
+  if (ctx.proof) {
+    out.push({
+      kind: 'rect',
+      role: 'proof-target',
+      ...g.target,
+      stroke: '#FF00FF',
+      lineWidth: 0.3,
+      dash: 1,
+    });
+    out.push({
+      kind: 'rect',
+      role: 'proof-footprint',
+      ...g.coverFootprint,
+      stroke: '#00A0FF',
+      lineWidth: 0.3,
+      dash: 1,
+    });
+    out.push({
+      kind: 'rect',
+      role: 'proof-die',
+      ...die,
+      stroke: '#00A0FF',
+      lineWidth: 0.3,
+      radius: mmToPt(D.coverCornerRadiusMm),
+    });
+  }
+  return out;
+}
+
+/** Axis-aligned bounds of an element in unit coordinates (used by layout validation/tests). */
+export function elementBounds(el: DrawElement): Box {
+  switch (el.kind) {
+    case 'rect':
+    case 'logo-placeholder':
+      return { x: el.x, y: el.y, w: el.w, h: el.h };
+    case 'qr':
+      return { x: el.x, y: el.y, w: el.size, h: el.size };
+    case 'polygon': {
+      const xs = el.points.map((p) => p[0]);
+      const ys = el.points.map((p) => p[1]);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+    }
+    case 'logo': {
+      const vb = el.logo.viewBox;
+      return {
+        x: el.x + vb.x * el.scale,
+        y: el.y + vb.y * el.scale,
+        w: vb.width * el.scale,
+        h: vb.height * el.scale,
+      };
+    }
+    case 'text': {
+      const left = el.anchor === 'middle' ? el.x - el.width / 2 : el.x;
+      if (el.rotate === -90)
+        return { x: el.x - el.capHeight, y: el.y - el.width, w: el.capHeight, h: el.width };
+      return { x: left, y: el.y - el.capHeight, w: el.width, h: el.capHeight };
+    }
+  }
+}
+
+export function boxesOverlap(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS && a.y < b.y + b.h - EPS && b.y < a.y + a.h - EPS
+  );
+}

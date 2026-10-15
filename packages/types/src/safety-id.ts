@@ -4,6 +4,7 @@
  */
 import { HELMET_CODE_RANDOM_LENGTH, helmetCodeCheckSymbol } from './identifiers';
 import type { HelmetStatus, WarrantyStatus } from './enums';
+import type { PrintSheetLayout } from './print-layout';
 type IsoDateString = string;
 
 export const SAFETY_CODE_PREFIX = 'SI';
@@ -208,13 +209,60 @@ export interface CreateSafetyIdBatchRequest {
   notes?: string;
 }
 
-/** Columns of the manufacturing export (CSV and print sheet). */
+/**
+ * Columns of the Safety ID manufacturing CSV. Row order = print PDF order (batch unit index
+ * ascending); `sheet`/`sheetRow`/`sheetColumn` locate the unit on the default 48-up sheet.
+ * `qrPayload` is exactly what the QR encodes (the public URL). `activationPin` is a six-digit
+ * string for new Safety IDs (keep leading zeros: import the column as text).
+ */
 export const SAFETY_ID_EXPORT_COLUMNS = [
   'safetyCode',
-  'qrUrl',
+  'publicQrUrl',
   'activationPin',
+  'qrPayload',
+  'batchCode',
+  'unitIndex',
+  'sheet',
+  'sheetRow',
+  'sheetColumn',
   'linkedHelmetCode',
   'linkedHelmetSerial',
   'model',
-  'batchCode',
 ] as const;
+
+/** Print engine status for the admin (no secrets). */
+export interface SafetyIdPrintStatusDto {
+  preset: string;
+  layout: PrintSheetLayout;
+  unitsPerSheet: number;
+  fullSheetWarning: string | null;
+  logo: {
+    loaded: boolean;
+    /** SHA-256 of the asset file, so QA can confirm which artwork was used. */
+    sha256: string | null;
+    source: string | null;
+    error: string | null;
+  };
+  /** False in production when the faithful OZZO logo asset is missing. */
+  productionReady: boolean;
+  geometry: SafetyIdStickerGeometryDto;
+}
+
+/** Final sticker geometry in millimetres (derived, never hand-drawn). */
+export interface SafetyIdStickerGeometryDto {
+  unit: { widthMm: number; heightMm: number };
+  zones: { emergencyMm: number; credentialMm: number; coverMm: number };
+  target: { widthMm: number; heightMm: number };
+  cover: { widthMm: number; heightMm: number; overlapMm: number };
+  qr: {
+    /** Symbol plus quiet zone. */
+    sizeMm: number;
+    moduleMm: number;
+    modules: number;
+    quietZoneModules: number;
+    quietZoneMm: number;
+    errorCorrection: string;
+  };
+  safeAreaMm: number;
+  cutToleranceMm: number;
+}

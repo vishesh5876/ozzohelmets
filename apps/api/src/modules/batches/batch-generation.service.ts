@@ -198,6 +198,7 @@ export class BatchGenerationService implements OnApplicationBootstrap {
               await this.safetyIds.insert(
                 tx,
                 safetyBatchId,
+                offset,
                 safety,
                 ids,
                 units.map((u) => u.id),
