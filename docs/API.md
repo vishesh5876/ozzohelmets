@@ -329,10 +329,11 @@ Full table: [SAFETY-ID → API](SAFETY-ID.md#8-api). Summary:
   `safetyIdSummary { total, active, needsSetup }`.
 - Admin: `/admin/safety-ids` (list, search, metrics, detail, qr, deactivate, reactivate,
   qr-integrity, link, unlink, revoke-ownership, cancel transfer) and `/admin/safety-id-batches`
-  (list, create, generate, mark-printed, CSV, `export/print.pdf`); `/admin/safety-id-print` (status, unit/sheet SVG previews, cut-guide PDF); analytics
+  (list, create, generate, mark-printed, CSV, `export/print.pdf`); `/admin/safety-id-print` (status, unit/sheet SVG previews, cut-guide PDF); `/admin/print-designs` (artwork upload, designs, versions, activate, previews, test print — [PRINT-DESIGNS](PRINT-DESIGNS.md)); batch create accepts `printDesignId`; analytics
   `/admin/analytics/safety-ids[/:code[/scans|/qr-integrity]]` with `/helmets/…` aliases. Helmet
   batch create accepts `withSafetyIds` (default `true`).
 - New error codes: `SAFETY_ID_NOT_FOUND`, `SAFETY_ID_ALREADY_ACTIVATED`,
   `SAFETY_ID_NOT_ACTIVATABLE`, `SAFETY_ID_HAS_OWNER`, `SAFETY_ID_LINK_CONFLICT`,
   `SAFETY_ID_ACTION_NOT_ALLOWED`, `SAFETY_ID_NOT_TRANSFERABLE`; final print: `PIN_ESCROW_PURGED`,
-  `PRINT_LAYOUT_INVALID`, `PRINT_LOGO_MISSING`.
+  `PRINT_LAYOUT_INVALID`, `PRINT_LOGO_MISSING`, `INVALID_ARTWORK`, `PRINT_DESIGN_NOT_FOUND`,
+  `PRINT_DESIGN_LOCKED`, `PRINT_DESIGN_INVALID`, `PRINT_DESIGN_UNAVAILABLE`.

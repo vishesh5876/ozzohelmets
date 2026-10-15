@@ -99,6 +99,10 @@ QR.
 
 ## 5. OZZO logo asset
 
+> **Superseded for new batches by [Print Designs](PRINT-DESIGNS.md):** the approved logo is part
+> of the admin-uploaded artwork. This section applies to the built-in layout, which batches
+> without a print design (all batches created before Print Designs) keep using.
+
 **Status: the original OZZO artwork was not in the repository, so it has not been supplied to the
 print engine.** The engine never redraws or approximates the mark. Until the asset is configured:
 

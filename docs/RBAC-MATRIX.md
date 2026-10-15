@@ -44,6 +44,9 @@ Phase 6 — `src/security/rbac-matrix.spec.ts`, `test/phase5-support.e2e-spec.ts
 | `risk-alert:view`         |      ✓      |   ✓   |       —       |    ✓    |        —         |
 | `risk-alert:manage`       |      ✓      |   ✓   |       —       |    ✓    |        —         |
 | `qr-integrity:manage`     |      ✓      |   ✓   |       —       |    —    |        —         |
+| `print-design:view`       |      ✓      |   ✓   |       ✓       |    —    |        —         |
+| `print-design:manage`     |      ✓      |   ✓   |       —       |    —    |        —         |
+| `print-design:activate`   |      ✓      |   ✓   |       —       |    —    |        —         |
 
 `SUPER_ADMIN_ONLY` = admin-users management, ownership revocation, customer deletion, recovery
 grants, privacy-request processing, security events (+ proof-of-purchase documents, which SUPPORT

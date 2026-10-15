@@ -92,6 +92,13 @@ uncovered, and never appear on the outside of the box or in the QR code.
 For the pilot (10–20 internal helmets) a sealed card is enough. Record the final decision here
 and in the manufacturing contract.
 
+## Print design (artwork)
+
+Before a production run, check Admin → **Print Designs**: the ACTIVE design contains the approved
+OZZO artwork, shows _VECTOR_ or ≥ 300 DPI, and its **Download Test Print** sheet has been printed
+and scanned. New batches bind the active design version (or the one chosen in **New Safety ID
+batch**); the batch page shows it under _Print Design_. See [PRINT-DESIGNS](../PRINT-DESIGNS.md).
+
 ## Standalone Safety IDs (stickers, cards)
 
 1. Admin → **Safety ID Batches** → **New Safety ID batch** → mode _Standalone_, quantity, notes →

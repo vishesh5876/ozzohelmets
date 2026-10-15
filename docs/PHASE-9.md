@@ -146,5 +146,22 @@ Details: [SAFETY-ID-PRINT](SAFETY-ID-PRINT.md).
 **Not print-ready for mass production** until the original logo asset is configured and one
 physical sheet has been printed, measured, covered/uncovered and scanned.
 
-Tests after this update: unit 350 (42 suites), integration 211 (21 suites, incl.
+### Print Designs (admin-controlled artwork)
+
+[PRINT-DESIGNS](PRINT-DESIGNS.md). Admins upload SVG (vector, sanitized) or PNG (≥ 300 DPI,
+lossless) artwork; versions are immutable once used; batches bind an exact version; the engine
+keeps every dynamic element and the white credential panel. Decisions:
+
+| #   | Decision                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 82  | **Reject, don't silently strip**, unsupported or dangerous SVG content (strict whitelist; inert editor metadata is the only thing removed). |
+| 83  | **SVG as a Form XObject**, defined once per PDF (svg-to-pdfkit with loaders disabled); PNG embedded once, original bytes.                   |
+| 84  | **Whole credential zone is a system white panel** over any artwork (QR, PIN, ID contrast guaranteed).                                       |
+| 85  | **No seeded design**: the official logo source isn't available; old batches keep the built-in layout (`print_design_id NULL`).              |
+| 86  | **Draft designs may be chosen for a batch** if they pass full validation; choosing locks them.                                              |
+
+Tests after Print Designs: unit 400 (43 suites), integration 218 (22 suites, incl.
+`phase9-print-designs.e2e-spec.ts`), Playwright 89 (incl. `phase9-print-designs.spec.ts`, 13 steps).
+
+Tests after the final print update: unit 350 (42 suites), integration 211 (21 suites, incl.
 `phase9-print.e2e-spec.ts`), Playwright 80; typecheck, lint, format and build clean.
