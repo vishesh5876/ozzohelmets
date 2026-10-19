@@ -78,11 +78,12 @@ function messageCard(title: string, body: string, variant = ''): HTMLElement {
   );
 }
 
-function listCard(title: string, items: string[] | undefined, extraClass = ''): HTMLElement | null {
+/** One labelled list inside the medical card (omitted when the owner shared nothing). */
+function medGroup(title: string, items: string[] | undefined, extraClass = ''): HTMLElement | null {
   if (!items?.length) return null;
   return h(
-    'section',
-    { class: `card ${extraClass}`.trim() },
+    'div',
+    { class: `med-group ${extraClass}`.trim() },
     h('h3', {}, title),
     h('ul', { class: 'list' }, ...items.map((i) => h('li', {}, i))),
   );
@@ -97,11 +98,12 @@ function profileView(data: PublicEmergencyDto): Node[] {
   if (p.organDonor !== undefined) facts.push(p.organDonor ? 'Organ donor' : 'Not an organ donor');
 
   const nodes: Child[] = [];
-  if (p.name || p.photoUrl || facts.length) {
+  // Who this is: name, photo, quick facts and blood group together in one calm card.
+  if (p.name || p.photoUrl || facts.length || p.bloodGroupLabel) {
     nodes.push(
       h(
         'section',
-        { class: 'card strong' },
+        { class: 'card person-card' },
         h(
           'div',
           { class: 'person' },
@@ -110,8 +112,8 @@ function profileView(data: PublicEmergencyDto): Node[] {
                 class: 'photo',
                 src: p.photoUrl,
                 alt: p.name ? `Photo of ${p.name}` : 'Photo of the owner',
-                width: '96',
-                height: '96',
+                width: '88',
+                height: '88',
               })
             : null,
           h('div', {}, h('h3', {}, 'Name'), h('p', { class: 'name' }, p.name ?? 'Not shared')),
@@ -119,23 +121,28 @@ function profileView(data: PublicEmergencyDto): Node[] {
         facts.length
           ? h('div', { class: 'facts' }, ...facts.map((f) => h('span', { class: 'fact' }, f)))
           : null,
+        p.bloodGroupLabel
+          ? h(
+              'div',
+              { class: 'blood' },
+              h('h3', {}, 'Blood group'),
+              h('strong', {}, p.bloodGroupLabel),
+            )
+          : null,
       ),
     );
   }
-  if (p.bloodGroupLabel)
-    nodes.push(
-      h(
-        'section',
-        { class: 'card' },
-        h('h3', {}, 'Blood group'),
-        h('div', { class: 'blood' }, h('strong', {}, p.bloodGroupLabel)),
-      ),
-    );
   // Phase 8 order: critical medical facts first, then who to call, then free-text notes.
   // Phase 9: the page is about the person — no product, model, batch or warranty at all.
-  nodes.push(listCard('Medical conditions', p.medicalConditions));
-  nodes.push(listCard('Allergies', p.allergies, 'allergy'));
-  nodes.push(listCard('Medications', p.medications));
+  const medical = [
+    medGroup('Medical conditions', p.medicalConditions),
+    medGroup('Allergies', p.allergies, 'allergy'),
+    medGroup('Medications', p.medications),
+  ].filter((g): g is HTMLElement => g !== null);
+  if (medical.length)
+    nodes.push(
+      h('section', { class: 'card medical', 'aria-label': 'Medical information' }, ...medical),
+    );
   if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
   if (p.emergencyNotes)
     nodes.push(
@@ -277,7 +284,7 @@ function render(token: string, result: Lookup | null): void {
             h(
               'a',
               {
-                class: 'btn btn-primary mt-20',
+                class: 'btn btn-cta mt-20',
                 href: `/activate?t=${encodeURIComponent(token)}`,
               },
               'Activate Safety ID',
