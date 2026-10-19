@@ -53,7 +53,7 @@ export function DashboardPage() {
       <div className="flex flex-col gap-6">
         {!owned && (
           <div className="rounded-xl bg-ink p-6 text-on-dark">
-            <p className="text-display-sm font-bold">Activate your first Safety ID</p>
+            <p className="text-display-sm font-semibold">Activate your first Safety ID</p>
             <p className="mt-1 text-mute">
               Scan the QR code of your Safety ID, or enter the Safety ID and its Activation PIN.
             </p>
@@ -80,7 +80,7 @@ export function DashboardPage() {
             <p className="text-sm font-medium text-body">Emergency protection</p>
             {data.readiness.enabled && sharingOn > 0 ? (
               <>
-                <h2 id="protection-h" className="mt-1 text-display-sm font-bold">
+                <h2 id="protection-h" className="mt-1 text-display-sm font-semibold">
                   Emergency information is active
                 </h2>
                 <p className="mt-1 text-body" data-testid="safety-id-summary">
@@ -107,7 +107,7 @@ export function DashboardPage() {
               </>
             ) : (
               <>
-                <h2 id="protection-h" className="mt-1 text-display-sm font-bold">
+                <h2 id="protection-h" className="mt-1 text-display-sm font-semibold">
                   Emergency information is not active yet.
                 </h2>
                 <p className="mt-1 text-body">
@@ -137,7 +137,7 @@ export function DashboardPage() {
         {data.safetyIds.length > 0 && (
           <section aria-labelledby="safety-ids-h">
             <div className="mb-3 flex items-center justify-between">
-              <h2 id="safety-ids-h" className="text-display-sm font-bold">
+              <h2 id="safety-ids-h" className="text-display-sm font-semibold">
                 My Safety IDs
               </h2>
               <Link to="/activate" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
@@ -155,7 +155,7 @@ export function DashboardPage() {
         {data.helmets.length > 0 && (
           <section aria-labelledby="helmets-h">
             <div className="mb-3 flex items-center justify-between">
-              <h2 id="helmets-h" className="text-display-sm font-bold">
+              <h2 id="helmets-h" className="text-display-sm font-semibold">
                 My helmets
               </h2>
               <Link to="/app/helmets" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
@@ -321,7 +321,7 @@ const SEVERITY: Record<
 function HealthList({ warnings }: { warnings: HealthWarningDto[] }) {
   return (
     <section aria-labelledby="health-h">
-      <h2 id="health-h" className="mb-3 text-display-sm font-bold">
+      <h2 id="health-h" className="mb-3 text-display-sm font-semibold">
         Safety check
       </h2>
       <ul className="flex flex-col gap-2" data-testid="health-warnings">

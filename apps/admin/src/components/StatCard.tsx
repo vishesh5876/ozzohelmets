@@ -20,7 +20,7 @@ export function StatCard({
       )}
     >
       <p className={cn('text-sm font-medium', inverted ? 'text-mute' : 'text-body')}>{label}</p>
-      <p className="mt-2 text-display-lg font-bold tabular-nums">{value}</p>
+      <p className="mt-2 text-display-lg font-medium tabular-nums">{value}</p>
       {hint && <p className={cn('mt-1 text-xs', inverted ? 'text-mute' : 'text-body')}>{hint}</p>}
     </div>
   );

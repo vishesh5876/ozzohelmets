@@ -163,7 +163,9 @@ export function SafetyIdBatchDetailPage() {
             <div className="flex items-center justify-between gap-3">
               <GenerationBadge status={b.generationStatus} />
               <p className="text-sm tabular-nums">
-                <span className="text-display-sm font-bold">{formatNumber(b.generatedCount)}</span>
+                <span className="text-display-sm font-semibold">
+                  {formatNumber(b.generatedCount)}
+                </span>
                 <span className="text-body"> / {formatNumber(b.quantity)} Safety IDs</span>
               </p>
             </div>

@@ -244,10 +244,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                         onClick={onNavigate}
                         className={({ isActive }) =>
                           cn(
-                            'flex items-center gap-2.5 rounded-pill px-3 py-2 text-sm font-medium transition-colors',
+                            'flex items-center gap-2.5 rounded-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors',
                             isActive
-                              ? 'bg-ink text-on-dark'
-                              : 'text-hairline-mid hover:bg-canvas-soft hover:text-ink',
+                              ? 'border-primary bg-canvas-soft text-ink'
+                              : 'border-transparent text-body hover:bg-canvas-soft hover:text-ink',
                           )
                         }
                       >

@@ -99,7 +99,7 @@ export function ClaimSafetyIdPage() {
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
-        <h1 className="text-display-lg font-bold">Claim a Safety ID</h1>
+        <h1 className="text-display-lg font-medium">Claim a Safety ID</h1>
         {step === 'code' && (
           <p className="mt-2 text-body">
             Received a Safety ID sticker or card from someone? Enter the Safety ID and the Transfer

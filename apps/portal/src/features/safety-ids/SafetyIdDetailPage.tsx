@@ -69,7 +69,7 @@ export function SafetyIdDetailPage() {
         ← My Safety IDs
       </Link>
       <div className="mt-2 mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="font-mono text-display-md font-bold">{s.safetyCode}</h1>
+        <h1 className="font-mono text-display-md font-semibold">{s.safetyCode}</h1>
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
       <div className="grid gap-4 md:grid-cols-3">

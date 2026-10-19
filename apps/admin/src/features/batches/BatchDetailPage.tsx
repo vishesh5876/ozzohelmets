@@ -139,7 +139,7 @@ export function BatchDetailPage() {
             <div className="flex items-center justify-between gap-3">
               <GenerationBadge status={batch.generationStatus} />
               <p className="text-sm tabular-nums">
-                <span className="text-display-sm font-bold">
+                <span className="text-display-sm font-semibold">
                   {formatNumber(batch.generatedCount)}
                 </span>
                 <span className="text-body"> / {formatNumber(batch.quantity)} helmets</span>
@@ -245,7 +245,7 @@ export function BatchDetailPage() {
       {batch.generatedCount > 0 && (
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-display-sm font-bold">Helmets in this batch</h2>
+            <h2 className="text-display-sm font-semibold">Helmets in this batch</h2>
             <Link
               to={`/helmets?batchId=${batch.id}`}
               className={buttonVariants({ variant: 'ghost', size: 'sm' })}
@@ -288,7 +288,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-hairline p-4">
       <dt className="text-xs text-body">{label}</dt>
-      <dd className="text-display-sm font-bold tabular-nums">{formatNumber(value)}</dd>
+      <dd className="text-display-sm font-semibold tabular-nums">{formatNumber(value)}</dd>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 /* Emergency page: standalone, no framework CSS. High contrast, large targets, system fonts. */
 :root {
-  --ink: #000;
-  --canvas: #fff;
-  --soft: #f1f1f1;
-  --body: #444;
-  --line: #d9d9d9;
+  /* Warm cream + coffee ink. Calls stay dark-on-cream for maximum contrast in an emergency. */
+  --ink: #201515;
+  --canvas: #fffefb;
+  --soft: #f8f4f0;
+  --body: #605d52;
+  --line: #e6e0d6;
+  --on-dark: #fffefb;
   --danger: #b42318;
   --danger-soft: #fdecea;
   color-scheme: light;
@@ -41,7 +43,7 @@ body {
 }
 .top {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-dark);
   padding: max(20px, env(safe-area-inset-top)) 20px 20px;
 }
 .top.alert {
@@ -187,7 +189,7 @@ h3 {
   min-height: 60px;
   width: 100%;
   padding: 14px 20px;
-  border-radius: 999px;
+  border-radius: 12px;
   font-size: 20px;
   font-weight: 800;
   text-decoration: none;
@@ -199,7 +201,7 @@ h3 {
 }
 .btn-primary {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-dark);
 }
 .btn-secondary {
   background: var(--soft);
@@ -209,7 +211,7 @@ h3 {
 }
 .btn-danger {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-dark);
   min-height: 64px;
   font-size: 21px;
 }
@@ -300,9 +302,9 @@ h3 {
   box-sizing: border-box;
   font: inherit;
   padding: 10px 12px;
-  border: 1px solid #d6d6d6;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--canvas);
 }
 #report-form .btn {
   margin-top: 16px;

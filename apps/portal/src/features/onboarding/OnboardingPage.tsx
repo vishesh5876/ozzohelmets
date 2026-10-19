@@ -71,7 +71,7 @@ export function OnboardingPage() {
       {current !== 'done' && <SetupProgress current={PROGRESS[current]} />}
       {current !== 'done' && (
         <>
-          <h1 className="mt-4 text-display-md font-bold">{step.title}</h1>
+          <h1 className="mt-4 text-display-md font-semibold">{step.title}</h1>
           <p className="mb-6 mt-1 text-body">{step.description}</p>
         </>
       )}
@@ -136,7 +136,7 @@ function SetupComplete({ safetyId }: { safetyId: string | null }) {
       <CardContent className="flex flex-col items-start gap-5 py-8">
         <CheckCircle2 className="h-12 w-12" aria-hidden />
         <div>
-          <h1 className="text-display-md font-bold">
+          <h1 className="text-display-md font-semibold">
             {sharing ? 'Emergency information is active' : 'Emergency profile saved'}
           </h1>
           <p className="mt-1 text-body">

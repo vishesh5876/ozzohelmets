@@ -33,7 +33,7 @@ export function PreviewBody({ data }: { data: Pick<PublicEmergencyDto, 'profile'
         <p className="text-xs font-semibold uppercase tracking-wide text-mute">
           Preview · what responders see
         </p>
-        <p className="text-display-sm font-bold">Emergency profile</p>
+        <p className="text-display-sm font-semibold">Emergency profile</p>
       </div>
       <div className="flex flex-col gap-3 p-4">
         {empty && (
@@ -41,7 +41,7 @@ export function PreviewBody({ data }: { data: Pick<PublicEmergencyDto, 'profile'
             Nothing is public yet. Responders would only see that the helmet is registered.
           </p>
         )}
-        {p.name && <p className="text-display-md font-bold">{p.name}</p>}
+        {p.name && <p className="text-display-md font-semibold">{p.name}</p>}
         {p.bloodGroupLabel && (
           <p>
             <span className="text-sm text-body">Blood group </span>

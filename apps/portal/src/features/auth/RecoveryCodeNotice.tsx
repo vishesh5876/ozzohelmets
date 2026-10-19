@@ -22,7 +22,7 @@ export function RecoveryCodeNotice({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-display-sm font-bold">Your Recovery Code</p>
+        <p className="text-display-sm font-semibold">Your Recovery Code</p>
         <p className="mt-1 text-body">
           This code can recover your account if you forget your password. It is not your Activation
           PIN.

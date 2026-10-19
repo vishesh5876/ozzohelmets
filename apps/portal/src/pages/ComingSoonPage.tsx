@@ -11,7 +11,7 @@ export function ComingSoonPage({ title, description }: { title: string; descript
       <div className="mx-auto max-w-xl px-4 py-16 sm:px-8">
         <Card>
           <CardContent className="p-8">
-            <h1 className="text-display-lg font-bold">{title}</h1>
+            <h1 className="text-display-lg font-medium">{title}</h1>
             <p className="mt-3 text-lg text-body">{description}</p>
             {fromQr && (
               <p className="mt-3 rounded-md bg-canvas-soft p-4 text-sm">

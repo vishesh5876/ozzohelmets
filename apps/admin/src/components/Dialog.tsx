@@ -35,7 +35,7 @@ export function Dialog({ open, onClose, title, description, children }: DialogPr
         <div className="p-6">
           <div className="mb-5 flex items-start justify-between gap-4">
             <div>
-              <h2 id="dialog-title" className="text-display-sm font-bold">
+              <h2 id="dialog-title" className="text-display-sm font-semibold">
                 {title}
               </h2>
               {description && <p className="mt-1 text-sm text-body">{description}</p>}

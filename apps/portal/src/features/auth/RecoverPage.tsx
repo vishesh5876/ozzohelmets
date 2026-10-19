@@ -79,7 +79,7 @@ export function RecoverPage() {
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
-        <h1 className="text-display-lg font-bold">
+        <h1 className="text-display-lg font-medium">
           {step === 'code' ? 'Password changed' : 'Reset your password'}
         </h1>
         {step === 'verify' && (

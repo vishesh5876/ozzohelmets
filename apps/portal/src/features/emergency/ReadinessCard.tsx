@@ -19,9 +19,9 @@ export function ReadinessCard({ readiness }: { readiness: EmergencyReadinessDto 
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-body">Emergency profile</p>
-            <p className="text-display-sm font-bold">{done ? 'Active' : 'Not active yet'}</p>
+            <p className="text-display-sm font-semibold">{done ? 'Active' : 'Not active yet'}</p>
           </div>
-          <p className="text-display-lg font-bold tabular-nums">{readiness.completionPercent}%</p>
+          <p className="text-display-lg font-medium tabular-nums">{readiness.completionPercent}%</p>
         </div>
         <div
           className="h-2 overflow-hidden rounded-pill bg-canvas-soft"
@@ -59,7 +59,7 @@ export function ReadinessCard({ readiness }: { readiness: EmergencyReadinessDto 
         {!done && (
           <Link
             to="/app/onboarding"
-            className="inline-flex h-11 items-center justify-center rounded-pill bg-ink px-5 font-medium text-on-dark hover:bg-black-elevated"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-primary px-6 font-semibold text-on-primary hover:bg-primary-hover"
           >
             Continue setup
           </Link>

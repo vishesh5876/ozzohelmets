@@ -122,7 +122,7 @@ function ClaimHelmetPage() {
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
-        <h1 className="text-display-lg font-bold">Claim a helmet</h1>
+        <h1 className="text-display-lg font-medium">Claim a helmet</h1>
         {step === 'code' && (
           <p className="mt-2 text-body">
             Received a helmet from its previous owner? Enter its Helmet ID and the Transfer Code

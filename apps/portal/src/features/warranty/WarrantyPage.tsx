@@ -55,7 +55,7 @@ export function WarrantyPage() {
       <Link to={`/app/helmets/${id}`} className="text-sm font-medium text-body hover:text-ink">
         ← {helmet.data.helmetCode}
       </Link>
-      <h1 className="text-display-md font-bold">Warranty</h1>
+      <h1 className="text-display-md font-semibold">Warranty</h1>
       <WarrantyCard w={w} helmetId={id} onChange={refresh} />
       {w.canRegister && <RegisterForm helmetId={id} months={w.policy.months} onDone={refresh} />}
       {w.status === 'NOT_REGISTERED' && !w.canRegister && (
@@ -89,7 +89,7 @@ function WarrantyCard({
           <Badge tone="outline" className="self-start">
             Not registered
           </Badge>
-          <p className="text-display-sm font-bold">Register your warranty</p>
+          <p className="text-display-sm font-semibold">Register your warranty</p>
           <p className="text-body">
             {w.policy.enabled
               ? `Helmets of this model are covered for ${w.policy.months} months from the purchase date.`
@@ -279,7 +279,7 @@ function RegisterForm({
     return (
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <p className="text-display-sm font-bold">Review</p>
+          <p className="text-display-sm font-semibold">Review</p>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <Item label="Purchase date" value={formatDay(review.purchaseDate)} />
             <Item

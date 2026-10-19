@@ -62,7 +62,7 @@ export function HelmetDetailPage() {
         ← My helmets
       </Link>
       <div className="mt-2 mb-6 flex flex-wrap items-center gap-3">
-        <h1 className="font-mono text-display-md font-bold">{helmet.helmetCode}</h1>
+        <h1 className="font-mono text-display-md font-semibold">{helmet.helmetCode}</h1>
         <HelmetStatusBadge status={helmet.status} />
       </div>
       <div className="grid gap-4 md:grid-cols-3">

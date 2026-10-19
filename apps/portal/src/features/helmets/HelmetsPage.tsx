@@ -50,7 +50,7 @@ export function HelmetsPage() {
             if (helmets.length === 0) return null;
             return (
               <section key={group} aria-labelledby={`group-${group}`}>
-                <h2 id={`group-${group}`} className="mb-3 text-display-sm font-bold">
+                <h2 id={`group-${group}`} className="mb-3 text-display-sm font-semibold">
                   {GROUP_TITLES[group]}
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2">

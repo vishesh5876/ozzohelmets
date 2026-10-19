@@ -1,49 +1,72 @@
 /*
- * Design tokens — monochrome automotive/safety system.
- * Black is the only conversion colour; red is reserved for critical/semantic states.
+ * Design tokens — warm cream + coffee-ink system with a single saturated orange CTA.
+ *
+ * - Canvas is warm cream (#fffefb), never pure white; ink is deep coffee (#201515), never pure
+ *   black. Every neutral carries warmth.
+ * - Orange (#ff4f00) is the ONLY chromatic accent: primary CTAs and active indicators.
+ * - Danger / success stay as semantic safety states (lost, stolen, errors): this is a safety
+ *   product, so they are not removed, but they are never used decoratively.
+ * - Radius: 12px (md) for buttons and cards, 6px (sm) for inputs, pill only for badges.
+ *
  * Apps import this after `@import "tailwindcss";`.
  */
 @theme {
+  /* Degular Display is proprietary: Inter 500 is the documented substitute at display sizes. */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-ink: #000000;
-  --color-canvas: #ffffff;
-  --color-canvas-soft: #efefef;
-  --color-canvas-softer: #f6f6f6;
-  --color-body: #5e5e5e;
-  --color-hairline: #e6e6e6;
-  --color-hairline-mid: #4b4b4b;
-  --color-mute: #afafaf;
-  --color-surface-pressed: #e2e2e2;
-  --color-black-elevated: #282828;
-  --color-on-dark: #ffffff;
+  /* Brand */
+  --color-primary: #ff4f00;
+  --color-primary-hover: #e64700;
+  --color-on-primary: #fffefb;
+
+  /* Surface */
+  --color-canvas: #fffefb;
+  --color-canvas-soft: #f8f4f0;
+  --color-canvas-softer: #fbf8f4;
+  --color-surface-pressed: #efe9e2;
+  --color-hairline: #e6e0d6;
+
+  /* Text (all warm) */
+  --color-ink: #201515;
+  --color-ink-soft: #2f2a26;
+  --color-ink-mid: #36342e;
+  --color-body: #605d52;
+  --color-body-mid: #939084;
+  --color-hairline-mid: #605d52;
+  --color-mute: #c5c0b1;
+  --color-black-elevated: #2f2a26;
+  --color-on-dark: #fffefb;
+
+  /* Semantic safety states (not decorative accents) */
   --color-danger: #b42318;
   --color-danger-soft: #fdecea;
   --color-success: #0e7a3e;
   --color-success-soft: #e7f5ec;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
+  --radius-sm: 6px;
+  --radius-md: 12px;
   --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-pill: 999px;
+  --radius-xl: 12px;
+  --radius-pill: 9999px;
 
-  --shadow-subtle: 0 4px 16px 0 rgb(0 0 0 / 0.12);
-  --shadow-card: 0 4px 16px 0 rgb(0 0 0 / 0.16);
-  --shadow-float: 0 2px 8px 0 rgb(0 0 0 / 0.16);
+  /* Elevation is mostly surface contrast; shadows only for floating layers. */
+  --shadow-subtle: 0 4px 16px 0 rgb(32 21 21 / 0.08);
+  --shadow-card: 0 4px 16px 0 rgb(32 21 21 / 0.12);
+  --shadow-float: 0 2px 8px 0 rgb(32 21 21 / 0.14);
 
-  --text-display-xxl: 52px;
-  --text-display-xxl--line-height: 64px;
-  --text-display-xl: 36px;
-  --text-display-xl--line-height: 44px;
+  /* Display scale (hero 56/56 → card title 20/25). */
+  --text-display-xxl: 56px;
+  --text-display-xxl--line-height: 56px;
+  --text-display-xl: 48px;
+  --text-display-xl--line-height: 48px;
   --text-display-lg: 32px;
-  --text-display-lg--line-height: 40px;
+  --text-display-lg--line-height: 36px;
   --text-display-md: 24px;
-  --text-display-md--line-height: 32px;
+  --text-display-md--line-height: 30px;
   --text-display-sm: 20px;
-  --text-display-sm--line-height: 28px;
+  --text-display-sm--line-height: 25px;
 }
 
 @layer base {
@@ -57,8 +80,23 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
   }
+  h1,
+  h2 {
+    font-family: var(--font-display);
+  }
+  ::selection {
+    background-color: rgb(255 79 0 / 0.18);
+  }
   :focus-visible {
-    outline: 2px solid var(--color-ink);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
+}
+
+@utility eyebrow {
+  font-size: 14px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }

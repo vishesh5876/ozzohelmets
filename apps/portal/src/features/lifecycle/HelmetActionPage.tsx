@@ -238,7 +238,7 @@ function LifecycleConfirm({
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        <h1 className="text-display-sm font-bold">{copy.title}</h1>
+        <h1 className="text-display-sm font-semibold">{copy.title}</h1>
         {copy.sensitive ? <RecentAuthGate>{form}</RecentAuthGate> : form}
       </CardContent>
     </Card>
@@ -293,7 +293,7 @@ function TransferPanel({ helmet }: { helmet: CustomerHelmetDetailDto }) {
     <Card>
       <CardContent className="flex flex-col gap-4">
         <div>
-          <h1 className="text-display-sm font-bold">Transfer this helmet</h1>
+          <h1 className="text-display-sm font-semibold">Transfer this helmet</h1>
           <p className="mt-1 text-body">
             Transfer this helmet to another owner. Give them the Helmet ID and a one-time transfer
             code; they enter both under “Claim a helmet”. The helmet’s Safety ID moves with it, and

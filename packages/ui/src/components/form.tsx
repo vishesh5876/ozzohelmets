@@ -9,7 +9,7 @@ import {
 import { cn } from '../cn';
 
 const fieldBase =
-  'w-full rounded-md border border-transparent bg-canvas-soft px-4 text-base text-ink placeholder:text-mute transition-colors focus:border-ink focus:bg-canvas focus:outline-none disabled:opacity-60 aria-[invalid=true]:border-danger';
+  'w-full rounded-sm border border-ink bg-canvas px-4 text-base text-ink placeholder:text-body-mid transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:opacity-60 aria-[invalid=true]:border-danger';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (
@@ -37,7 +37,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       )}
       style={{
         backgroundImage:
-          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23000' stroke-width='1.5' fill='none'/%3E%3C/svg%3E\")",
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23201515' stroke-width='1.5' fill='none'/%3E%3C/svg%3E\")",
       }}
       {...props}
     >

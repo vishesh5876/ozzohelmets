@@ -157,7 +157,7 @@ export function ActivatePage() {
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-10 sm:py-14">
-        <h1 className="text-display-lg font-bold">{title}</h1>
+        <h1 className="text-display-lg font-medium">{title}</h1>
         {step !== 'done' && (
           <SetupProgress
             current={PROGRESS[step]}

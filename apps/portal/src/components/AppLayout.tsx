@@ -33,9 +33,9 @@ export function AppLayout() {
                   end={n.end}
                   className={({ isActive }) =>
                     cn(
-                      'block whitespace-nowrap rounded-pill px-4 py-2 text-sm font-medium',
+                      'block whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium',
                       isActive
-                        ? 'bg-ink text-on-dark'
+                        ? 'bg-ink text-on-dark shadow-[inset_0_-3px_0_var(--color-primary)]'
                         : 'bg-canvas-soft text-ink hover:bg-surface-pressed',
                     )
                   }
@@ -66,7 +66,7 @@ export function PageTitle({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-display-md font-bold sm:text-display-lg">{title}</h1>
+        <h1 className="text-display-md font-medium sm:text-display-lg">{title}</h1>
         {description && <p className="mt-1 text-body">{description}</p>}
       </div>
       {action}

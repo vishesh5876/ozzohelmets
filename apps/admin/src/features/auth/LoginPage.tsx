@@ -48,7 +48,7 @@ export function LoginPage() {
           <span className="font-bold">Helmet ID</span>
         </div>
         <div>
-          <h1 className="text-display-xxl font-bold">Every helmet, accounted for.</h1>
+          <h1 className="text-display-xxl font-medium">Every helmet, accounted for.</h1>
           <p className="mt-4 max-w-md text-lg text-mute">
             Manufacturing, identity and authenticity for every helmet that leaves the line.
           </p>
@@ -57,7 +57,7 @@ export function LoginPage() {
       </section>
       <section className="flex items-center justify-center px-4 py-12">
         <form onSubmit={onSubmit} noValidate className="w-full max-w-sm">
-          <h2 className="text-display-lg font-bold">Sign in</h2>
+          <h2 className="text-display-lg font-medium">Sign in</h2>
           <p className="mt-1 text-body">Use your admin account.</p>
           <div className="mt-8 flex flex-col gap-4">
             <Field label="Email" htmlFor="email" error={errors.email?.message}>

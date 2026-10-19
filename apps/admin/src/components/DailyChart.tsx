@@ -11,7 +11,7 @@ export interface ChartSeries {
   label: string;
 }
 
-const SERIES_COLORS = ['#2a78d6', '#eb6834'] as const;
+const SERIES_COLORS = ['#201515', '#ff4f00'] as const;
 const H = 180;
 const PAD = { top: 12, right: 8, bottom: 22, left: 40 };
 
@@ -140,8 +140,8 @@ export function DailyChart<T extends { date: string }>({
             </desc>
             {ticks.map((t) => (
               <g key={t}>
-                <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke="#e6e6e6" />
-                <text x={PAD.left - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#5e5e5e">
+                <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke="#e6e0d6" />
+                <text x={PAD.left - 6} y={y(t) + 4} textAnchor="end" fontSize="10" fill="#605d52">
                   {formatNumber(t)}
                 </text>
               </g>
@@ -179,7 +179,7 @@ export function DailyChart<T extends { date: string }>({
                       y={H - 6}
                       textAnchor="middle"
                       fontSize="10"
-                      fill="#5e5e5e"
+                      fill="#605d52"
                     >
                       {shortDate(row.date)}
                     </text>

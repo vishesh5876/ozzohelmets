@@ -54,7 +54,7 @@ export function DesignPreview({
     <AuthImage
       path={`/admin/print-designs/${designId}/preview/${kind}.svg?${qs.toString()}`}
       alt={kind === 'unit' ? 'Safety ID unit preview' : '12 × 18 sheet preview'}
-      className={className ?? 'w-full border border-hairline bg-white'}
+      className={className ?? 'w-full border border-hairline bg-canvas'}
     />
   );
 }

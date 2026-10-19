@@ -3,7 +3,7 @@ import { cn } from '../cn';
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('rounded-xl border border-hairline bg-canvas', className)} {...props} />
+    <div className={cn('rounded-md border border-hairline bg-canvas', className)} {...props} />
   );
 }
 
@@ -12,7 +12,9 @@ export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElemen
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn('text-display-sm font-bold', className)} {...props} />;
+  return (
+    <h2 className={cn('text-display-sm font-semibold tracking-[-0.5px]', className)} {...props} />
+  );
 }
 
 export function CardDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {

@@ -79,7 +79,7 @@ function DetailsCard() {
             save.mutate();
           }}
         >
-          <h2 className="text-display-sm font-bold">Your details</h2>
+          <h2 className="text-display-sm font-semibold">Your details</h2>
           <p className="text-sm text-body">
             Optional. Your mobile number is not verified and is never used to sign in.
           </p>
@@ -142,7 +142,7 @@ function ChangePasswordCard() {
     <Card>
       <CardContent>
         <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
-          <h2 className="text-display-sm font-bold">Change password</h2>
+          <h2 className="text-display-sm font-semibold">Change password</h2>
           <Field label="Current password" htmlFor="cp-current">
             <Input
               id="cp-current"
@@ -212,7 +212,7 @@ function RecoveryCodeCard() {
               rotate.mutate();
             }}
           >
-            <h2 className="text-display-sm font-bold">Recovery Code</h2>
+            <h2 className="text-display-sm font-semibold">Recovery Code</h2>
             <p className="font-medium" data-testid="recovery-status">
               Recovery Code: {status}
             </p>
@@ -271,7 +271,7 @@ function SessionsCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        <h2 className="text-display-sm font-bold">Signed-in devices</h2>
+        <h2 className="text-display-sm font-semibold">Signed-in devices</h2>
         <p className="text-sm text-body">
           Only a browser and system name is kept for each sign-in — no device fingerprint.
         </p>
@@ -341,7 +341,7 @@ function ActivityCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <h2 id="activity" className="text-display-sm font-bold">
+        <h2 id="activity" className="text-display-sm font-semibold">
           Account activity
         </h2>
         {activity.isLoading && <LoadingState />}
@@ -386,7 +386,7 @@ function DataExportCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <h2 className="text-display-sm font-bold">Download your data</h2>
+        <h2 className="text-display-sm font-semibold">Download your data</h2>
         <p className="text-sm text-body">
           A JSON file with your account, helmets, ownership history, emergency profile, contacts,
           privacy settings, warranties and account activity. It never contains passwords or recovery
@@ -448,7 +448,7 @@ function DeletionCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <h2 className="text-display-sm font-bold">Delete account</h2>
+        <h2 className="text-display-sm font-semibold">Delete account</h2>
         {pending ? (
           <div className="flex flex-col gap-3" data-testid="deletion-pending">
             <p className="font-medium">
@@ -531,7 +531,7 @@ function CustomerIdCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <h2 className="text-display-sm font-bold">Customer ID</h2>
+        <h2 className="text-display-sm font-semibold">Customer ID</h2>
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-xl font-bold tracking-wide" data-testid="customer-id">
             {customer.customerId}
@@ -611,7 +611,7 @@ function AccountEmailCard() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-4">
-        <h2 className="text-display-sm font-bold">Account email</h2>
+        <h2 className="text-display-sm font-semibold">Account email</h2>
         {step === 'view' && (
           <>
             <p className="break-all text-lg font-medium" data-testid="account-email">

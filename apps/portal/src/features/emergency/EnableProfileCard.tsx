@@ -56,7 +56,7 @@ export function EnableProfileCard({
     <Card className={readiness.enabled ? 'border-ink' : ''}>
       <CardContent className="flex flex-col gap-4">
         <div>
-          <p className="text-display-sm font-bold">
+          <p className="text-display-sm font-semibold">
             {readiness.enabled ? 'Emergency profile is on' : 'Emergency profile is off'}
           </p>
           <p className="mt-1 text-body">

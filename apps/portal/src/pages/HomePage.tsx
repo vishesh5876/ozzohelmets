@@ -7,7 +7,7 @@ export function HomePage() {
     <SiteFrame>
       <section className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-8 lg:grid-cols-2 lg:py-24">
         <div>
-          <h1 className="text-display-xl font-bold sm:text-display-xxl">
+          <h1 className="text-display-xl font-medium sm:text-display-xxl">
             Your Safety ID speaks for you when you can’t.
           </h1>
           <p className="mt-5 max-w-lg text-lg text-body">
@@ -42,7 +42,7 @@ export function HomePage() {
                   {i + 1}
                 </span>
                 <div>
-                  <p className="text-display-sm font-bold">{title}</p>
+                  <p className="text-display-sm font-semibold">{title}</p>
                   <p className="text-body">{body}</p>
                 </div>
               </li>
@@ -61,7 +61,7 @@ export function HomePage() {
             ['Built for emergencies', 'No app, no login and no delay for the person helping you.'],
           ].map(([title, body]) => (
             <div key={title}>
-              <p className="text-display-sm font-bold">{title}</p>
+              <p className="text-display-sm font-semibold">{title}</p>
               <p className="mt-2 text-mute">{body}</p>
             </div>
           ))}

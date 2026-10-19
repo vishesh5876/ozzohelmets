@@ -42,7 +42,7 @@ export function PrivacyPage() {
           <VisibilityForm />
         </div>
         <div>
-          <h2 className="mb-3 text-display-sm font-bold">Public page preview</h2>
+          <h2 className="mb-3 text-display-sm font-semibold">Public page preview</h2>
           <PublicPreview />
         </div>
       </div>

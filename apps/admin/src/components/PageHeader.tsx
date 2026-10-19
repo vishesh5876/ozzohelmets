@@ -21,7 +21,7 @@ export function PageHeader({ title, description, actions, back }: PageHeaderProp
             <ChevronLeft className="h-4 w-4" aria-hidden /> {back.label}
           </Link>
         )}
-        <h1 className="text-display-md font-bold sm:text-display-lg">{title}</h1>
+        <h1 className="text-display-md font-medium sm:text-display-lg">{title}</h1>
         {description && <div className="mt-1 text-body">{description}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

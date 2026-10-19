@@ -53,7 +53,7 @@ export function LoginPage() {
   return (
     <SiteFrame>
       <div className="mx-auto max-w-md px-4 py-12 sm:py-16">
-        <h1 className="text-display-lg font-bold">Sign in</h1>
+        <h1 className="text-display-lg font-medium">Sign in</h1>
         <p className="mt-2 text-body">Use the email and password you chose at activation.</p>
         <Card className="mt-8">
           <CardContent>
