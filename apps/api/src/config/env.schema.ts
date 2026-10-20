@@ -189,6 +189,11 @@ export const envSchema = z
     BUILD_DATE: z.string().max(40).default('unknown'),
     PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(10_000).max(20_000_000).default(5_242_880),
 
+    /** Number on the emergency page's "Call emergency" button (server-rendered /e/ page). */
+    PUBLIC_EMERGENCY_NUMBER: z
+      .string()
+      .regex(/^\+?[0-9]{2,15}$/, 'PUBLIC_EMERGENCY_NUMBER must be digits')
+      .default('112'),
     PUBLIC_CACHE_TTL_SECONDS: z.coerce.number().int().min(5).max(60).default(30),
     SCAN_DEDUP_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
 

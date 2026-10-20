@@ -4,3 +4,4 @@ coverage
 pnpm-lock.yaml
 apps/api/prisma/migrations
 pnpm-lock.yaml
+apps/api/src/modules/public-emergency/page/emergency-css.generated.ts

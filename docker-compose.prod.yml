@@ -135,6 +135,8 @@ services:
       FILE_STORAGE_DRIVER: local
       FILE_STORAGE_LOCAL_DIR: /app/storage
       RUN_MIGRATIONS_ON_START: 'false'
+      # Server-rendered /e/ page: same number as the portal build (VITE_EMERGENCY_NUMBER).
+      PUBLIC_EMERGENCY_NUMBER: ${EMERGENCY_NUMBER:-112}
       # Requests reach the API only from the edge / SPA proxies on the private edge network.
       TRUST_PROXY: ${EDGE_SUBNET:-172.30.0.0/24}
       TRUST_CLOUDFLARE: 'false'

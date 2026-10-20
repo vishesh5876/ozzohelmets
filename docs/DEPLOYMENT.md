@@ -63,8 +63,10 @@ The containerised API defaults to `NODE_ENV=development` so the dev-only placeho
 - [ ] Log shipping (JSON stdout) and alerting on 5xx rate, `admin.refresh.reuse_detected`,
       `admin.login.locked` and batch generation failures.
 - [ ] Cloudflare/CDN: cache static assets; do **not** cache `/api/v1/public/emergency/*`
-      responses (they are `no-store`; privacy changes must apply immediately). `/e/*` serves
-      `emergency.html` (`no-cache`).
+      responses (they are `no-store`; privacy changes must apply immediately). `/e/<token>` is
+      proxied to the API's server-rendered page (`no-store`), falling back to `emergency.html`
+      when the API is unreachable (see [EMERGENCY-PROFILE § Instant loading](EMERGENCY-PROFILE.md#instant-loading-on-poor-connections)).
+      Enabling HTTP/3 (QUIC) in Cloudflare saves a round trip on lossy mobile networks.
 
 ## Scaling notes
 

@@ -255,7 +255,12 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     });
     await slow.context().close();
 
+    // API unreachable: the proxy serves the static client page instead of the server-rendered one
+    // (nginx @emergency_fallback), whose own API call then fails too.
     const down = await phone(browser);
+    await down.route(/\/e\/[^/]+$/, async (route) =>
+      route.fulfill({ response: await route.fetch({ url: `${PORTAL}/emergency.html` }) }),
+    );
     await down.route('**/api/v1/public/emergency/**', (route) => route.abort('connectionfailed'));
     await down.goto(helmets[0]!.qrUrl);
     await expect(down.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 20_000 });

@@ -103,3 +103,36 @@ endpoints that apply authorisation/visibility.
 Unchanged schema (`helmet_scans`: helmet, time, HMAC'd IP, truncated UA, country when behind
 Cloudflare, type). New: the same device (IP hash + UA) is logged at most once per helmet per
 `SCAN_DEDUP_SECONDS` (60), so refreshes don't drown real scans.
+
+## Instant loading on poor connections
+
+A bystander scanning the QR may have one bar of 2G. The client-rendered page needed HTML → CSS +
+JS → API call before anything useful appeared: several sequential round trips, and nothing at all
+without JavaScript. `/e/<token>` is now **one server-rendered response**:
+
+- `GET /api/v1/public/emergency/:token/page` (`PublicEmergencyPageController`) uses the same
+  `PublicEmergencyService.resolve` as the JSON endpoint (same filtered DTO, Redis cache, scan
+  logging, abuse limits, `public` throttle bucket) and renders the page in
+  `page/emergency-page.ts`. Every owner string is HTML-escaped. No product data.
+- The stylesheet is inlined (generated from `apps/portal/src/emergency/emergency.css` by
+  `scripts/sync-emergency-css.mjs`; a unit test fails on drift), the favicon is `data:`, and there
+  are no other requests except the optional owner photo. About 10 KB raw, ~3.5 KB gzipped: it
+  arrives in the first TCP round trip.
+- Works with JavaScript disabled. A tiny inline script only reveals Copy / Print.
+- Strict CSP with hashes (`default-src 'none'`, no `unsafe-inline`), `Cache-Control: no-store`,
+  `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`.
+- Not found → 404, throttled → 429, failure → 503: each still an HTML page with the
+  **Call emergency** button. The number is `PUBLIC_EMERGENCY_NUMBER` (default 112; deploys set
+  it from `EMERGENCY_NUMBER`, the same value as the portal's `VITE_EMERGENCY_NUMBER`).
+- **Fallback:** nginx (`deploy/aapanel/ozzo-portal.conf`, `docker/nginx/spa.conf.template`)
+  proxies `/e/<token>` with short timeouts (connect 2 s, read 8 s). On 502/504 it serves the static
+  client page `emergency.html`, which retries the API itself. `/verify/` stays client-rendered.
+
+Measured with Chromium network throttling (owner profile with contacts, local servers):
+
+| Network                   | Before (client-rendered) | After (server-rendered) |
+| ------------------------- | ------------------------ | ----------------------- |
+| Slow 3G (400 ms, 50 KB/s) | ~1.8 s, 7 requests       | ~0.7 s, 1 request       |
+| 2G (800 ms, 8 KB/s)       | ~4.3 s, 6 requests       | ~2.3 s, 1 request       |
+
+The 2G figure is uncompressed; with production gzip the page is about a third of that size.

@@ -1,6 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { existsSync, readFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { resolve } from 'node:path';
 import { type Connect, defineConfig, type Plugin } from 'vite';
 
@@ -21,16 +22,38 @@ function readRootEnv(): Record<string, string> {
   return env;
 }
 
-/** Serves the standalone emergency entry for /e/* and /verify/* in dev and preview (nginx does this in production). */
-function emergencyRoute(): Plugin {
-  const rewrite: Connect.NextHandleFunction = (req, _res, next) => {
-    if (req.url && /^\/(e|verify)\/[^/?#]+\/?(\?.*)?$/.test(req.url)) req.url = '/emergency.html';
+/**
+ * Mirrors production nginx in dev and preview: /e/:token is the server-rendered emergency page
+ * from the API (one request, works without JavaScript); /verify/:token is the client entry.
+ */
+function emergencyRoute(apiTarget: string): Plugin {
+  const handle: Connect.NextHandleFunction = (req, res, next) => {
+    const url = req.url ?? '';
+    const e = /^\/e\/([0-9A-Za-z_-]+)\/?(?:\?.*)?$/.exec(url);
+    if (e) {
+      const upstream = request(
+        // "localhost" can resolve to ::1 while the dev API listens on IPv4 only.
+        `${apiTarget.replace('//localhost', '//127.0.0.1')}/api/v1/public/emergency/${e[1]}/page`,
+        { method: 'GET', headers: { ...req.headers, host: new URL(apiTarget).host } },
+        (up) => {
+          res.writeHead(up.statusCode ?? 502, up.headers);
+          up.pipe(res);
+        },
+      );
+      upstream.on('error', () => {
+        req.url = '/emergency.html'; // API down: client fallback, as nginx does
+        next();
+      });
+      upstream.end();
+      return;
+    }
+    if (/^\/verify\/[^/?#]+\/?(\?.*)?$/.test(url)) req.url = '/emergency.html';
     next();
   };
   return {
     name: 'emergency-route',
-    configureServer: (server) => void server.middlewares.use(rewrite),
-    configurePreviewServer: (server) => void server.middlewares.use(rewrite),
+    configureServer: (server) => void server.middlewares.use(handle),
+    configurePreviewServer: (server) => void server.middlewares.use(handle),
   };
 }
 
@@ -42,15 +65,16 @@ export default defineConfig(() => {
       .map(([key, value]) => [`import.meta.env.${key}`, JSON.stringify(value)]),
   );
   const port = Number(env.PORTAL_PORT ?? 3001);
+  const apiTarget = env.VITE_API_PROXY_TARGET ?? 'http://localhost:4000';
   return {
-    plugins: [emergencyRoute(), react(), tailwindcss()],
+    plugins: [emergencyRoute(apiTarget), react(), tailwindcss()],
     define: clientEnv,
     server: {
       port,
       strictPort: true,
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY_TARGET ?? 'http://localhost:4000',
+          target: apiTarget,
           changeOrigin: false,
         },
       },

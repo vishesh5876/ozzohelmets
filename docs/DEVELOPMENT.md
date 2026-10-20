@@ -21,8 +21,10 @@ pnpm dev                      # API :4000, admin :3000, portal :3001
   QR URL → Activate → PIN → email + password → save the recovery code. No inventory/sale step.
   Sign in later at `/login` with the email + password (Customer ID / Helmet ID also work);
   `/recover` resets it with the recovery code.
-- The emergency page `/e/:token` is a separate lightweight entry (`apps/portal/emergency.html`,
-  `src/emergency/main.ts`); the Vite dev server rewrites `/e/*` to it.
+- The emergency page `/e/:token` is server-rendered by the API (`/api/v1/public/emergency/:token/page`);
+  the Vite dev/preview server forwards `/e/<token>` there, falling back to the client entry
+  (`apps/portal/emergency.html`, `src/emergency/main.ts`) if the API is down. After editing
+  `src/emergency/emergency.css`, run `node scripts/sync-emergency-css.mjs` (a unit test fails on drift).
 - Swagger: http://localhost:4000/api/docs
 
 The Vite dev servers proxy `/api` to `VITE_API_PROXY_TARGET`, so the browser talks to one origin

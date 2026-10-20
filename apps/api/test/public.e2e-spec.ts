@@ -110,6 +110,36 @@ describe('Public emergency endpoint (e2e)', () => {
     expect(a.body.error.message).toBe(b.body.error.message);
   });
 
+  it('serves the whole emergency page as one server-rendered HTML response', async () => {
+    const res = await ctx
+      .http()
+      .get(`/api/v1/public/emergency/${token}/page`)
+      .set('User-Agent', 'EmergencyPageTest/1.0')
+      .expect(200);
+    expect(res.headers['content-type']).toMatch(/^text\/html/);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers['content-security-policy']).toMatch(/script-src 'sha256-/);
+    expect(res.headers['content-security-policy']).not.toContain('unsafe-inline');
+    expect(res.headers['x-robots-tag']).toMatch(/noindex/);
+    expect(res.text).toContain('Safety ID not activated');
+    expect(res.text).toContain(`href="/activate?t=${token}"`);
+    expect(res.text).toContain('id="call-emergency"');
+    expect(res.text).not.toContain('Urban Jet');
+    // Same scan logging as the JSON endpoint.
+    await waitFor(
+      () => ctx.prisma.helmetScan.count({ where: { helmetId, scanType: 'EMERGENCY_PAGE' } }),
+      (n) => n >= 3,
+    );
+  });
+
+  it('renders unknown tokens as an HTML 404 that still offers the emergency call', async () => {
+    const res = await ctx.http().get('/api/v1/public/emergency/AAAAAAAAAAAAAAAAAAAAAA/page');
+    expect(res.status).toBe(404);
+    expect(res.headers['content-type']).toMatch(/^text\/html/);
+    expect(res.text).toContain('We could not find this Safety ID');
+    expect(res.text).toContain('href="tel:');
+  });
+
   it('invalidates the cached public state when the status changes', async () => {
     await ctx.http().get(`/api/v1/public/emergency/${token}`).expect(200); // warm cache
     await ctx
@@ -129,6 +159,12 @@ describe('Public emergency endpoint (e2e)', () => {
       await ctx.http().get(`/api/v1/public/emergency/${token}`).expect(200);
     const res = await ctx.http().get(`/api/v1/public/emergency/${token}`).expect(429);
     expect(res.body.error.code).toBe('RATE_LIMITED');
+    // The HTML page has its own bucket and answers a throttled client with a readable page.
+    for (let i = 0; i < limit; i++)
+      await ctx.http().get(`/api/v1/public/emergency/${token}/page`).expect(200);
+    const page = await ctx.http().get(`/api/v1/public/emergency/${token}/page`).expect(429);
+    expect(page.headers['content-type']).toMatch(/^text\/html/);
+    expect(page.text).toContain('Please wait a moment');
     // Admin traffic uses a separate bucket.
     await ctx.http().get('/api/v1/admin/dashboard').set(auth).expect(200);
   });

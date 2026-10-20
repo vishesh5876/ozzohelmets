@@ -19,6 +19,10 @@ const buildEnv = {
   GIT_SHA: process.env.GIT_SHA || 'unknown',
   BUILD_DATE: process.env.BUILD_DATE || 'unknown',
   NPM_CONFIG_UPDATE_NOTIFIER: 'false',
+  // Same number the portal build bakes in (scripts/pm2-deploy.sh), for the server-rendered /e/ page.
+  ...(process.env.EMERGENCY_NUMBER
+    ? { PUBLIC_EMERGENCY_NUMBER: process.env.EMERGENCY_NUMBER }
+    : {}),
 };
 
 const common = {
