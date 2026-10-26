@@ -157,10 +157,14 @@ the source artwork; the engine never recolours uploaded designs).
 
 ## 11. Print-vendor considerations
 
-Same as [SAFETY-ID-PRINT § 10](SAFETY-ID-PRINT.md#10-print-vendor-decisions-still-pending), plus:
+Same as [SAFETY-ID-PRINT § 10](SAFETY-ID-PRINT.md#10-print-vendor-decisions-still-pending), plus
+the in-house option: the editor's **Sheet layout** picks the sheet for Preview Sheet and the test
+print. For your own printer + cutter use the 30-up layout (margins, 1.2 mm drawn bleed by edge
+mirroring, registration marks, 100 mm scale bar; see
+[SAFETY-ID-PRINT § 7](SAFETY-ID-PRINT.md#7-sheet-layout)). Also:
 confirm the vendor RIP renders PDF Form XObjects with gradients/clip paths as in the proof (check
 the test print); dark artwork next to the white credential panel shows trim drift at the
-0.5 mm level — prefer artwork that doesn't depend on a hairline-exact edge there; artwork extending
-to the unit edge with zero gutters prints across the shared cut line (no bleed exists in the
-48-up preset); RGB artwork colours are converted by the vendor's profile; live SVG text prints
+0.5 mm level — prefer artwork that doesn't depend on a hairline-exact edge there; on the 48-up
+sheet (shared cut lines, no bleed) artwork reaching the unit edge shows drift as a sliver of the
+neighbour, so prefer the 30-up cutter layout for full-bleed designs; RGB artwork colours are converted by the vendor's profile; live SVG text prints
 with standard fonts (outline text before upload).

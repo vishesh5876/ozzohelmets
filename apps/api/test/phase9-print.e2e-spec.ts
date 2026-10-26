@@ -357,5 +357,56 @@ describe('Phase 9 — final Safety ID print + six-digit PIN (e2e)', () => {
       expect(cut.headers['content-type']).toBe('application/pdf');
       expect(pdfText(cut.body as Buffer)).toEqual([]);
     });
+
+    it('own printer + cutter preset: 30-up with margins and bleed, marks, print at 100 %', async () => {
+      const support = await asAdmin('SUPPORT');
+      const get = (path: string) =>
+        ctx
+          .http()
+          .get(`/api/v1/admin/safety-id-print/${path}`)
+          .set(bearer(support.token))
+          .buffer(true)
+          .parse(binary as never);
+      const status = (
+        await ctx
+          .http()
+          .get('/api/v1/admin/safety-id-print/status?preset=12x18_30UP_CUTTER')
+          .set(bearer(support.token))
+          .expect(200)
+      ).body.data;
+      expect(status).toMatchObject({
+        preset: '12x18_30UP_CUTTER',
+        unitsPerSheet: 30,
+        fullSheetWarning: null,
+        layout: { columns: 3, rows: 10, bleedMm: 1.2, outerMarginXIn: 2.15 },
+      });
+      // Fields still fine-tune a preset; an unknown preset is refused, never guessed.
+      expect(
+        (
+          await ctx
+            .http()
+            .get('/api/v1/admin/safety-id-print/status?preset=12x18_30UP_CUTTER&rows=9')
+            .set(bearer(support.token))
+            .expect(200)
+        ).body.data,
+      ).toMatchObject({ preset: 'CUSTOM', unitsPerSheet: 27 });
+      await ctx
+        .http()
+        .get('/api/v1/admin/safety-id-print/status?preset=A4_99UP')
+        .set(bearer(support.token))
+        .expect(400);
+
+      const sheet = (
+        (await get('preview/sheet.svg?preset=12x18_30UP_CUTTER').expect(200)).body as Buffer
+      ).toString();
+      expect(sheet.match(/<use /g)).toHaveLength(30);
+      expect(sheet).toContain('THIS BAR MUST MEASURE 100 mm');
+      const cut = (
+        (await get('cut-guide.pdf?preset=12x18_30UP_CUTTER').expect(200)).body as Buffer
+      ).toString('latin1');
+      expect(cut).toContain('/MediaBox [0 0 1296 864]');
+      // pdfkit compresses content; the catalog's viewer preference is plain text.
+      expect(cut).toMatch(/\/PrintScaling \/None/);
+    });
   });
 });

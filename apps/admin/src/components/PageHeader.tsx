@@ -12,7 +12,7 @@ interface PageHeaderProps {
 export function PageHeader({ title, description, actions, back }: PageHeaderProps) {
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
+      <div className="min-w-0 sm:flex-1">
         {back && (
           <Link
             to={back.to}
@@ -24,7 +24,11 @@ export function PageHeader({ title, description, actions, back }: PageHeaderProp
         <h1 className="text-display-md font-medium sm:text-display-lg">{title}</h1>
         {description && <div className="mt-1 text-body">{description}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 sm:max-w-[55%] sm:justify-end">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

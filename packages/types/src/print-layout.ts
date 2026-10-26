@@ -38,6 +38,8 @@ export interface PrintSheetLayout {
 }
 
 export const DEFAULT_PRINT_PRESET = '12x18_48UP';
+/** Own printer + print-and-cut plotter: printer-safe margins, gaps between units and bleed. */
+export const CUTTER_PRINT_PRESET = '12x18_30UP_CUTTER';
 
 /** 18 / 4.5 = 4 columns, 12 / 1 = 12 rows: 48 complete units, zero margin and gutter. */
 export const PRINT_PRESETS: Readonly<Record<string, Readonly<PrintSheetLayout>>> = {
@@ -55,7 +57,40 @@ export const PRINT_PRESETS: Readonly<Record<string, Readonly<PrintSheetLayout>>>
     bleedMm: 0,
     safeAreaMm: 2,
   },
+  /**
+   * 3 × 10 = 30 units with 0.1 in gaps, so every unit has its own cut and 1.2 mm of bleed: a cut
+   * that drifts shows design, never a white sliver. 0.55 in top/bottom and 2.15 in side margins
+   * stay clear of a desktop printer's unprintable edge and hold the registration marks and the
+   * scale bar.
+   */
+  [CUTTER_PRINT_PRESET]: {
+    sheetWidthIn: 18,
+    sheetHeightIn: 12,
+    unitWidthIn: SAFETY_ID_UNIT_WIDTH_IN,
+    unitHeightIn: SAFETY_ID_UNIT_HEIGHT_IN,
+    columns: 3,
+    rows: 10,
+    outerMarginXIn: 2.15,
+    outerMarginYIn: 0.55,
+    gutterXIn: 0.1,
+    gutterYIn: 0.1,
+    bleedMm: 1.2,
+    safeAreaMm: 2,
+  },
 };
+
+/** Admin-facing names for the presets. */
+export const PRINT_PRESET_LABELS: Readonly<Record<string, string>> = {
+  [DEFAULT_PRINT_PRESET]: '12 × 18 in, 48-up — print shop (edge to edge)',
+  [CUTTER_PRINT_PRESET]: '12 × 18 in, 30-up — own printer + cutter (margins, bleed, marks)',
+};
+
+/** The preset a layout exactly matches, if any. */
+export function presetOf(l: PrintSheetLayout): string | null {
+  for (const [name, p] of Object.entries(PRINT_PRESETS))
+    if (PRINT_LAYOUT_FIELDS.every((f) => Math.abs(p[f] - l[f]) < EPS)) return name;
+  return null;
+}
 
 export const DEFAULT_PRINT_LAYOUT: Readonly<PrintSheetLayout> =
   PRINT_PRESETS[DEFAULT_PRINT_PRESET]!;

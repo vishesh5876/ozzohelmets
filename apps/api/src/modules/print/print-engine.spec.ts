@@ -4,19 +4,25 @@ import { Writable } from 'node:stream';
 import jsQR from 'jsqr';
 import sharp from 'sharp';
 import {
+  CUTTER_PRINT_PRESET,
   DEFAULT_PRINT_LAYOUT,
+  DEFAULT_PRINT_PRESET,
   FULL_SHEET_WARNING,
   mmToPt,
   needsFullSheetWarning,
   placeUnit,
   planSheets,
+  presetOf,
+  PRINT_PRESETS,
   type PrintSheetLayout,
   unitsPerSheet,
   validatePrintLayout,
 } from '@helmet/types';
+import type { ArtworkAsset } from './artwork';
 import { planCuts } from './cut-lines';
 import { LogoAssetError, OZZO_RED, parseLogoSvg } from './logo-asset';
 import { createTextMetrics, cutGuidePdf, SheetPdf } from './pdf-renderer';
+import { PRINTER_EDGE_MM, registrationMarks, sheetMarks } from './sheet-marks';
 import { COVER_OVERLAP, CUT_TOL, STICKER_DESIGN, UNIT_H, UNIT_W } from './sticker-design';
 import {
   boxesOverlap,
@@ -401,5 +407,136 @@ describe('design constants', () => {
   it('every display element has a role (QA traceability)', () => {
     const els: DrawElement[] = layoutUnit(unit(2), ctx);
     expect(els.every((e) => e.role.length > 0)).toBe(true);
+  });
+});
+
+describe('own printer + cutter: bleed, gaps and sheet marks', () => {
+  const CUTTER = PRINT_PRESETS[CUTTER_PRINT_PRESET]!;
+  const art: ArtworkAsset = {
+    key: 'k',
+    format: 'SVG',
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 100"><rect width="450" height="100" fill="#1d3557"/></svg>',
+    viewBox: { x: 0, y: 0, width: 450, height: 100 },
+  };
+  const bleed = mmToPt(CUTTER.bleedMm);
+  const artCtx = (scalePercent = 100, b = bleed) => ({
+    ...ctx,
+    bleed: b,
+    artwork: { base: art, cover: null, position: { scalePercent, offsetXMm: 0, offsetYMm: 0 } },
+  });
+  const pieces = (els: DrawElement[]) =>
+    els.filter((e): e is Extract<DrawElement, { kind: 'artwork' }> => e.kind === 'artwork');
+  const baseRight = geometry.zones.credential.x + 1;
+
+  it('is a valid 3 × 10 = 30-up layout with room for bleed between every unit', () => {
+    expect(validatePrintLayout(CUTTER)).toEqual([]);
+    expect(unitsPerSheet(CUTTER)).toBe(30);
+    expect(needsFullSheetWarning(CUTTER)).toBe(false);
+    expect(mmToPt(CUTTER.bleedMm) * 2).toBeLessThanOrEqual(CUTTER.gutterXIn * 72 + 1e-9);
+    expect(presetOf(CUTTER)).toBe(CUTTER_PRINT_PRESET);
+    expect(presetOf(DEFAULT_PRINT_LAYOUT)).toBe(DEFAULT_PRINT_PRESET);
+    // Units sit inside the sheet with printer-safe margins on every side.
+    const last = placeUnit(29, CUTTER);
+    expect(last.xPt + UNIT_W).toBeLessThanOrEqual(18 * 72 - 0.5 * 72);
+    expect(last.yPt + UNIT_H).toBeLessThanOrEqual(12 * 72 - 0.5 * 72);
+  });
+
+  it('extends artwork that reaches a trim edge past it by mirroring, never by stretching', () => {
+    const els = layoutUnit(unit(1), artCtx());
+    const p = pieces(els);
+    const main = p.find((e) => e.role === 'artwork-base')!;
+    expect(main.clip).toEqual({
+      x: -bleed,
+      y: -bleed,
+      w: baseRight + bleed,
+      h: UNIT_H + 2 * bleed,
+    });
+    // Left, top, bottom strips and the two left corners; nothing towards the cover zone.
+    const mirrors = p.filter((e) => e.role === 'artwork-bleed');
+    expect(mirrors).toHaveLength(5);
+    for (const m of [main, ...mirrors]) {
+      expect(m.w / m.h).toBeCloseTo(4.5, 10);
+      expect(m.w).toBeCloseTo(main.w, 10);
+      expect(m.clip.x + m.clip.w).toBeLessThanOrEqual(baseRight + 1e-9);
+    }
+    const left = mirrors.find((m) => m.flipX && !m.flipY)!;
+    expect(left.x + left.w).toBeCloseTo(main.x, 10); // reflected about the artwork's edge
+    expect(left.clip).toMatchObject({ x: -bleed, w: bleed + 0.5 }); // reaches 0.5 pt under the art
+    // Mirrors first, artwork last: its own edge covers each join.
+    expect(p[p.length - 1]).toBe(main);
+    const top = mirrors.find((m) => m.flipY && !m.flipX && m.y < 0)!;
+    expect(top.y + top.h).toBeCloseTo(main.y, 10);
+    const under = mirrors.find((m) => m.flipY && !m.flipX && m.y > 0)!;
+    expect(under.y).toBeCloseTo(main.y + main.h, 10);
+    // The white credential panel runs through the bleed so no artwork shows above/below it.
+    const panel = els.find((e) => e.role === 'credential-panel')!;
+    expect(elementBounds(panel)).toMatchObject({ y: -bleed, h: UNIT_H + 2 * bleed });
+  });
+
+  it('no mirrors when the artwork does not reach the edge, or when there is no bleed', () => {
+    expect(
+      pieces(layoutUnit(unit(1), artCtx(80))).filter((e) => e.role === 'artwork-bleed'),
+    ).toEqual([]);
+    const flat = pieces(layoutUnit(unit(1), artCtx(100, 0)));
+    expect(flat).toHaveLength(1);
+    // Confined to the emergency zone (+1 pt under the white panel); never the weeded cover zone.
+    expect(flat[0]!.clip).toEqual({ x: 0, y: 0, w: baseRight, h: UNIT_H });
+  });
+
+  it('bleed stays within half the gap: it never reaches a neighbouring unit', () => {
+    for (const el of layoutUnit(unit(1), artCtx())) {
+      const b = elementBounds(el);
+      expect(b.x).toBeGreaterThanOrEqual(-bleed - 1e-9);
+      expect(b.y).toBeGreaterThanOrEqual(-bleed - 1e-9);
+      expect(b.y + b.h).toBeLessThanOrEqual(UNIT_H + bleed + 1e-9);
+    }
+    expect(bleed).toBeLessThanOrEqual((CUTTER.gutterYIn * 72) / 2 + 1e-9);
+  });
+
+  it('registration marks and a 100 mm scale bar sit in the margins, clear of every unit', () => {
+    const marks = sheetMarks(CUTTER, metrics);
+    const squares = marks.filter((m) => m.role === 'registration-mark').map(elementBounds);
+    expect(squares).toEqual(registrationMarks(CUTTER));
+    expect(squares).toHaveLength(4);
+    const edge = mmToPt(PRINTER_EDGE_MM);
+    const units = Array.from({ length: 30 }, (_, i) => {
+      const p = placeUnit(i, CUTTER);
+      return { x: p.xPt - bleed, y: p.yPt - bleed, w: UNIT_W + 2 * bleed, h: UNIT_H + 2 * bleed };
+    });
+    for (const el of marks) {
+      const b = elementBounds(el);
+      expect(b.x).toBeGreaterThanOrEqual(edge);
+      expect(b.x + b.w).toBeLessThanOrEqual(18 * 72 - edge);
+      for (const u of units) expect(boxesOverlap(b, u)).toBe(false);
+    }
+    for (const s of squares) expect(mm(s.w)).toBeCloseTo(5, 6);
+    const bar = marks.filter((m) => m.role === 'scale-bar').map(elementBounds);
+    expect(mm(Math.max(...bar.map((b) => b.h)))).toBeCloseTo(100, 6);
+    // The edge-to-edge print-shop sheet has no margin, so no marks.
+    expect(sheetMarks(DEFAULT_PRINT_LAYOUT, metrics)).toEqual([]);
+  });
+
+  it('PDF: marks on every sheet, viewers told to print at 100 %, artwork mirrored with a 1:1 flip', async () => {
+    const pdf = new SheetPdf({ layout: CUTTER, fonts, title: 't', compress: false });
+    const chunks: Buffer[] = [];
+    pdf.doc.on('data', (c: Buffer) => chunks.push(c));
+    const done = new Promise((r) => pdf.doc.on('end', r));
+    const c = artCtx();
+    for (let i = 0; i < 31; i++) pdf.addUnit(i, layoutUnit(unit(i), c));
+    pdf.end();
+    await done;
+    const out = Buffer.concat(chunks).toString('latin1');
+    expect(out).toMatch(/\/PrintScaling \/None/);
+    expect([...out.matchAll(/\/MediaBox \[([^\]]+)\]/g)]).toHaveLength(2);
+    const labels = shownText(out).filter((t) => t.includes('THIS BAR MUST MEASURE 100 mm'));
+    expect(labels).toHaveLength(2);
+    expect(out).toMatch(/\n-1 0 0 1 [\d.]+ [\d.]+ cm/); // horizontal mirror, magnitude 1
+  });
+
+  it('SVG preview mirrors the same way', () => {
+    const svg = unitSvg(layoutUnit(unit(1), artCtx()));
+    expect(svg).toContain('scale(-1 1)');
+    expect(svg).toContain('scale(1 -1)');
+    expect(svg).toContain('scale(-1 -1)');
   });
 });

@@ -151,6 +151,40 @@ Default preset `12x18_48UP`: 18 × 12 in landscape (1296 × 864 pt), 4 columns �
 > 48-up uses the full 12 × 18 inch sheet with shared cut lines. Confirm your print vendor's
 > trimming/bleed requirements.
 
+### Own printer + print-and-cut plotter: `12x18_30UP_CUTTER`
+
+The 48-up sheet has no margin and no bleed. On a desktop/office printer that causes exactly two
+failures: the outer row and column fall in the printer's unprintable edge (or the driver shrinks
+the page to fit, so cuts drift), and any cut drift shows a white sliver. For printing in-house and
+cutting on a plotter use **Own printer + cutter · 30-up** (admin: "How are these printed?" on a
+batch, "Sheet layout" in the Print Design editor; API: `?preset=12x18_30UP_CUTTER`):
+
+| Field   | Value                                         |
+| ------- | --------------------------------------------- |
+| Grid    | 3 columns × 10 rows = **30 units** per sheet  |
+| Gaps    | 0.1 in between units (each unit has own cuts) |
+| Bleed   | 1.2 mm (fits half a gap)                      |
+| Margins | 2.15 in left/right, 0.55 in top/bottom        |
+| Sheet   | 18 × 12 in, unchanged                         |
+
+- **Bleed is drawn.** Base artwork that reaches a trim edge (left, top, bottom) continues
+  1.2 mm past it: by the artwork itself if it already extends that far, otherwise by a mirror image
+  of its own edge (a 1 : 1 flip, never a stretch). Mirrors are drawn under the artwork's edge so
+  there is no seam on the cut line. The white credential panel runs through the bleed too.
+- **Marks.** Four solid 5 mm registration squares beside the grid corners (in the side margins,
+  5 mm from the nearest unit), at identical positions in the print PDF and the cut guide, so the
+  cutter software can register the cut to the print. A vertical **100 mm scale bar** in the left
+  margin: if it doesn't measure 100 mm, the page was scaled and cuts will not line up. Margins
+  narrower than the marks need (side margin < 16 mm) get no marks; the 48-up sheet has none.
+- **Print at 100 %.** Every print PDF and cut guide sets `/ViewerPreferences /PrintScaling /None`,
+  so Acrobat/Reader default to "Actual size". Still check the print dialog and the scale bar.
+- Artwork is confined to the emergency zone (+1 pt under the white panel); the cover zone outside
+  the cover die is weeded waste and stays blank.
+
+Workflow: download the Print Design test print with this layout, print at 100 %, measure the
+scale bar, load the cut guide in the cutter software (align on the four squares), cut the test
+sheet, then print the batch.
+
 - Configurable per download (admin "Print vendor layout", or query fields on the endpoints):
   sheet width/height, unit width/height, columns, rows, outer margin X/Y, gutters, bleed, safe
   area. Unit must stay 4.5 × 1 in; any layout that doesn't fit, or bleed without room (zero
@@ -170,7 +204,8 @@ Default preset `12x18_48UP`: 18 × 12 in landscape (1296 × 864 pt), 4 columns �
   (13 horizontal + 5 vertical lines for 48-up, each drawn once).
 - Kiss cuts per unit: the base | cover split (vertical line at 3.35 in) and the rounded cover
   outline. The cover zone outside the cover is weeded matrix.
-- The artwork PDF contains **no** cut marks. `Download cut guide` (`/admin/safety-id-print/cut-guide.pdf`)
+- The artwork PDF contains **no** cut lines (layouts with margins carry registration squares and a
+  scale bar in the margin, see § 7). `Download cut guide` (`/admin/safety-id-print/cut-guide.pdf`)
   is a separate sheet-size PDF with spot colours `ThroughCut` and `CutContour` (rename to the
   vendor's convention). A proof PDF (`print.pdf?proof=1`, filename `-PROOF`) overlays the cut
   lines and outlines target/cover for QA only.
@@ -208,7 +243,8 @@ Software does not decide adhesive chemistry or material. Ask the vendor:
   not scan through it).
 - Permanent base adhesive; helmet-surface compatibility (painted ABS/polycarbonate, curvature).
 - Water, UV and heat resistance; laminate (matte vs gloss — gloss can glare for scanners).
-- Trim/die tolerance and whether 48-up with shared cut lines and zero bleed is acceptable; minimum
+- Trim/die tolerance and whether 48-up with shared cut lines and zero bleed is acceptable (for
+  in-house print-and-cut use the 30-up cutter preset instead); minimum
   distance between kiss cut and through cut (design assumes 0.5 mm).
 - Cut-file conventions (spot names, separate file vs layer), PDF/X / CMYK profile, embedded fonts.
 - Exact cover yellow (Pantone/CMYK) and red match to `#EC1C22`.

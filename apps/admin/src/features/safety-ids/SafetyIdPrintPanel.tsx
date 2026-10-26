@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AlertTriangle, Eye, Scissors } from 'lucide-react';
 import type { PrintLayoutState } from './usePrintLayout';
+import { PrintPresetPicker } from './PrintPresetPicker';
 import {
   DEFAULT_PRINT_LAYOUT,
   needsFullSheetWarning,
@@ -89,10 +90,12 @@ export function SafetyIdPrintPanel({
         <CardTitle>Print sheets</CardTitle>
         <CardDescription>
           One Safety ID = one 4.5 × 1 in sticker unit with its removable yellow cover included. The
-          PDF is true size: print at 100%, never &ldquo;fit to page&rdquo;.
+          PDF is true size: print at 100% (&ldquo;Actual size&rdquo;), never &ldquo;fit to
+          page&rdquo;, or the cuts won&rsquo;t line up.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-sm">
+        <PrintPresetPicker layout={layout} onChange={onLayoutChange} />
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Fact label="Actual size" value={`${layout.unitWidthIn} × ${layout.unitHeightIn} in`} />
           <Fact label="Sheet" value={`${layout.sheetHeightIn} × ${layout.sheetWidthIn} in`} />
@@ -191,7 +194,7 @@ export function SafetyIdPrintPanel({
             className="mt-3"
             onClick={() => onLayoutChange({ ...DEFAULT_PRINT_LAYOUT })}
           >
-            Reset to 12 × 18 in 48-up
+            Reset to the print-shop 48-up
           </Button>
         </details>
       </CardContent>
