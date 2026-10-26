@@ -120,6 +120,7 @@ test.describe
 
     // Account email + password + confirmation → atomic activation.
     await owner.fill('#reg-email', EMAIL);
+    await owner.fill('#reg-mobile', '98765 00000');
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
     await owner.getByRole('button', { name: 'Activate Safety ID' }).click();

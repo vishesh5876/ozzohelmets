@@ -130,6 +130,7 @@ export class TransferClaimController {
       dto.helmetCode,
       dto.transferCode,
       dto.email,
+      dto.mobile,
       dto.password,
       dto.name,
       meta,

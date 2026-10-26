@@ -126,6 +126,7 @@ async function register(
       helmetCode: helmet.helmetCode,
       pin: helmet.pin,
       email: `${helmet.helmetCode.toLowerCase()}@example.com`,
+      mobile: '+919876500000',
       password,
       name,
     },

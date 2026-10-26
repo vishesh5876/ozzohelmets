@@ -131,8 +131,18 @@ same account; a helmet that has been transferred away (Phase 3) stops working fo
 
 ## Contact details
 
-`mobile` is optional, **not unique, not verified**, and never used for sign-in or recovery
-(`mobileVerified` stays `false`). The portal labels it "not verified".
+`mobile` is **required for every new account**: first activation (`POST /customer/activation/register`)
+and both transfer claims by a new customer (`…/transfers/claim/register`,
+`…/safety-id-transfers/claim/register`) take `mobile`. It is validated with libphonenumber and
+stored in E.164 (`+919876543210`); a number without a country code is read in
+`DEFAULT_PHONE_REGION` (`IN`). Invalid → `INVALID_PHONE_NUMBER` (400), checked before the PIN or
+Transfer Code is consumed.
+
+It is **not unique** (family members may share a phone), **not verified** (`mobileVerified` stays
+`false`; there is no SMS provider) and never used for sign-in or recovery. It is never part of the
+public emergency page (emergency contacts are separate). The owner can change it on the Account
+page (`PATCH /customer/auth/me`) but not remove it. Accounts created before it was collected have
+`mobile = NULL`; the dashboard asks them for it once ("Add your mobile number") until it is saved.
 
 ## Tokens and sessions
 

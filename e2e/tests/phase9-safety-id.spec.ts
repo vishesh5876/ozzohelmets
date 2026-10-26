@@ -242,6 +242,7 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(owner.getByText(/PIN accepted/)).toBeVisible();
     await owner.fill('#reg-email', EMAIL);
+    await owner.fill('#reg-mobile', '98765 00000');
     await owner.fill('#reg-name', OWNER);
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
@@ -411,6 +412,7 @@ test.describe.serial('Phase 9: Safety ID architecture + standalone emergency QR'
     await next.fill('#claim-safety-code', code);
     await next.getByRole('button', { name: 'Continue' }).click();
     await next.fill('#claim-email', NEW_EMAIL);
+    await next.fill('#claim-mobile', '98765 00001');
     await next.fill('#claim-new', PASSWORD);
     await next.fill('#claim-confirm', PASSWORD);
     await next.getByRole('button', { name: 'Create account and claim' }).click();

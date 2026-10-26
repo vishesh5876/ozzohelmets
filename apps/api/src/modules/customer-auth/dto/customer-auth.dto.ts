@@ -105,8 +105,9 @@ export class ChangeEmailDto {
 }
 
 /**
- * Optional, owner-provided details. The account email is changed only via
- * POST /customer/auth/email. Mobile is NOT verified and never used for auth.
+ * Owner-provided details. The account email is changed only via POST /customer/auth/email.
+ * Mobile is collected at sign-up; it can be changed but not removed. It is NOT verified and never
+ * used for auth.
  */
 export class UpdateCustomerDto {
   @ApiPropertyOptional({ nullable: true })
@@ -117,13 +118,10 @@ export class UpdateCustomerDto {
   @MaxLength(120)
   name?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ example: '+91 98765 43210' })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() || null : value,
-  )
-  @ValidateIf((_o, v) => v !== null)
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(32)
-  mobile?: string | null;
+  mobile?: string;
 }

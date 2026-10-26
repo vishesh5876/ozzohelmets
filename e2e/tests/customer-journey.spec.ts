@@ -106,6 +106,11 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
     await expect(owner.getByText(/PIN accepted/)).toBeVisible();
 
     await owner.fill('#reg-email', EMAIL);
+    // The mobile number is required: the form refuses to continue without a valid one.
+    await owner.fill('#reg-name', OWNER);
+    await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
+    await expect(owner.getByText('Enter your mobile number.')).toBeVisible();
+    await owner.fill('#reg-mobile', '98765 00000');
     await expect(
       owner.getByText('Make sure this email is correct. You will use it to sign in.'),
     ).toBeVisible();
@@ -159,6 +164,12 @@ test.describe.serial('Customer journey: QR + PIN → email account → profile �
       EMAIL.replace(/@.*/, '@example.com'),
     );
     await expect(owner.getByText(/verified email/i)).toHaveCount(0);
+    // Stored in international format; no "add your mobile" prompt for an account that has one.
+    await expect(owner.locator('#acc-mobile')).toHaveValue('+919876500000');
+    await owner.goto(portal('/app'));
+    await expect(owner.getByTestId('protection-status')).toBeVisible();
+    await expect(owner.getByTestId('add-mobile')).toHaveCount(0);
+    await owner.goto(portal('/app/account'));
     await owner.getByRole('button', { name: 'Sign out', exact: true }).click();
     await owner.goto(portal('/app'));
     await expect(owner.getByRole('heading', { name: 'Sign in' })).toBeVisible();

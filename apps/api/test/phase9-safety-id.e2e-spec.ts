@@ -23,6 +23,7 @@ import {
   type TestContext,
   uniqueEmail,
   waitFor,
+  TEST_MOBILE,
 } from './utils';
 
 /**
@@ -73,6 +74,7 @@ describe('Phase 9 — Safety ID (e2e)', () => {
           publicToken: s.publicToken,
           pin: s.pin,
           email: uniqueEmail(),
+          mobile: TEST_MOBILE,
           password: TEST_PASSWORD,
         })
         .expect(200);

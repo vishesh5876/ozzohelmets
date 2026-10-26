@@ -17,6 +17,8 @@ import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { EmailField } from '../auth/EmailField';
 import { emailClientProblem } from '../auth/email-check';
+import { MobileField } from '../auth/MobileField';
+import { mobileClientProblem } from '../auth/mobile-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
@@ -37,6 +39,7 @@ export function ClaimSafetyIdPage() {
   const [transferCode, setTransferCode] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -63,6 +66,7 @@ export function ClaimSafetyIdPage() {
         safetyCode,
         transferCode,
         email: email.trim(),
+        mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
       });
@@ -91,7 +95,7 @@ export function ClaimSafetyIdPage() {
   };
   const submitAccount = (e: FormEvent) => {
     e.preventDefault();
-    const p = emailClientProblem(email) ?? passwordClientProblem(pw);
+    const p = emailClientProblem(email) ?? mobileClientProblem(mobile) ?? passwordClientProblem(pw);
     setFormError(p);
     if (!p) register.mutate();
   };
@@ -152,6 +156,7 @@ export function ClaimSafetyIdPage() {
               <form onSubmit={submitAccount} noValidate className="flex flex-col gap-4">
                 <p className="text-body">Create your account to claim this Safety ID.</p>
                 <EmailField id="claim-email" value={email} onChange={setEmail} autoFocus />
+                <MobileField id="claim-mobile" value={mobile} onChange={setMobile} />
                 <Field label="Your name (optional)" htmlFor="claim-name">
                   <Input
                     id="claim-name"

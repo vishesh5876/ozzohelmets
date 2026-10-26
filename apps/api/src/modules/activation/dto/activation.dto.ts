@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '@helmet/types';
 
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const pinTransform = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase().replace(/[\s-]/g, '') : value;
 
@@ -52,6 +53,16 @@ export class RegisterActivationDto extends ActivationPinDto {
   @IsString()
   @MaxLength(EMAIL_MAX_LENGTH)
   email: string;
+
+  @ApiProperty({
+    example: '+91 98765 43210',
+    description:
+      'Owner mobile number. Without a country code it is read in DEFAULT_PHONE_REGION (IN); stored in E.164. Not verified, never a sign-in identifier, never on the public page.',
+  })
+  @Transform(trim)
+  @IsString()
+  @MaxLength(32)
+  mobile: string;
 
   @ApiProperty({
     format: 'password',

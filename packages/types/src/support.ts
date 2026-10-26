@@ -264,7 +264,7 @@ export interface AdminCustomerSearchResponse {
   page: number;
   pageSize: number;
   /** How the query was interpreted. */
-  matchedBy: 'customerId' | 'helmetId' | 'safetyId' | 'email' | 'text' | 'all';
+  matchedBy: 'customerId' | 'helmetId' | 'safetyId' | 'mobile' | 'email' | 'text' | 'all';
 }
 
 /** Operational account summary. Never medical data, contacts' details, hashes or tokens. */

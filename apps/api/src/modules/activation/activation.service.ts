@@ -167,6 +167,7 @@ export class ActivationService {
     // Policy check + expensive hashing happen before taking the row locks.
     const account = await this.accounts.prepare(dto.password, {
       email: dto.email,
+      mobile: dto.mobile,
       helmetCode: safetyCode,
       activationPin: dto.pin,
       name: dto.name,

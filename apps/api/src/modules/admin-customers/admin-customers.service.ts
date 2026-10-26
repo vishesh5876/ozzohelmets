@@ -13,6 +13,7 @@ import {
 } from '@helmet/types';
 import { AppConfigService } from '../../config/app-config.service';
 import { AppException } from '../../common/http/app.exception';
+import { normalizePhone } from '../../common/utils/phone';
 import type { RequestMeta } from '../../common/utils/request-context';
 import { PrismaService, type PrismaTx } from '../../infrastructure/prisma/prisma.service';
 import { HashingService } from '../../security/hashing.service';
@@ -70,6 +71,14 @@ export class AdminCustomersService {
         HttpStatus.BAD_REQUEST,
       );
 
+    // Mobile numbers are stored in E.164: exact match only; an invalid number matches nothing.
+    const mobile =
+      query.kind === 'mobile'
+        ? normalizePhone(query.raw, this.config.get('DEFAULT_PHONE_REGION'))
+        : null;
+    if (query.kind === 'mobile' && !mobile)
+      return { items: [], total: 0, page, pageSize, matchedBy: 'mobile' };
+
     let ids: string[];
     let total: number;
     if (query.kind === 'email' || query.kind === 'text') {
@@ -96,6 +105,7 @@ export class AdminCustomersService {
       const where: Prisma.UserWhereInput = {
         ...(input.status ? { status: input.status } : {}),
         ...(query.kind === 'customerId' ? { customerCode: query.code } : {}),
+        ...(query.kind === 'mobile' ? { mobile } : {}),
         ...(query.kind === 'helmetId'
           ? { ownerships: { some: { status: 'ACTIVE', helmet: { helmetCode: query.code } } } }
           : {}),

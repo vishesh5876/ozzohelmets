@@ -425,6 +425,7 @@ model User {
   deletionRequests      AccountDeletionRequest[]
 
   @@index([status, createdAt])
+  @@index([mobile])
   @@map("users")
 }
 

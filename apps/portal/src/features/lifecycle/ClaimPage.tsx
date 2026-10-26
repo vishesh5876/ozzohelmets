@@ -18,6 +18,8 @@ import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { EmailField } from '../auth/EmailField';
 import { emailClientProblem } from '../auth/email-check';
+import { MobileField } from '../auth/MobileField';
+import { mobileClientProblem } from '../auth/mobile-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
 import { RecoveryCodeNotice } from '../auth/RecoveryCodeNotice';
@@ -49,6 +51,7 @@ function ClaimHelmetPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
   const [recoveryCode, setRecoveryCode] = useState('');
   const [claimedId, setClaimedId] = useState('');
@@ -88,6 +91,7 @@ function ClaimHelmetPage() {
       return api.post<TransferClaimRegisterResponse>('/customer/transfers/claim/register', {
         ...body(),
         email: email.trim(),
+        mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
       });
@@ -114,7 +118,7 @@ function ClaimHelmetPage() {
   };
   const submitNew = (e: FormEvent) => {
     e.preventDefault();
-    const p = emailClientProblem(email) ?? passwordClientProblem(pw);
+    const p = emailClientProblem(email) ?? mobileClientProblem(mobile) ?? passwordClientProblem(pw);
     setFormError(p);
     if (!p) register.mutate();
   };
@@ -254,6 +258,7 @@ function ClaimHelmetPage() {
                           />
                         </Field>
                         <EmailField id="claim-email" value={email} onChange={setEmail} />
+                        <MobileField id="claim-mobile" value={mobile} onChange={setMobile} />
                         <PasswordFields value={pw} onChange={setPw} idPrefix="claim" />
                         {formError && <p className="text-sm text-danger">{formError}</p>}
                         <InlineError error={register.error} />

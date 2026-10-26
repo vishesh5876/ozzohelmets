@@ -24,6 +24,15 @@ describe('admin customer search parsing', () => {
     expect(parseCustomerQuery(undefined)).toEqual({ kind: 'all' });
   });
 
+  it('treats a phone-shaped query as an exact mobile lookup', () => {
+    expect(parseCustomerQuery('+91 98765 43210')).toEqual({
+      kind: 'mobile',
+      raw: '+91 98765 43210',
+    });
+    expect(parseCustomerQuery('09876543210').kind).toBe('mobile');
+    expect(parseCustomerQuery('2026').kind).toBe('text');
+  });
+
   it('escapes LIKE wildcards', () => {
     expect(likeContains('50%_off\\')).toBe('%50\\%\\_off\\\\%');
   });

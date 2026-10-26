@@ -5,6 +5,7 @@ export type CustomerQuery =
   | { kind: 'customerId'; code: string }
   | { kind: 'helmetId'; code: string }
   | { kind: 'safetyId'; code: string }
+  | { kind: 'mobile'; raw: string }
   | { kind: 'email'; fragment: string }
   | { kind: 'text'; fragment: string }
   | { kind: 'tooShort' };
@@ -13,8 +14,9 @@ export const MIN_PARTIAL_QUERY = 3;
 
 /**
  * Interprets an admin search box: exact Customer ID (`CU-…`, checksum-validated), exact Helmet ID
- * (`HM-…`), exact Safety ID (`SI-…`, Phase 9), partial email (contains `@`) or partial name/email text (≥ 3 characters, so the
- * trigram index can serve it).
+ * (`HM-…`), exact Safety ID (`SI-…`, Phase 9), exact mobile number (phone characters only, at least
+ * 7 digits, any format), partial email (contains `@`) or partial name/email text (≥ 3 characters,
+ * so the trigram index can serve it).
  */
 export function parseCustomerQuery(raw: string | undefined): CustomerQuery {
   const q = (raw ?? '').trim();
@@ -29,6 +31,8 @@ export function parseCustomerQuery(raw: string | undefined): CustomerQuery {
     if (/^CU[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'customerId', code: q.toUpperCase() };
     if (/^HM[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'helmetId', code: q.toUpperCase() };
     if (/^SI[-\s]?[A-Z0-9]{4}/i.test(q)) return { kind: 'safetyId', code: q.toUpperCase() };
+    if (/^[+\d\s().-]+$/.test(q) && q.replace(/\D/g, '').length >= 7)
+      return { kind: 'mobile', raw: q };
   }
   const fragment = q.toLowerCase().slice(0, 254);
   if (fragment.length < MIN_PARTIAL_QUERY) return { kind: 'tooShort' };

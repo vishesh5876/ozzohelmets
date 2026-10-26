@@ -19,6 +19,8 @@ import { InlineError, LoadingState, SavedNote } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { EmailField } from '../auth/EmailField';
+import { MobileField } from '../auth/MobileField';
+import { mobileClientProblem } from '../auth/mobile-check';
 import { EMAIL_WARNING, emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem } from '../auth/password-check';
@@ -44,10 +46,11 @@ export function AccountPage() {
   );
 }
 
-/** Name and mobile are optional details. Mobile is never verified and never used to sign in. */
+/** Name (optional) and mobile (required; can be changed, not removed). Mobile is never verified and never used to sign in. */
 function DetailsCard() {
   const { customer, setCustomer } = useCustomerAuth();
   const [form, setForm] = useState({ name: '', mobile: '' });
+  const [mobileError, setMobileError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   useEffect(
     () =>
@@ -61,7 +64,7 @@ function DetailsCard() {
     mutationFn: () =>
       api.patch<CustomerProfile>('/customer/auth/me', {
         name: form.name.trim() || null,
-        mobile: form.mobile.trim() || null,
+        mobile: form.mobile.trim(),
       }),
     onSuccess: (c) => {
       setCustomer(c);
@@ -76,14 +79,13 @@ function DetailsCard() {
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            save.mutate();
+            const problem = mobileClientProblem(form.mobile);
+            setMobileError(problem);
+            if (!problem) save.mutate();
           }}
         >
           <h2 className="text-display-sm font-semibold">Your details</h2>
-          <p className="text-sm text-body">
-            Optional. Your mobile number is not verified and is never used to sign in.
-          </p>
-          <Field label="Name" htmlFor="acc-name">
+          <Field label="Name (optional)" htmlFor="acc-name">
             <Input
               id="acc-name"
               value={form.name}
@@ -91,16 +93,12 @@ function DetailsCard() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </Field>
-          <Field label="Mobile (optional, not verified)" htmlFor="acc-mobile">
-            <Input
-              id="acc-mobile"
-              type="tel"
-              inputMode="tel"
-              value={form.mobile}
-              maxLength={32}
-              onChange={(e) => setForm({ ...form, mobile: e.target.value })}
-            />
-          </Field>
+          <MobileField
+            id="acc-mobile"
+            value={form.mobile}
+            onChange={(mobile) => setForm({ ...form, mobile })}
+            error={mobileError}
+          />
           <InlineError error={save.error} />
           <div className="flex items-center gap-3">
             <Button type="submit" loading={save.isPending}>

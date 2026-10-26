@@ -54,7 +54,7 @@ export function CustomersPage() {
       <form className="mb-4 flex flex-col gap-2 sm:flex-row" onSubmit={submit} role="search">
         <Input
           aria-label="Search customers"
-          placeholder="CU-…, HM-…, email or name"
+          placeholder="CU-…, HM-…, mobile, email or name"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           className="sm:max-w-md"

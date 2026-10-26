@@ -10,6 +10,7 @@ import {
   TEST_PASSWORD,
   type TestContext,
   uniqueEmail,
+  TEST_MOBILE,
 } from './utils';
 
 /**
@@ -30,7 +31,10 @@ describe('Customer account email (e2e)', () => {
   });
 
   const register = (body: Record<string, unknown>) =>
-    ctx.http().post('/api/v1/customer/activation/register').send(body);
+    ctx
+      .http()
+      .post('/api/v1/customer/activation/register')
+      .send({ mobile: TEST_MOBILE, ...body });
   const login = (identifier: string, password = TEST_PASSWORD) =>
     ctx.http().post('/api/v1/customer/auth/login').send({ identifier, password });
   const changeEmail = (token: string, body: Record<string, unknown>) =>

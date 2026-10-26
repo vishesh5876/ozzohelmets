@@ -15,6 +15,7 @@ import {
   TEST_PASSWORD,
   type TestContext,
   createTestApp,
+  TEST_MOBILE,
 } from './utils';
 
 /**
@@ -99,6 +100,23 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
       expect(byHelmet).toMatchObject({ matchedBy: 'helmetId', total: 1 });
       expect((await search('CU-ZZZZ-ZZZZ').expect(200)).body.data.total).toBe(0);
       await search('ab').expect(400);
+
+      // Exact mobile lookup in any format; both customers share TEST_MOBILE until one changes it.
+      await ctx
+        .http()
+        .patch('/api/v1/customer/auth/me')
+        .set(bearer(a.token))
+        .send({ mobile: '+91 98765 11122' })
+        .expect(200);
+      for (const q of ['098765 11122', '+919876511122', '98765-11122']) {
+        const byMobile = (await search(q).expect(200)).body.data;
+        expect(byMobile).toMatchObject({ matchedBy: 'mobile', total: 1 });
+        expect(byMobile.items[0].customerId).toBe(code);
+      }
+      expect((await search('12345678').expect(200)).body.data).toMatchObject({
+        matchedBy: 'mobile',
+        total: 0,
+      });
 
       const page = (await search('', { page: 2, pageSize: 1 }).expect(200)).body.data;
       expect(page).toMatchObject({ total: 2, page: 2, pageSize: 1 });
@@ -643,6 +661,7 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
           publicToken: h.publicToken,
           pin: h.pin,
           email: c.email,
+          mobile: TEST_MOBILE,
           password: 'a fresh account passphrase',
         })
         .expect(200);
@@ -799,6 +818,7 @@ describe('Phase 5 — customer support, privacy & security (e2e)', () => {
           publicToken: h.publicToken,
           pin: h.pin,
           email: 'pin.review@example.com',
+          mobile: TEST_MOBILE,
           password: TEST_PASSWORD,
         })
         .expect(200);

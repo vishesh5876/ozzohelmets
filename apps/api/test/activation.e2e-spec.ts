@@ -10,6 +10,7 @@ import {
   TEST_PASSWORD,
   type TestContext,
   uniqueEmail,
+  TEST_MOBILE,
 } from './utils';
 
 describe('Safety ID activation — PIN as proof of possession (e2e)', () => {
@@ -31,10 +32,29 @@ describe('Safety ID activation — PIN as proof of possession (e2e)', () => {
     ctx
       .http()
       .post('/api/v1/customer/activation/register')
-      .send({ email: uniqueEmail(), ...body });
+      .send({ email: uniqueEmail(), mobile: TEST_MOBILE, ...body });
   const addHelmet = (token: string, body: Record<string, unknown>) =>
     ctx.http().post('/api/v1/customer/activation/add-safety-id').set(bearer(token)).send(body);
   const safetyRow = (id: string) => ctx.prisma.safetyId.findUniqueOrThrow({ where: { id } });
+
+  it('requires a valid mobile number for the new account and stores it in E.164', async () => {
+    const h = await createTestHelmet(ctx, 'SOLD');
+    const body = { publicToken: h.publicToken, pin: h.pin, password: TEST_PASSWORD };
+    // Missing or invalid: rejected before the PIN is consumed.
+    await register({ ...body, mobile: undefined }).expect(400);
+    for (const mobile of ['', '12345', '+91 12', 'call me']) {
+      const res = await register({ ...body, mobile }).expect(400);
+      expect(res.body.error.code).toBe('INVALID_PHONE_NUMBER');
+    }
+    expect((await safetyRow(h.safetyId)).activationPinUsed).toBe(false);
+    // Local format is read as an Indian number (DEFAULT_PHONE_REGION).
+    const res = await register({ ...body, mobile: '098765 43210' }).expect(200);
+    expect(res.body.data.customer.mobile).toBe('+919876543210');
+    const user = await ctx.prisma.user.findUniqueOrThrow({
+      where: { id: res.body.data.customer.id },
+    });
+    expect(user).toMatchObject({ mobile: '+919876543210', mobileVerified: false });
+  });
 
   it('validate checks eligibility AND the PIN without consuming anything', async () => {
     const h = await createTestHelmet(ctx, 'SOLD');

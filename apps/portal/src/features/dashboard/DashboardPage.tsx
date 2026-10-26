@@ -15,6 +15,7 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { keys } from '../../lib/query';
+import { AddMobileCard } from '../account/AddMobileCard';
 import { HelmetCard } from '../helmets/HelmetCard';
 import { SafetyIdCard } from '../safety-ids/SafetyIdsPage';
 
@@ -131,6 +132,8 @@ export function DashboardPage() {
             )}
           </section>
         )}
+
+        <AddMobileCard />
 
         {data.health.length > 0 && <HealthList warnings={data.health} />}
 

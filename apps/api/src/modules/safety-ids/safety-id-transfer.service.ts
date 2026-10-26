@@ -171,6 +171,7 @@ export class SafetyIdTransferService {
     rawSafetyCode: string,
     rawCode: string,
     email: string,
+    mobile: string,
     password: string,
     name: string | undefined,
     meta: RequestMeta,
@@ -179,7 +180,12 @@ export class SafetyIdTransferService {
     session: CustomerSession;
   }> {
     const { safetyCode, code } = await this.begin(rawSafetyCode, rawCode, meta);
-    const account = await this.accounts.prepare(password, { email, helmetCode: safetyCode, name });
+    const account = await this.accounts.prepare(password, {
+      email,
+      mobile,
+      helmetCode: safetyCode,
+      name,
+    });
     const { safetyId, userId } = await this.execute(
       safetyCode,
       code,

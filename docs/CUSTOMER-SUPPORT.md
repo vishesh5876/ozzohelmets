@@ -11,6 +11,8 @@ seeing their medical information.
 | ------------------------- | ----------------------------------------------------------------- |
 | `CU-XXXX-XXXX`            | exact Customer ID (checksum-validated; a typo returns nothing)    |
 | `HM-XXXX-XXXX`            | exact Helmet ID → its **current** owner                           |
+| `SI-XXXX-XXXX`            | exact Safety ID → its **current** owner                           |
+| phone number (≥ 7 digits) | exact mobile, any format (normalised to E.164, indexed)           |
 | contains `@`              | partial email (`lower(email_normalized) LIKE %…%`, trigram index) |
 | anything else (≥ 3 chars) | partial email **or** name (trigram indexes on both)               |
 | empty                     | all customers, newest first                                       |

@@ -577,15 +577,15 @@ export class CustomerAuthService {
     return toCustomerProfile(user);
   }
 
-  /** Name and optional mobile (unverified, never used for auth). Email: see changeEmail. */
+  /** Name and mobile (unverified, never used for auth; can't be removed). Email: see changeEmail. */
   async updateProfile(customerId: string, dto: UpdateCustomerDto): Promise<CustomerProfile> {
-    let mobile: string | null | undefined = dto.mobile;
-    if (typeof dto.mobile === 'string') {
-      mobile = normalizePhone(dto.mobile, this.config.get('DEFAULT_PHONE_REGION'));
+    let mobile: string | undefined;
+    if (dto.mobile !== undefined) {
+      mobile = normalizePhone(dto.mobile, this.config.get('DEFAULT_PHONE_REGION')) ?? undefined;
       if (!mobile)
         throw new AppException(
           ErrorCode.INVALID_PHONE_NUMBER,
-          'Enter a valid mobile number, or leave it empty.',
+          'Enter a valid mobile number.',
           HttpStatus.BAD_REQUEST,
         );
     }

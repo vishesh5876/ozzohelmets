@@ -86,7 +86,13 @@ test.describe.serial('Phase 5: account management, support view and recovery gra
     const api = await playwrightRequest.newContext();
     helmet = await manufactureOne(api);
     const reg = await api.post(`${API}/customer/activation/register`, {
-      data: { helmetCode: helmet.helmetCode, pin: helmet.pin, email: EMAIL, password: PASSWORD },
+      data: {
+        helmetCode: helmet.helmetCode,
+        pin: helmet.pin,
+        email: EMAIL,
+        mobile: '+919876500000',
+        password: PASSWORD,
+      },
     });
     expect(reg.ok()).toBeTruthy();
     const body = (await reg.json()).data;

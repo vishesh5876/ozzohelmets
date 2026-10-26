@@ -11,6 +11,7 @@ import {
   TEST_PASSWORD,
   type TestContext,
   uniqueEmail,
+  TEST_MOBILE,
 } from './utils';
 
 describe('Customer ID (e2e)', () => {
@@ -95,6 +96,7 @@ describe('Customer ID (e2e)', () => {
         helmetCode: a.helmet.helmetCode,
         transferCode,
         email: uniqueEmail(),
+        mobile: TEST_MOBILE,
         password: 'fresh owner phrase',
       })
       .expect(200);

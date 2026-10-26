@@ -14,6 +14,7 @@ import {
   TEST_PASSWORD,
   type TestContext,
   uniqueEmail,
+  TEST_MOBILE,
 } from './utils';
 
 describe('Ownership transfer (e2e)', () => {
@@ -185,6 +186,7 @@ describe('Ownership transfer (e2e)', () => {
         helmetCode: a.helmet.helmetCode,
         transferCode,
         email: uniqueEmail(),
+        mobile: TEST_MOBILE,
         password: 'brand new owner phrase',
         name: 'Chen',
       })
@@ -213,6 +215,7 @@ describe('Ownership transfer (e2e)', () => {
         helmetCode: a.helmet.helmetCode,
         transferCode,
         email: uniqueEmail(),
+        mobile: TEST_MOBILE,
         password: 'password',
       })
       .expect(400);

@@ -1,8 +1,10 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ErrorCode, normalizeEmail, type NormalizedEmail } from '@helmet/types';
 import { AppException } from '../../common/http/app.exception';
+import { normalizePhone } from '../../common/utils/phone';
 import type { RequestMeta } from '../../common/utils/request-context';
 import type { PrismaTx } from '../../infrastructure/prisma/prisma.service';
+import { AppConfigService } from '../../config/app-config.service';
 import { generateCustomerCode } from '../../security/helmet-identity.generator';
 import { uuidv7 } from '../../security/uuid';
 import { AuditService } from '../audit/audit.service';
@@ -15,6 +17,8 @@ export interface PreparedAccount {
   recoveryCodeHash: string;
   recoveryCode: string;
   email: NormalizedEmail;
+  /** E.164 (`+919876543210`). Contact detail for the owner; not verified, never a sign-in. */
+  mobile: string;
   name?: string;
 }
 
@@ -30,6 +34,7 @@ export class CustomerAccountsService {
   constructor(
     private readonly credentials: CustomerCredentialsService,
     private readonly audit: AuditService,
+    private readonly config: AppConfigService,
   ) {}
 
   /** Validates and canonicalises an email; throws INVALID_EMAIL (400). */
@@ -43,6 +48,19 @@ export class CustomerAccountsService {
       );
     }
     return email;
+  }
+
+  /** Validates a mobile number and returns it in E.164; throws INVALID_PHONE_NUMBER (400). */
+  parseMobile(raw: string): string {
+    const mobile = normalizePhone(raw, this.config.get('DEFAULT_PHONE_REGION'));
+    if (!mobile) {
+      throw new AppException(
+        ErrorCode.INVALID_PHONE_NUMBER,
+        'Enter a valid mobile number.',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    return mobile;
   }
 
   /**
@@ -75,9 +93,16 @@ export class CustomerAccountsService {
    */
   async prepare(
     password: string,
-    context: { email: string; helmetCode?: string; activationPin?: string; name?: string },
+    context: {
+      email: string;
+      mobile: string;
+      helmetCode?: string;
+      activationPin?: string;
+      name?: string;
+    },
   ): Promise<PreparedAccount> {
     const email = this.parseEmail(context.email);
+    const mobile = this.parseMobile(context.mobile);
     this.credentials.assertAcceptablePassword(password, { ...context, email: email.email });
     const [passwordHash, recovery] = await Promise.all([
       this.credentials.hashPassword(password),
@@ -88,6 +113,7 @@ export class CustomerAccountsService {
       recoveryCodeHash: recovery.hash,
       recoveryCode: recovery.code,
       email,
+      mobile,
       name: context.name,
     };
   }
@@ -115,6 +141,8 @@ export class CustomerAccountsService {
         email: account.email.email,
         emailNormalized: account.email.normalized,
         emailVerified: false,
+        mobile: account.mobile,
+        mobileVerified: false,
         passwordHash: account.passwordHash,
         passwordChangedAt: now,
         recoveryCodeHash: account.recoveryCodeHash,

@@ -30,7 +30,7 @@ Existing customer adding another helmet (signed in, no new account, no email or 
 ```
 
 Manual fallback (no camera): `/activate` → "Helmet ID" → client-side checksum validation
-(`isValidHelmetCode`) before any request → PIN → email + password.
+(`isValidHelmetCode`) before any request → PIN → email + mobile number + password.
 
 ## Eligibility (single policy)
 

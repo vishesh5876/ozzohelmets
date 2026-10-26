@@ -124,6 +124,7 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     await owner.getByRole('button', { name: 'Continue' }).click();
     await expect(owner.getByTestId('setup-progress')).toContainText('Step 2 of 6: Create account');
     await owner.fill('#reg-email', `p8.${run}@example.com`);
+    await owner.fill('#reg-mobile', '98765 00000');
     await owner.fill('#reg-new', PASSWORD);
     await owner.fill('#reg-confirm', PASSWORD);
     await owner.getByRole('button', { name: 'Activate Safety ID' }).click();
@@ -278,6 +279,7 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
     await page.fill('#pin', h.pin);
     await page.getByRole('button', { name: 'Continue' }).click();
     await page.fill('#reg-email', `p8.skip.${run}@example.com`);
+    await page.fill('#reg-mobile', '98765 00000');
     await page.fill('#reg-new', PASSWORD);
     await page.fill('#reg-confirm', PASSWORD);
     await page.getByRole('button', { name: 'Activate Safety ID' }).click();

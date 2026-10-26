@@ -141,6 +141,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
         helmetCode: helmet.helmetCode,
         pin: helmet.pin,
         email: `a.${Date.now().toString(36)}@example.com`,
+        mobile: '+919876500000',
         password: A_PASSWORD,
         name: A_NAME,
       },
@@ -225,6 +226,7 @@ test.describe.serial('Phase 3: transfer → new owner → lost/stolen/damaged �
     await b.getByRole('button', { name: 'New customer' }).click();
     await b.fill('#claim-name', B_NAME);
     await b.fill('#claim-email', `b.${Date.now().toString(36)}@example.com`);
+    await b.fill('#claim-mobile', '98765 00001');
     await b.fill('#claim-new', B_PASSWORD);
     await b.fill('#claim-confirm', B_PASSWORD);
     await b.getByRole('button', { name: 'Create account and claim' }).click();

@@ -7,6 +7,7 @@ import {
   loginCustomer,
   newCustomer,
   resetState,
+  TEST_MOBILE,
   TEST_PASSWORD,
   type TestContext,
 } from './utils';
@@ -34,7 +35,7 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
     expect(user).toMatchObject({
       email: c.email,
       emailNormalized: c.email.toLowerCase(),
-      mobile: null,
+      mobile: TEST_MOBILE,
       mobileVerified: false,
       emailVerified: false,
     });
@@ -254,6 +255,25 @@ describe('Customer authentication — Helmet ID + password (e2e)', () => {
       .post('/api/v1/customer/auth/login')
       .send({ helmetCode: '+919876543210', password: TEST_PASSWORD })
       .expect(400);
+    // Collected at sign-up: it can be changed, never removed or replaced with junk.
+    for (const mobile of ['', '12', 'not a number']) {
+      const res = await ctx
+        .http()
+        .patch('/api/v1/customer/auth/me')
+        .set(bearer(d.token))
+        .send({ mobile })
+        .expect(400);
+      expect(res.body.error.code).toBe('INVALID_PHONE_NUMBER');
+    }
+    await ctx
+      .http()
+      .patch('/api/v1/customer/auth/me')
+      .set(bearer(d.token))
+      .send({ mobile: null })
+      .expect(400);
+    expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: d.userId } })).mobile).toBe(
+      '+919876543210',
+    );
   });
 
   it('keeps admin and customer tokens strictly separate', async () => {

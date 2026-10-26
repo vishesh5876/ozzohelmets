@@ -98,6 +98,8 @@ export async function waitFor<T>(
 }
 
 export const TEST_PASSWORD = 'riding safe every day';
+/** Every new account gives a mobile number (not verified; any valid number works). */
+export const TEST_MOBILE = '+919876500000';
 
 export interface CustomerSessionInfo {
   token: string;
@@ -128,7 +130,14 @@ export async function registerCustomer(
   const res = await ctx
     .http()
     .post('/api/v1/customer/activation/register')
-    .send({ publicToken: helmet.publicToken, pin: helmet.pin, email, password, name })
+    .send({
+      publicToken: helmet.publicToken,
+      pin: helmet.pin,
+      email,
+      mobile: TEST_MOBILE,
+      password,
+      name,
+    })
     .expect(200);
   return {
     email,

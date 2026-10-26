@@ -12,6 +12,7 @@ import {
   type TestContext,
   uniqueEmail,
   waitFor,
+  TEST_MOBILE,
 } from './utils';
 
 /**
@@ -74,7 +75,7 @@ describe('Phase 9 — final Safety ID print + six-digit PIN (e2e)', () => {
       .http()
       .post('/api/v1/customer/activation/register')
       .set('CF-Connecting-IP', ip)
-      .send({ email: uniqueEmail(), password: TEST_PASSWORD, ...body });
+      .send({ email: uniqueEmail(), mobile: TEST_MOBILE, password: TEST_PASSWORD, ...body });
 
   async function generatedBatch(quantity: number) {
     const mfg = await asAdmin('MANUFACTURING');

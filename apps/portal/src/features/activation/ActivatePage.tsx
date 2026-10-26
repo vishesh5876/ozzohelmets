@@ -20,6 +20,8 @@ import { useCustomerAuth } from '../../lib/auth-context';
 import { keys, queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { EmailField } from '../auth/EmailField';
+import { MobileField } from '../auth/MobileField';
+import { mobileClientProblem } from '../auth/mobile-check';
 import { emailClientProblem } from '../auth/email-check';
 import { PasswordFields } from '../auth/PasswordFields';
 import { passwordClientProblem, type PasswordValue } from '../auth/password-check';
@@ -61,6 +63,8 @@ export function ActivatePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [mobile, setMobile] = useState('');
+  const [mobileError, setMobileError] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [activated, setActivated] = useState<ActivationAddSafetyIdResponse | null>(null);
@@ -81,6 +85,7 @@ export function ActivatePage() {
         ...target,
         pin,
         email: email.trim(),
+        mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
       });
@@ -140,10 +145,12 @@ export function ActivatePage() {
   const submitPassword = (e: FormEvent) => {
     e.preventDefault();
     const emailProblem = emailClientProblem(email);
+    const mobileProblem = mobileClientProblem(mobile);
     const problem = passwordClientProblem(pw);
     setEmailError(emailProblem);
+    setMobileError(mobileProblem);
     setPwError(problem);
-    if (!problem && !emailProblem) register.mutate();
+    if (!problem && !emailProblem && !mobileProblem) register.mutate();
   };
 
   const busy = validate.isPending || addHelmet.isPending;
@@ -286,6 +293,12 @@ export function ActivatePage() {
                   onChange={setEmail}
                   error={emailError}
                   autoFocus
+                />
+                <MobileField
+                  id="reg-mobile"
+                  value={mobile}
+                  onChange={setMobile}
+                  error={mobileError}
                 />
                 <Field label="Your name (optional)" htmlFor="reg-name">
                   <Input
