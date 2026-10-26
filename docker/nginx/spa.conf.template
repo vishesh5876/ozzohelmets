@@ -61,7 +61,7 @@ server {
 
   # Emergency page (/e/<token>): server-rendered by the API as one small response (works without
   # JavaScript; the API sets its hash-based CSP). API down or slow → static client page fallback.
-  location ~ ^/e/([0-9A-Za-z_-]{1,64})/?$ {
+  location ~ "^/e/([0-9A-Za-z_-]{1,64})/?$" {
     include /etc/nginx/snippets/security-headers.conf;
     proxy_hide_header X-Content-Type-Options;
     proxy_http_version 1.1;
