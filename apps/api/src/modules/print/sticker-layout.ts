@@ -92,6 +92,9 @@ export type DrawElement =
       w: number;
       h: number;
       clip: Box;
+      /** Mirrored inside its own box (bleed extension only): still a uniform 1:1 scale. */
+      flipX?: boolean;
+      flipY?: boolean;
     }
   | {
       kind: 'qr';
@@ -260,6 +263,121 @@ export interface LayoutContext {
   };
   /** Sample-data test print: every unit is visibly marked TEST PRINT. */
   testPrint?: boolean;
+  /** Layout bleed (pt): artwork reaching a trim edge continues this far past it. */
+  bleed?: number;
+}
+
+const EDGE_EPS = 0.01;
+/** Overlap of a bleed mirror under the artwork it continues (pt). */
+const SEAM = 0.5;
+
+/**
+ * Base artwork, confined to the emergency zone (the credential panel is white by rule and the
+ * cover zone outside the cover die is weeded waste). With a layout bleed, every trim edge the artwork
+ * reaches (left, top, bottom) continues past the cut: by the artwork itself when it already
+ * extends that far, otherwise by a mirror image of its own edge — never by stretching. So a cut
+ * that drifts by up to the bleed shows design, not a white sliver.
+ */
+export function baseArtwork(
+  art: ArtworkAsset,
+  position: ArtworkPosition,
+  g: StickerGeometry,
+  bleed: number,
+): DrawElement[] {
+  const box = placeBaseArtwork(artworkAspect(art), position);
+  const b = Math.max(0, bleed);
+  // Only the emergency zone shows artwork: the white credential panel is drawn over the rest.
+  // Stopping 1 pt under the panel (instead of running under all of it) leaves no coincident
+  // edges for a RIP to anti-alias into a hairline at the bleed line.
+  const right = g.zones.credential.x + 1;
+  const piece = (
+    role: string,
+    x: number,
+    y: number,
+    clip: Box,
+    flip: { flipX?: boolean; flipY?: boolean } = {},
+  ): DrawElement => ({
+    kind: 'artwork',
+    role,
+    artwork: art,
+    x,
+    y,
+    w: box.w,
+    h: box.h,
+    clip,
+    ...flip,
+  });
+  const main = piece('artwork-base', box.x, box.y, {
+    x: 0 - b,
+    y: 0 - b,
+    w: right + b,
+    h: UNIT_H + 2 * b,
+  });
+  if (b <= 0) return [main];
+
+  const bottom = box.y + box.h;
+  // How much of the bleed each edge's mirror must fill: > 0 only when the artwork reaches that
+  // trim edge but stops short of the bleed line.
+  const left = box.x <= EDGE_EPS ? Math.max(0, box.x + b) : 0;
+  const top = box.y <= EDGE_EPS ? Math.max(0, box.y + b) : 0;
+  const under = bottom >= UNIT_H - EDGE_EPS ? Math.max(0, UNIT_H + b - bottom) : 0;
+  // Spans of the artwork inside the bleed box, for the strips along each edge.
+  const x0 = Math.max(box.x, -b);
+  const x1 = Math.min(box.x + box.w, right);
+  const y0 = Math.max(box.y, -b);
+  const y1 = Math.min(bottom, UNIT_H + b);
+  // Each mirror is reflected about the artwork's own edge, so it continues it seamlessly. It
+  // reaches SEAM under the artwork and is drawn first: the artwork's own edge then covers the
+  // join, so no anti-aliased hairline can appear on the cut line.
+  const mx = box.x - box.w;
+  const myTop = box.y - box.h;
+  const S = SEAM;
+  const mirrors: DrawElement[] = [];
+  if (left > 0)
+    mirrors.push(
+      piece('artwork-bleed', mx, box.y, { x: -b, y: y0, w: left + S, h: y1 - y0 }, { flipX: true }),
+    );
+  if (top > 0)
+    mirrors.push(
+      piece(
+        'artwork-bleed',
+        box.x,
+        myTop,
+        { x: x0, y: -b, w: x1 - x0, h: top + S },
+        { flipY: true },
+      ),
+    );
+  if (under > 0)
+    mirrors.push(
+      piece(
+        'artwork-bleed',
+        box.x,
+        bottom,
+        { x: x0, y: bottom - S, w: x1 - x0, h: under + S },
+        { flipY: true },
+      ),
+    );
+  if (left > 0 && top > 0)
+    mirrors.push(
+      piece(
+        'artwork-bleed',
+        mx,
+        myTop,
+        { x: -b, y: -b, w: left + S, h: top + S },
+        { flipX: true, flipY: true },
+      ),
+    );
+  if (left > 0 && under > 0)
+    mirrors.push(
+      piece(
+        'artwork-bleed',
+        mx,
+        bottom,
+        { x: -b, y: bottom - S, w: left + S, h: under + S },
+        { flipX: true, flipY: true },
+      ),
+    );
+  return [...mirrors, main];
 }
 
 /** Minimum printed QR module (Safety ID scans must work from a phone at arm's length). */
@@ -306,17 +424,21 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
 
   if (ctx.artwork) {
     // ── Admin artwork (Print Design) ─────────────────────────────────────────────────────────
-    const art = ctx.artwork.base;
-    out.push({
-      kind: 'artwork',
-      role: 'artwork-base',
-      artwork: art,
-      ...placeBaseArtwork(artworkAspect(art), ctx.artwork.position),
-      clip: { x: 0, y: 0, w: UNIT_W, h: UNIT_H },
-    });
+    out.push(...baseArtwork(ctx.artwork.base, ctx.artwork.position, g, ctx.bleed ?? 0));
     // System-controlled white credential panel: no artwork colour or texture behind the ID,
-    // PIN, QR or its quiet zone, whatever the design.
-    out.push({ kind: 'rect', role: 'credential-panel', ...g.zones.credential, fill: white });
+    // PIN, QR or its quiet zone, whatever the design. It runs through the bleed too, so a
+    // trim drift never shows artwork above or below it.
+    const b = ctx.bleed ?? 0;
+    const cred = g.zones.credential;
+    out.push({
+      kind: 'rect',
+      role: 'credential-panel',
+      x: cred.x,
+      y: 0 - b,
+      w: cred.w,
+      h: UNIT_H + 2 * b,
+      fill: white,
+    });
   } else {
     // ── Emergency panel ────────────────────────────────────────────────────────────────────────
     const E = D.emergency;

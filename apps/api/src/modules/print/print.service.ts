@@ -7,7 +7,10 @@ import {
   ErrorCode,
   FULL_SHEET_WARNING,
   layoutFromQuery,
+  mmToPt,
   needsFullSheetWarning,
+  presetOf,
+  PRINT_PRESETS,
   type PrintSheetLayout,
   type SafetyIdPrintStatusDto,
   type SafetyIdStickerGeometryDto,
@@ -29,6 +32,7 @@ import {
   type UnitData,
 } from './sticker-layout';
 import { sheetSvg, unitSvg } from './svg-renderer';
+import { sheetMarks } from './sheet-marks';
 
 const PT_TO_MM = 25.4 / 72;
 
@@ -88,10 +92,12 @@ export class PrintService {
 
   /** Validated layout from query fields (preset defaults); never scaled to fit. */
   resolveLayout(query: Record<string, unknown> = {}): PrintSheetLayout {
-    const preset = query.preset;
-    if (preset !== undefined && preset !== DEFAULT_PRINT_PRESET)
+    const preset = query.preset ?? DEFAULT_PRINT_PRESET;
+    const base = typeof preset === 'string' ? PRINT_PRESETS[preset] : undefined;
+    if (!base)
       throw this.invalid([{ field: 'layout', message: `Unknown preset "${String(preset)}".` }]);
-    const layout = layoutFromQuery(query);
+    // Fields in the query override the chosen preset (the admin may fine-tune a layout).
+    const layout = layoutFromQuery(query, base);
     const issues = validatePrintLayout(layout);
     if (issues.length) throw this.invalid(issues);
     return layout;
@@ -120,6 +126,7 @@ export class PrintService {
       guides: opts.guides,
       artwork: opts.artwork,
       testPrint: opts.testPrint,
+      bleed: mmToPt(layout.bleedMm),
     };
   }
 
@@ -139,7 +146,7 @@ export class PrintService {
 
   status(layout: PrintSheetLayout = DEFAULT_PRINT_LAYOUT): SafetyIdPrintStatusDto {
     return {
-      preset: DEFAULT_PRINT_PRESET,
+      preset: presetOf(layout) ?? 'CUSTOM',
       layout,
       unitsPerSheet: unitsPerSheet(layout),
       fullSheetWarning: needsFullSheetWarning(layout) ? FULL_SHEET_WARNING : null,
@@ -201,7 +208,13 @@ export class PrintService {
 
   previewSheetSvg(layout: PrintSheetLayout, filled: number, opts: ContextOptions = {}): string {
     const ctx = this.context(layout, opts);
-    return sheetSvg(layout, ctx.geometry, layoutUnit(this.sampleUnit(), ctx), filled);
+    return sheetSvg(
+      layout,
+      ctx.geometry,
+      layoutUnit(this.sampleUnit(), ctx),
+      filled,
+      sheetMarks(layout, this.metrics),
+    );
   }
 
   private invalid(issues: { field: string; message: string }[]): AppException {

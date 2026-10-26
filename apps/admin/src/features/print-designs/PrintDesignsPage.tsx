@@ -27,7 +27,7 @@ export function PrintDesignsPage() {
       api.post<PrintDesignDto>(`/admin/print-designs/${d.id}/${kind}`),
     onSuccess: async (d, v) => {
       await qc.invalidateQueries({ queryKey: ['print-designs'] });
-      if (v.kind === 'duplicate' || v.kind === 'new-version') navigate(`/print-designs/${d.id}`);
+      if (v.kind === 'duplicate') navigate(`/print-designs/${d.id}`);
     },
   });
   return (
@@ -54,41 +54,63 @@ export function PrintDesignsPage() {
         <Table>
           <THead>
             <tr>
-              <Th>Name</Th>
-              <Th>Version</Th>
-              <Th>Status</Th>
-              <Th>Type</Th>
-              <Th>Resolution</Th>
+              <Th>Design</Th>
+              <Th>Artwork</Th>
               <Th>Created</Th>
-              <Th>Created by</Th>
-              <Th className="text-right">Used by batches</Th>
-              <Th>Actions</Th>
+              <Th className="text-right">Batches</Th>
+              <Th className="w-56">Actions</Th>
             </tr>
           </THead>
           <tbody>
             {q.data.map((d) => (
               <Tr key={d.id} data-testid="print-design-row">
                 <Td>
-                  <Link to={`/print-designs/${d.id}`} className="font-medium hover:underline">
-                    {d.name}
-                  </Link>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setPreview(d)}
+                      className="w-40 shrink-0 overflow-hidden rounded-sm border border-hairline hover:border-ink"
+                      aria-label={`Preview ${d.name} v${d.version}`}
+                    >
+                      <DesignPreview
+                        designId={d.id}
+                        kind="unit"
+                        version={d.updatedAt}
+                        className="block w-full bg-canvas"
+                      />
+                    </button>
+                    <div className="min-w-0">
+                      <Link
+                        to={`/print-designs/${d.id}`}
+                        className="block font-medium hover:underline"
+                      >
+                        {d.name}
+                      </Link>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-body">
+                        <span className="tabular-nums">v{d.version}</span>
+                        <DesignStatusBadge status={d.status} />
+                      </div>
+                    </div>
+                  </div>
                 </Td>
-                <Td className="tabular-nums">v{d.version}</Td>
-                <Td>
-                  <DesignStatusBadge status={d.status} />
-                </Td>
-                <Td>{d.artworkType}</Td>
                 <Td>
                   <span className="block text-xs text-body">{resolutionText(d.baseArtwork)}</span>
                   <QualityLabel quality={d.quality} dpi={d.effectiveDpi} />
                 </Td>
-                <Td className="text-body">{formatDateTime(d.createdAt)}</Td>
-                <Td className="text-body">{d.createdBy?.name ?? '—'}</Td>
+                <Td className="whitespace-nowrap text-body">
+                  <span className="block">{formatDateTime(d.createdAt)}</span>
+                  <span className="block text-xs">{d.createdBy?.name ?? '—'}</span>
+                </Td>
                 <Td className="text-right tabular-nums">{formatNumber(d.usedByBatches)}</Td>
                 <Td>
-                  <div className="flex flex-wrap gap-1">
-                    <Button size="sm" variant="subtle" onClick={() => setPreview(d)}>
-                      Preview
+                  {/* Fixed two-column grid: the same action always sits in the same place. */}
+                  <div className="grid grid-cols-2 gap-1">
+                    <Button
+                      size="sm"
+                      variant="subtle"
+                      onClick={() => navigate(`/print-designs/${d.id}`)}
+                    >
+                      Open
                     </Button>
                     <RequirePermission permission={Permission.PRINT_DESIGN_MANAGE}>
                       <Button
@@ -97,13 +119,6 @@ export function PrintDesignsPage() {
                         onClick={() => action.mutate({ d, kind: 'duplicate' })}
                       >
                         Duplicate
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="subtle"
-                        onClick={() => action.mutate({ d, kind: 'new-version' })}
-                      >
-                        Create New Version
                       </Button>
                     </RequirePermission>
                     {d.status !== 'ACTIVE' && d.validationErrors.length === 0 && (

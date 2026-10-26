@@ -5,7 +5,11 @@ import { AlertTriangle, Download, Upload } from 'lucide-react';
 import {
   ARTWORK_OFFSET_RANGE_MM,
   ARTWORK_SCALE_RANGE,
+  CUTTER_PRINT_PRESET,
+  DEFAULT_PRINT_PRESET,
   Permission,
+  presetOf,
+  PRINT_PRESETS,
   type PrintArtworkFileDto,
   type PrintArtworkRole,
   type PrintDesignDto,
@@ -27,6 +31,7 @@ import { ErrorState, InlineError, LoadingState } from '../../components/States';
 import { api, apiBlob } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { downloadBlob, filenameFromDisposition, formatDateTime } from '../../lib/format';
+import { rememberedLayout, rememberPreset } from '../safety-ids/usePrintLayout';
 import { DesignPreview, DesignStatusBadge, QualityLabel } from './shared';
 import { GUIDE_LEGEND, resolutionText } from './design-format';
 
@@ -63,6 +68,9 @@ export function PrintDesignEditorPage() {
   const [guides, setGuides] = useState(true);
   const [preview, setPreview] = useState<'unit' | 'sheet' | null>(null);
   const [testOnly, setTestOnly] = useState(false);
+  // Sheet used by "Preview Sheet" and the test print: the same choice as the batch print panel.
+  const [sheet, setSheet] = useState(() => presetOf(rememberedLayout()) ?? DEFAULT_PRINT_PRESET);
+  const sheetLayout = PRINT_PRESETS[sheet]!;
 
   const q = useQuery({
     queryKey: ['print-designs', id],
@@ -136,7 +144,9 @@ export function PrintDesignEditorPage() {
   });
   const testPrint = useMutation({
     mutationFn: async () => {
-      const { blob, headers } = await apiBlob(`/admin/print-designs/${id}/test-print.pdf`);
+      const { blob, headers } = await apiBlob(
+        `/admin/print-designs/${id}/test-print.pdf?preset=${encodeURIComponent(sheet)}`,
+      );
       downloadBlob(
         blob,
         filenameFromDisposition(headers.get('Content-Disposition'), 'TEST-PRINT.pdf'),
@@ -181,13 +191,6 @@ export function PrintDesignEditorPage() {
         actions={
           d && (
             <>
-              <Button
-                variant="subtle"
-                onClick={() => testPrint.mutate()}
-                loading={testPrint.isPending}
-              >
-                <Download className="h-4 w-4" aria-hidden /> Download Test Print
-              </Button>
               <RequirePermission permission={Permission.PRINT_DESIGN_MANAGE}>
                 <Button variant="subtle" onClick={() => act.mutate('duplicate')}>
                   Duplicate
@@ -396,9 +399,42 @@ export function PrintDesignEditorPage() {
                   <Button variant="subtle" onClick={() => setPreview('unit')}>
                     Preview Unit
                   </Button>
-                  <Button variant="subtle" onClick={() => setPreview('sheet')}>
-                    Preview Sheet
-                  </Button>
+                </div>
+                <div className="flex flex-col gap-3 rounded-md border border-hairline p-3">
+                  <Field label="Sheet layout" htmlFor="pd-sheet">
+                    <select
+                      id="pd-sheet"
+                      className="h-11 rounded-sm border border-ink bg-canvas px-3"
+                      value={sheet}
+                      onChange={(e) => {
+                        setSheet(e.target.value);
+                        rememberPreset(PRINT_PRESETS[e.target.value]!);
+                      }}
+                    >
+                      <option value={CUTTER_PRINT_PRESET}>
+                        Own printer + cutter · 30-up (margins, bleed, marks)
+                      </option>
+                      <option value={DEFAULT_PRINT_PRESET}>
+                        Print shop · 48-up (edge to edge)
+                      </option>
+                    </select>
+                  </Field>
+                  <p className="text-xs text-body">
+                    Print the test sheet at 100% (&ldquo;Actual size&rdquo;), then check the scale
+                    bar measures 100 mm and run it through your cutter before printing a batch.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="subtle" onClick={() => setPreview('sheet')}>
+                      Preview Sheet
+                    </Button>
+                    <Button
+                      variant="subtle"
+                      onClick={() => testPrint.mutate()}
+                      loading={testPrint.isPending}
+                    >
+                      <Download className="h-4 w-4" aria-hidden /> Download Test Print
+                    </Button>
+                  </div>
                 </div>
                 {d!.validationWarnings.length > 0 && (
                   <ul className="flex flex-col gap-1 text-xs">
@@ -418,11 +454,17 @@ export function PrintDesignEditorPage() {
         <Dialog
           open={preview !== null}
           onClose={() => setPreview(null)}
-          title={preview === 'unit' ? 'Preview Safety ID' : 'Preview 12 × 18 Sheet'}
+          title={
+            preview === 'unit'
+              ? 'Preview Safety ID'
+              : `Preview ${sheetLayout.sheetHeightIn} × ${sheetLayout.sheetWidthIn} Sheet`
+          }
           description={
             preview === 'unit'
               ? 'Exact 4.5 : 1 unit with sample data.'
-              : '4 columns × 12 rows = 48 complete units (sticker + cover), sample data.'
+              : `${sheetLayout.columns} columns × ${sheetLayout.rows} rows = ${
+                  sheetLayout.columns * sheetLayout.rows
+                } complete units (sticker + cover), sample data.`
           }
         >
           {preview && (
@@ -430,7 +472,7 @@ export function PrintDesignEditorPage() {
               designId={d.id}
               kind={preview}
               version={d.updatedAt}
-              query={preview === 'unit' ? { ...position, guides } : position}
+              query={preview === 'unit' ? { ...position, guides } : { ...position, preset: sheet }}
             />
           )}
         </Dialog>

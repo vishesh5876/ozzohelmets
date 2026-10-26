@@ -3,6 +3,7 @@ import SVGtoPDF from 'svg-to-pdfkit';
 import type { ArtworkAsset } from './artwork';
 import { type PrintSheetLayout, placeUnit } from '@helmet/types';
 import { planCuts, sheetSizePt } from './cut-lines';
+import { registrationMarks, sheetMarks } from './sheet-marks';
 import type { DrawElement, StickerGeometry, TextMetrics, Weight } from './sticker-layout';
 
 /**
@@ -18,6 +19,19 @@ export interface PrintFonts {
 }
 
 const FONT = { regular: 'SafetyId-Regular', bold: 'SafetyId-Bold' } as const;
+
+/**
+ * Asks PDF viewers to print at 100 %: "fit to page" shrinks the sheet, so cuts stop matching
+ * the print. (pdfkit writes plain strings as PDF names: /PrintScaling /None.)
+ */
+function printAtActualSize(doc: PDFKit.PDFDocument): void {
+  const d = doc as unknown as {
+    _root: { data: Record<string, unknown> };
+    ref(data: Record<string, unknown>): unknown;
+  };
+  // pdfkit finalises the catalog's ViewerPreferences itself on end(), so it must be a ref.
+  d._root.data.ViewerPreferences = d.ref({ PrintScaling: 'None' });
+}
 
 function registerFonts(doc: PDFKit.PDFDocument, fonts: PrintFonts): void {
   doc.registerFont(FONT.regular, fonts.regularPath ?? 'Helvetica');
@@ -151,15 +165,24 @@ function drawArtwork(
   }
   doc.save();
   doc.rect(ox + el.clip.x, oy + el.clip.y, el.clip.w, el.clip.h).clip();
+  // Box origin; a bleed mirror flips inside its own box (magnitude stays 1: no stretching).
+  doc.transform(
+    el.flipX ? -1 : 1,
+    0,
+    0,
+    el.flipY ? -1 : 1,
+    ox + el.x + (el.flipX ? el.w : 0),
+    oy + el.y + (el.flipY ? el.h : 0),
+  );
   if (el.artwork.format === 'SVG') {
     // Uniform scale: one factor for both axes (h = vbH × s by construction).
     const s = el.w / el.artwork.viewBox!.width;
     d.page.xobjects[entry.name] = entry.ref;
-    doc.transform(s, 0, 0, -s, ox + el.x, oy + el.y + el.artwork.viewBox!.height * s);
+    doc.transform(s, 0, 0, -s, 0, el.artwork.viewBox!.height * s);
     d.addContent(`/${entry.name} Do`);
   } else {
     // Lossless: the PNG's own data, drawn at exactly the placed box (its aspect ratio).
-    doc.image(entry.ref as Buffer, ox + el.x, oy + el.y, { width: el.w, height: el.h });
+    doc.image(entry.ref as Buffer, 0, 0, { width: el.w, height: el.h });
   }
   doc.restore();
 }
@@ -281,6 +304,7 @@ export interface SheetPdfOptions {
 export class SheetPdf {
   readonly doc: PDFKit.PDFDocument;
   private page = 0;
+  private readonly marks: DrawElement[];
 
   constructor(private readonly opts: SheetPdfOptions) {
     this.doc = new PDFDocument({
@@ -290,6 +314,8 @@ export class SheetPdf {
       info: { Title: opts.title, Creator: 'OZZO Safety ID print engine', Producer: 'pdfkit' },
     });
     registerFonts(this.doc, opts.fonts);
+    printAtActualSize(this.doc);
+    this.marks = sheetMarks(opts.layout, createTextMetrics(opts.fonts));
   }
 
   /** Draws unit number `index` (0-based, export order) at its fixed sheet position. */
@@ -319,6 +345,7 @@ export class SheetPdf {
     const { width, height } = sheetSizePt(this.opts.layout);
     this.doc.addPage({ size: [width, height], margin: 0 });
     this.page++;
+    drawElements(this.doc, this.marks, 0, 0);
   }
 }
 
@@ -339,8 +366,11 @@ export function cutGuidePdf(
     margin: 0,
     info: { Title: title, Creator: 'OZZO Safety ID print engine', Producer: 'pdfkit' },
   });
+  printAtActualSize(doc);
   const { width, height } = sheetSizePt(layout);
   doc.addPage({ size: [width, height], margin: 0 });
+  // The same registration squares as the print sheet, so cut file and print align.
+  for (const b of registrationMarks(layout)) doc.rect(b.x, b.y, b.w, b.h).fill('#000000');
   drawCutPlan(doc, layout, g, { spot: true });
   return doc;
 }

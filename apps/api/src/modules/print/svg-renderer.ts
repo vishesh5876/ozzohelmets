@@ -65,6 +65,8 @@ export function elementsToSvg(elements: DrawElement[]): string {
         } else {
           inner = `<image x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,${el.artwork.png!.toString('base64')}"/>`;
         }
+        if (el.flipX || el.flipY)
+          inner = `<g transform="translate(${n(el.flipX ? 2 * el.x + el.w : 0)} ${n(el.flipY ? 2 * el.y + el.h : 0)}) scale(${el.flipX ? -1 : 1} ${el.flipY ? -1 : 1})">${inner}</g>`;
         out += `<svg x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" viewBox="${n(c.x)} ${n(c.y)} ${n(c.w)} ${n(c.h)}" overflow="hidden">${inner}</svg>`;
         break;
       }
@@ -113,6 +115,7 @@ export function sheetSvg(
   g: StickerGeometry,
   unit: DrawElement[],
   filled: number,
+  marks: DrawElement[] = [],
 ): string {
   const { width, height } = sheetSizePt(layout);
   const cuts = planCuts(layout, g);
@@ -130,6 +133,7 @@ export function sheetSvg(
     `<defs><g id="u">${elementsToSvg(unit)}</g></defs>` +
     `<rect width="${n(width)}" height="${n(height)}" fill="#FFFFFF"/>` +
     uses +
+    elementsToSvg(marks) +
     `<path d="${kiss}" fill="none" stroke="#EC008C" stroke-width="0.6" stroke-dasharray="2 2"/>` +
     `<path d="${lines}" fill="none" stroke="#00AEEF" stroke-width="0.8"/>` +
     `<rect x="0" y="0" width="${n(width)}" height="${n(height)}" fill="none" stroke="#5F6368" stroke-width="${n(inToPt(0.02))}"/>` +
