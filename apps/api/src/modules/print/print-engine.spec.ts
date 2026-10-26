@@ -533,6 +533,31 @@ describe('own printer + cutter: bleed, gaps and sheet marks', () => {
     expect(out).toMatch(/\n-1 0 0 1 [\d.]+ [\d.]+ cm/); // horizontal mirror, magnitude 1
   });
 
+  it('2.2 : 1 panel artwork fills exactly the emergency panel and never reaches the Safety ID', () => {
+    const panel: ArtworkAsset = {
+      ...art,
+      key: 'p',
+      viewBox: { x: 0, y: 0, width: 220, height: 100 },
+    };
+    const els = layoutUnit(unit(1), {
+      ...ctx,
+      bleed,
+      artwork: {
+        base: panel,
+        cover: null,
+        position: { scalePercent: 100, offsetXMm: 0, offsetYMm: 0 },
+      },
+    });
+    const main = pieces(els).find((e) => e.role === 'artwork-base')!;
+    expect({ x: main.x, y: main.y, w: main.w, h: main.h }).toEqual(geometry.zones.emergency);
+    const id = elementBounds(els.find((e) => e.role === 'safety-code')!);
+    for (const p of pieces(els)) {
+      const b = elementBounds(p);
+      expect(b.x + b.w).toBeLessThanOrEqual(geometry.zones.credential.x + 1 + 1e-9);
+      expect(boxesOverlap(b, id)).toBe(false);
+    }
+  });
+
   it('SVG preview mirrors the same way', () => {
     const svg = unitSvg(layoutUnit(unit(1), artCtx()));
     expect(svg).toContain('scale(-1 1)');

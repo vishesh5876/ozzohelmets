@@ -1,15 +1,17 @@
 import {
   ARTWORK_OFFSET_RANGE_MM,
   ARTWORK_SCALE_RANGE,
-  aspectMatches,
-  BASE_ARTWORK_ASPECT,
+  baseArtworkAspectMessage,
+  baseArtworkFit,
   MIN_PRINT_DPI,
   type PrintArtworkFormat,
 } from '@helmet/types';
 import {
   type ArtworkPosition,
+  baseArtworkTarget,
   coverTrim,
   drawnDpi,
+  PANEL_W,
   placeBaseArtwork,
   placeCoverArtwork,
 } from '../print/artwork';
@@ -65,14 +67,11 @@ export function checkDesign(
     if (!Number.isFinite(v) || Math.abs(v) > ARTWORK_OFFSET_RANGE_MM)
       errors.push(`${k} must be within ±${ARTWORK_OFFSET_RANGE_MM} mm.`);
 
-  const aspectOk =
+  const fit =
     base.format === 'SVG'
-      ? aspectMatches(base.viewBox!.width, base.viewBox!.height, BASE_ARTWORK_ASPECT)
-      : aspectMatches(base.widthPx!, base.heightPx!, BASE_ARTWORK_ASPECT);
-  if (!aspectOk)
-    errors.push(
-      `Base artwork must be 4.5 : 1 (it is ${factsAspect(base).toFixed(3)} : 1). Crop it to 4.5 × 1 in (e.g. 2700 × 600 px or viewBox 0 0 450 100); artwork is never stretched.`,
-    );
+      ? baseArtworkFit(base.viewBox!.width, base.viewBox!.height)
+      : baseArtworkFit(base.widthPx!, base.heightPx!);
+  if (!fit) errors.push(baseArtworkAspectMessage(factsAspect(base)));
   if (base.testOnly)
     errors.push(
       'Base artwork is a test-only low-resolution upload: it cannot be used for production.',
@@ -90,14 +89,24 @@ export function checkDesign(
       );
   }
   if (!errors.length) {
+    // Coverage of the visible area (the emergency panel) is what matters for either fit.
+    const t = fit === 'PANEL' ? baseArtworkTarget(factsAspect(base)) : { w: PANEL_W };
     const covers =
       baseBox.x <= 0.01 &&
       baseBox.y <= 0.01 &&
-      baseBox.x + baseBox.w >= UNIT_W - 0.01 &&
+      baseBox.x + baseBox.w >= t.w - 0.01 &&
       baseBox.y + baseBox.h >= UNIT_H - 0.01;
     if (!covers)
       warnings.push(
-        'The artwork does not cover the whole 4.5 × 1 in unit at this position: uncovered areas print white.',
+        'At this position the artwork does not fill the emergency panel (left 2.2 × 1 in): uncovered areas print white.',
+      );
+    if (fit === 'PANEL' && baseBox.x + baseBox.w > PANEL_W + 0.01)
+      warnings.push(
+        'At this scale/offset part of the panel artwork runs under the Safety ID column and is hidden.',
+      );
+    if (fit === 'FULL')
+      warnings.push(
+        'Full-width artwork: only its left 2.2 in (55.9 mm) shows. The Safety ID / QR column and the cover are always printed over the rest, cutting through anything placed there. For an exact fit, upload just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px).',
       );
   }
 

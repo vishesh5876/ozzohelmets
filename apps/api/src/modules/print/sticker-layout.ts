@@ -705,6 +705,7 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
 /** Guide colours (also shown as the admin preview legend). */
 export const GUIDE_COLORS = {
   'guide-unit': '#5F6368',
+  'guide-artwork-area': '#00897B',
   'guide-safe-area': '#34A853',
   'guide-credential-panel': '#9AA0A6',
   'guide-id-area': '#F29900',
@@ -746,6 +747,14 @@ export function guideElements(g: StickerGeometry, m: TextMetrics): DrawElement[]
       { x: g.safeInset, y: g.safeInset, w: UNIT_W - 2 * g.safeInset, h: UNIT_H - 2 * g.safeInset },
       1.5,
     ),
+    // Where artwork is visible (a 2.2 : 1 panel artwork fills exactly this).
+    s('guide-artwork-area', {
+      ...g.zones.emergency,
+      x: 0.6,
+      y: 0.6,
+      w: g.zones.emergency.w - 1.2,
+      h: UNIT_H - 1.2,
+    }),
     s('guide-credential-panel', g.zones.credential, 0.8),
     s(
       'guide-id-area',

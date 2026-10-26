@@ -6,11 +6,13 @@ import PDFDocument from 'pdfkit';
 import type { Response } from 'express';
 import {
   artworkQuality,
-  aspectMatches,
-  BASE_ARTWORK_ASPECT,
+  baseArtworkAspectMessage,
+  baseArtworkFit,
   DEFAULT_PRINT_LAYOUT,
   ErrorCode,
   MIN_BASE_PNG,
+  MIN_PANEL_PNG,
+  RECOMMENDED_PANEL_PNG,
   MIN_PRINT_DPI,
   type PrintArtworkFileDto,
   type PrintArtworkRole,
@@ -140,6 +142,11 @@ export class PrintDesignsService {
     let svgViewBox: string | null = null;
     try {
       if (format === 'SVG') {
+        // The downloadable templates carry their guides in this layer; never print them.
+        if (input.toString('utf8').includes(TEMPLATE_GUIDE_LAYER))
+          throw new ArtworkError(
+            `This file still contains the template guides. Delete the "${TEMPLATE_GUIDE_LAYER}" layer, then export again.`,
+          );
         const clean = sanitizeSvg(
           input,
           {
@@ -194,10 +201,7 @@ export class PrintDesignsService {
         format === 'SVG'
           ? [facts.viewBox!.width, facts.viewBox!.height]
           : [facts.widthPx!, facts.heightPx!];
-      if (!aspectMatches(w, h, BASE_ARTWORK_ASPECT))
-        throw this.invalidArtwork(
-          `Base artwork must be 4.5 : 1 (this file is ${(w / h).toFixed(3)} : 1). Crop it to 4.5 × 1 in — e.g. 2700 × 600 px or viewBox "0 0 450 100". Artwork is never stretched.`,
-        );
+      if (!baseArtworkFit(w, h)) throw this.invalidArtwork(baseArtworkAspectMessage(w / h));
     }
     if (format === 'PNG') {
       const box =
@@ -215,7 +219,7 @@ export class PrintDesignsService {
       if (effectiveDpi < MIN_PRINT_DPI && !testOnly)
         throw this.invalidArtwork(
           role === 'base'
-            ? `PNG resolution too low: ${facts.widthPx} × ${facts.heightPx} px prints at ${effectiveDpi} DPI. Minimum ${MIN_BASE_PNG.widthPx} × ${MIN_BASE_PNG.heightPx} px (300 DPI); recommended 2700 × 600 px (600 DPI). Low-resolution images are never upscaled.`
+            ? lowResolutionMessage(facts.widthPx!, facts.heightPx!, effectiveDpi)
             : `PNG resolution too low for the cover: prints at ${effectiveDpi} DPI (minimum ${MIN_PRINT_DPI}).`,
         );
       if (effectiveDpi >= MIN_PRINT_DPI) facts.testOnly = false;
@@ -881,6 +885,16 @@ export class PrintDesignsService {
       HttpStatus.CONFLICT,
     );
   }
+}
+
+/** Id of the guides layer in apps/admin/public/print-templates/*.svg. */
+export const TEMPLATE_GUIDE_LAYER = 'GUIDES_DELETE_BEFORE_EXPORT';
+
+function lowResolutionMessage(widthPx: number, heightPx: number, dpi: number): string {
+  const panel = baseArtworkFit(widthPx, heightPx) === 'PANEL';
+  const min = panel ? MIN_PANEL_PNG : MIN_BASE_PNG;
+  const rec = panel ? RECOMMENDED_PANEL_PNG : { widthPx: 2700, heightPx: 600 };
+  return `PNG resolution too low: ${widthPx} × ${heightPx} px prints at ${dpi} DPI. Minimum ${min.widthPx} × ${min.heightPx} px (300 DPI); recommended ${rec.widthPx} × ${rec.heightPx} px (600 DPI). Low-resolution images are never upscaled.`;
 }
 
 export function sha256(buf: Buffer): string {

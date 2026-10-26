@@ -262,12 +262,30 @@ export function PrintDesignEditorPage() {
             </Field>
             <ArtworkSlot
               label="Base Artwork"
-              hint="Covers the whole 4.5 × 1 in unit. Must be 4.5 : 1 (e.g. viewBox 0 0 450 100, or 2700 × 600 px)."
+              hint="Recommended: just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px). It fills exactly the area left of the Safety ID and QR, so nothing can overlap them. A full 4.5 : 1 sticker also works, but only its left 2.2 in shows."
               file={form.base}
               inputId="pd-base"
               disabled={!canManage || upload.isPending}
               onPick={pickFile('base')}
             />
+            <p className="-mt-2 text-xs text-body" data-testid="pd-templates">
+              Templates for your designer:{' '}
+              <a
+                className="font-medium text-ink underline underline-offset-2"
+                href="/print-templates/ozzo-emergency-panel-template.svg"
+                download
+              >
+                Emergency panel 2.2 × 1 in (recommended)
+              </a>{' '}
+              ·{' '}
+              <a
+                className="font-medium text-ink underline underline-offset-2"
+                href="/print-templates/ozzo-full-sticker-template.svg"
+                download
+              >
+                Full sticker 4.5 × 1 in
+              </a>
+            </p>
             <ArtworkSlot
               label="Cover Artwork (optional)"
               hint="Fills only the removable cover. Without it the default yellow REMOVE / ONLY IN EMERGENCY / OPEN cover is used."

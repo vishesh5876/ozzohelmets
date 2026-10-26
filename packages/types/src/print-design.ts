@@ -17,8 +17,20 @@ export type PrintArtworkFormat = (typeof PrintArtworkFormat)[keyof typeof PrintA
 
 export type PrintArtworkRole = 'base' | 'cover';
 
-/** Base artwork covers the whole unit: 4.5 : 1. Uniform scaling only — never stretched. */
+/**
+ * Base artwork comes in two fits, told apart by the file's aspect ratio. Uniform scaling only —
+ * never stretched.
+ *
+ * - PANEL (2.2 : 1, recommended): just the emergency panel. It fills exactly the 2.2 × 1 in area
+ *   left of the Safety ID column, so it can never run under the ID, PIN or QR.
+ * - FULL (4.5 : 1): the whole unit. Only its left 2.2 in shows; the white Safety ID panel and the
+ *   cover are always drawn over the rest.
+ */
 export const BASE_ARTWORK_ASPECT = 4.5;
+/** The emergency panel: 2.2 × 1 in (55.88 × 25.4 mm). Must equal the print engine's zone. */
+export const PANEL_ARTWORK_ASPECT = 2.2;
+export const PANEL_ARTWORK_WIDTH_IN = 2.2;
+export type BaseArtworkFit = 'PANEL' | 'FULL';
 /** Relative aspect-ratio tolerance (1 %): e.g. 2700 × 600 ok, 2700 × 610 rejected. */
 export const ARTWORK_ASPECT_TOLERANCE = 0.01;
 export const MIN_PRINT_DPI = 300;
@@ -26,6 +38,9 @@ export const RECOMMENDED_PRINT_DPI = 600;
 /** 300 DPI over 4.5 × 1 in. */
 export const MIN_BASE_PNG = { widthPx: 1350, heightPx: 300 } as const;
 export const RECOMMENDED_BASE_PNG = { widthPx: 2700, heightPx: 600 } as const;
+/** 300 / 600 DPI over the 2.2 × 1 in emergency panel. */
+export const MIN_PANEL_PNG = { widthPx: 660, heightPx: 300 } as const;
+export const RECOMMENDED_PANEL_PNG = { widthPx: 1320, heightPx: 600 } as const;
 
 /** Artwork position controls: uniform scale (%) and offsets (mm). */
 export const ARTWORK_SCALE_RANGE = { min: 50, max: 200 } as const;
@@ -34,6 +49,18 @@ export const ARTWORK_OFFSET_RANGE_MM = 25;
 export function aspectMatches(width: number, height: number, target: number): boolean {
   if (!(width > 0 && height > 0)) return false;
   return Math.abs(width / height / target - 1) <= ARTWORK_ASPECT_TOLERANCE;
+}
+
+/** Which fit a base artwork of this size is, or null when it is neither 2.2 : 1 nor 4.5 : 1. */
+export function baseArtworkFit(width: number, height: number): BaseArtworkFit | null {
+  if (aspectMatches(width, height, PANEL_ARTWORK_ASPECT)) return 'PANEL';
+  if (aspectMatches(width, height, BASE_ARTWORK_ASPECT)) return 'FULL';
+  return null;
+}
+
+/** Shown when a base artwork is neither fit. */
+export function baseArtworkAspectMessage(aspect: number): string {
+  return `Base artwork must be the emergency panel at 2.2 : 1 (e.g. viewBox 0 0 220 100, or 1320 × 600 px) or the full sticker at 4.5 : 1 (viewBox 0 0 450 100, or 2700 × 600 px). This file is ${aspect.toFixed(3)} : 1. Artwork is never stretched.`;
 }
 
 /** Effective DPI of a raster drawn `physicalWidthIn` wide (after the uniform scale). */

@@ -1,13 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { artworkQuality, aspectMatches, effectiveDpi, MIN_BASE_PNG } from '@helmet/types';
+import {
+  artworkQuality,
+  aspectMatches,
+  baseArtworkFit,
+  effectiveDpi,
+  MIN_BASE_PNG,
+  PANEL_ARTWORK_WIDTH_IN,
+} from '@helmet/types';
 import {
   artworkAspect,
   coverTrim,
   drawnDpi,
   placeBaseArtwork,
   placeCoverArtwork,
+  PANEL_W,
 } from '../print/artwork';
 import { UNIT_H, UNIT_W } from '../print/sticker-design';
 import { type ArtworkFacts, checkDesign } from './design-validation';
@@ -245,10 +253,10 @@ describe('design validation', () => {
 
   it('rejects wrong aspect instead of stretching', () => {
     expect(checkDesign(svg(400, 100), null, pos, coverBox).errors.join()).toMatch(
-      /must be 4.5 : 1/,
+      /2\.2 : 1.*4\.5 : 1.*4\.000 : 1/,
     );
     expect(checkDesign(png(2700, 700), null, pos, coverBox).errors.join()).toMatch(
-      /must be 4.5 : 1/,
+      /panel at 2\.2 : 1/,
     );
   });
 
@@ -267,13 +275,38 @@ describe('design validation', () => {
   it('warns when the artwork leaves the unit partly uncovered; rejects out-of-range controls', () => {
     expect(
       checkDesign(svg(), null, { ...pos, scalePercent: 80 }, coverBox).warnings.join(),
-    ).toMatch(/does not cover/);
+    ).toMatch(/does not fill the emergency panel/);
     expect(checkDesign(svg(), null, { ...pos, scalePercent: 300 }, coverBox).errors.join()).toMatch(
       /Scale/,
     );
     expect(checkDesign(svg(), null, { ...pos, offsetXMm: 40 }, coverBox).errors.join()).toMatch(
       /X offset/,
     );
+  });
+
+  it('emergency-panel artwork (2.2 : 1) fills exactly the area left of the Safety ID column', () => {
+    const c = checkDesign(svg(220, 100), null, pos, coverBox);
+    expect(c.errors).toEqual([]);
+    expect(c.baseBox).toEqual({ x: 0, y: 0, w: PANEL_W, h: UNIT_H });
+    expect(PANEL_W).toBeCloseTo(PANEL_ARTWORK_WIDTH_IN * 72, 10); // types and engine agree
+    expect(c.warnings).toEqual([]);
+    const p = checkDesign(png(1320, 600), null, pos, coverBox);
+    expect(p).toMatchObject({ errors: [], effectiveDpi: 600 });
+    expect(checkDesign(png(660, 300), null, pos, coverBox).effectiveDpi).toBe(300);
+    expect(checkDesign(png(440, 200), null, pos, coverBox).errors.join()).toMatch(/200 DPI/);
+    // Enlarged past the panel: it would slide under the Safety ID column, so say so.
+    expect(
+      checkDesign(svg(220, 100), null, { ...pos, scalePercent: 120 }, coverBox).warnings.join(),
+    ).toMatch(/runs under the Safety ID column/);
+  });
+
+  it('full-width artwork (4.5 : 1) still works but warns that only its left 2.2 in shows', () => {
+    const c = checkDesign(svg(), null, pos, coverBox);
+    expect(c.errors).toEqual([]);
+    expect(c.warnings.join()).toMatch(/only its left 2\.2 in \(55\.9 mm\) shows/);
+    expect(baseArtworkFit(450, 100)).toBe('FULL');
+    expect(baseArtworkFit(1320, 600)).toBe('PANEL');
+    expect(baseArtworkFit(400, 100)).toBeNull();
   });
 
   it('cover artwork: trim warning and DPI check', () => {
