@@ -37,7 +37,12 @@ export function PrintDesignsPage() {
         description="Artwork for the 4.5 × 1 in Safety ID sticker. The system always generates the Safety ID, PIN, QR, cover and cut geometry."
         actions={
           <RequirePermission permission={Permission.PRINT_DESIGN_MANAGE}>
-            <Button onClick={() => navigate('/print-designs/new')}>Create Design</Button>
+            <Button variant="subtle" onClick={() => navigate('/print-designs/new')}>
+              Upload Artwork
+            </Button>
+            <Button onClick={() => navigate('/print-designs/new/studio')}>
+              Design in Print Studio
+            </Button>
           </RequirePermission>
         }
       />
@@ -94,7 +99,11 @@ export function PrintDesignsPage() {
                   </div>
                 </Td>
                 <Td>
-                  <span className="block text-xs text-body">{resolutionText(d.baseArtwork)}</span>
+                  <span className="block text-xs text-body">
+                    {d.baseArtwork
+                      ? resolutionText(d.baseArtwork)
+                      : `Print Studio · ${d.studioDocument?.layers.length ?? 0} layers`}
+                  </span>
                   <QualityLabel quality={d.quality} dpi={d.effectiveDpi} />
                 </Td>
                 <Td className="whitespace-nowrap text-body">

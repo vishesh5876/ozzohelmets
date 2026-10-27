@@ -10,6 +10,7 @@ import {
   FULL_SHEET_WARNING,
   mmToPt,
   needsFullSheetWarning,
+  parseStudioDocument,
   placeUnit,
   planSheets,
   presetOf,
@@ -612,4 +613,179 @@ describe('own printer + cutter: bleed, gaps and sheet marks', () => {
     expect(svg).toContain('scale(1 -1)');
     expect(svg).toContain('scale(-1 -1)');
   });
+});
+
+describe('Print Studio layers', () => {
+  const png: ArtworkAsset = {
+    key: 'studio-png',
+    format: 'PNG',
+    png: Buffer.alloc(0),
+    widthPx: 1200,
+    heightPx: 400,
+  };
+  const layer = (o: Record<string, unknown>) => ({
+    id: `l${Math.random().toString(36).slice(2, 8)}`,
+    name: 'layer',
+    part: 'sticker',
+    x: 10,
+    y: 10,
+    w: 60,
+    h: 20,
+    rotate: 0,
+    hidden: false,
+    locked: false,
+    ...o,
+  });
+  const doc = (layers: Record<string, unknown>[], extra: Record<string, unknown> = {}) =>
+    parseStudioDocument({
+      version: 1,
+      stickerBackground: '#121212',
+      coverBackground: '#FFE300',
+      defaultCover: false,
+      layers,
+      ...extra,
+    });
+  const studioCtx = (d: ReturnType<typeof doc>) => ({
+    ...ctx,
+    studio: { document: d, images: new Map([['0190f0a0-0000-7000-8000-000000000001', png]]) },
+  });
+
+  it('draws background → layers → keep-clear → ID / PIN / QR, QR always last on the sticker', () => {
+    const els = layoutUnit(
+      unit(1),
+      studioCtx(
+        doc([
+          layer({ kind: 'rect', fill: '#EC1C22', x: 0, y: 0, w: 324, h: 72, part: 'both' }),
+          layer({ kind: 'text', text: 'IN AN\nEMERGENCY', sizePt: 10, color: '#FFFFFF' }),
+        ]),
+      ),
+    );
+    const at = (role: string) => els.findIndex((e) => e.role === role);
+    expect(at('studio-background')).toBeLessThan(at('studio-sticker'));
+    expect(at('studio-sticker')).toBeLessThan(at('keep-clear'));
+    expect(at('keep-clear')).toBeLessThan(at('qr'));
+    expect(at('qr')).toBeLessThan(at('studio-cover'));
+    // Sticker layers are clipped at the base | cover kiss cut; cover layers to the cover box.
+    const sticker = els[at('studio-sticker')] as Extract<DrawElement, { kind: 'group' }>;
+    expect(sticker.clip!.x + sticker.clip!.w).toBeCloseTo(geometry.zones.cover.x);
+    const cover = els[at('studio-cover')] as Extract<DrawElement, { kind: 'group' }>;
+    expect(cover.clip).toEqual(geometry.coverYellow);
+    // A 'both' layer prints on each piece; two text lines = two text elements.
+    expect(sticker.children.filter((e) => e.kind === 'text')).toHaveLength(2);
+    expect(cover.children.some((e) => e.kind === 'rect')).toBe(true);
+  });
+
+  it('keeps the default yellow cover when chosen (cover layers ignored)', () => {
+    const els = layoutUnit(
+      unit(1),
+      studioCtx(
+        doc([layer({ kind: 'rect', fill: '#000000', part: 'cover', x: 250 })], {
+          defaultCover: true,
+        }),
+      ),
+    );
+    expect(els.some((e) => e.role === 'cover')).toBe(true);
+    expect(els.some((e) => e.role === 'studio-cover')).toBe(false);
+  });
+
+  it('images keep their aspect ratio (contain / cover), rotated layers are grouped', () => {
+    const id = '0190f0a0-0000-7000-8000-000000000001';
+    const els = layoutUnit(
+      unit(1),
+      studioCtx(
+        doc([
+          layer({ kind: 'image', fileId: id, fit: 'contain', w: 60, h: 40 }),
+          layer({ kind: 'image', fileId: id, fit: 'cover', w: 60, h: 40, rotate: 30 }),
+        ]),
+      ),
+    );
+    const g = els.find((e) => e.role === 'studio-sticker') as Extract<
+      DrawElement,
+      { kind: 'group' }
+    >;
+    const [contain, rotated] = g.children;
+    const c = contain as Extract<DrawElement, { kind: 'artwork' }>;
+    expect(c.w / c.h).toBeCloseTo(3);
+    expect(c.w).toBeCloseTo(60);
+    const r = rotated as Extract<DrawElement, { kind: 'group' }>;
+    expect(r.rotate).toEqual({ deg: 30, cx: 40, cy: 30 });
+    const s = r.children[0] as Extract<DrawElement, { kind: 'artwork' }>;
+    expect(s.w / s.h).toBeCloseTo(3);
+    expect(s.h).toBeCloseTo(40);
+    expect(s.clip).toEqual({ x: 10, y: 10, w: 60, h: 40 });
+  });
+
+  it('a missing image is a layout error, never a silent blank', () => {
+    expect(() =>
+      layoutUnit(unit(1), {
+        ...ctx,
+        studio: {
+          document: doc([layer({ kind: 'image', fileId: '0190f0a0-0000-7000-8000-000000000009' })]),
+          images: new Map(),
+        },
+      }),
+    ).toThrow(/not available/);
+  });
+
+  it('renders to PDF and SVG, and the QR still decodes over a full-bleed design', async () => {
+    const d = doc([
+      layer({ kind: 'rect', fill: '#000000', x: -5, y: -5, w: 340, h: 82, part: 'both' }),
+      layer({
+        kind: 'ellipse',
+        fill: '#EC1C22',
+        stroke: '#FFFFFF',
+        strokePt: 1,
+        x: 150,
+        y: 0,
+        w: 100,
+        h: 72,
+      }),
+      layer({ kind: 'arrow', color: '#FFFFFF', x: 120, y: 30, w: 30, h: 10, rotate: 90 }),
+      layer({
+        kind: 'text',
+        text: 'RIGHT',
+        align: 'right',
+        sizePt: 8,
+        color: '#FFFFFF',
+        x: 0,
+        w: 150,
+      }),
+    ]);
+    const els = layoutUnit(unit(2), studioCtx(d));
+    const svg = unitSvg(els);
+    expect(svg).toContain('<ellipse');
+    expect(svg).toContain('rotate(90 135 35)');
+    const { data, info } = await sharp(Buffer.from(svg), { density: 600 })
+      .flatten({ background: '#fff' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect(jsQR(new Uint8ClampedArray(data), info.width, info.height)?.data).toBe(
+      unit(2).qrPayload,
+    );
+    const pdf = new SheetPdf({ layout: DEFAULT_PRINT_LAYOUT, fonts, title: 't', compress: false });
+    const chunks: Buffer[] = [];
+    const done = new Promise<void>((resolve) =>
+      pdf.doc.pipe(
+        new Writable({
+          write(c: Buffer, _e, cb) {
+            chunks.push(c);
+            cb();
+          },
+          final(cb) {
+            resolve();
+            cb();
+          },
+        }),
+      ),
+    );
+    pdf.addUnit(0, els);
+    pdf.end();
+    await done;
+    const out = Buffer.concat(chunks).toString('latin1');
+    expect(out.startsWith('%PDF')).toBe(true);
+    // Live vector text (not an image) and a clip for the sticker piece.
+    expect(out).toMatch(/\] TJ/);
+    expect(out).toMatch(/W n/);
+  }, 60_000);
 });

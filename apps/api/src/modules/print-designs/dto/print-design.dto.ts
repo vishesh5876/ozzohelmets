@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsIn,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -53,6 +54,18 @@ class PositionFields {
   @IsOptional()
   @IsBoolean()
   artworkOnTop?: boolean;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description:
+      'Print Studio layer document (validated strictly server-side). Replaces uploaded artwork; null on update switches back to uploaded artwork (needs baseArtworkFileId).',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsObject()
+  studioDocument?: Record<string, unknown> | null;
 }
 
 export class CreatePrintDesignDto extends PositionFields {
@@ -63,9 +76,10 @@ export class CreatePrintDesignDto extends PositionFields {
   @MaxLength(120)
   name: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Uploaded-artwork design (or send studioDocument).' })
+  @IsOptional()
   @IsUUID()
-  baseArtworkFileId: string;
+  baseArtworkFileId?: string;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
@@ -96,9 +110,9 @@ export class UpdatePrintDesignDto extends PositionFields {
 }
 
 export class UploadArtworkDto {
-  @ApiProperty({ enum: ['base', 'cover'] })
-  @IsIn(['base', 'cover'])
-  role: 'base' | 'cover';
+  @ApiProperty({ enum: ['base', 'cover', 'image'] })
+  @IsIn(['base', 'cover', 'image'])
+  role: 'base' | 'cover' | 'image';
 
   @ApiPropertyOptional({ description: 'SUPER_ADMIN only: accept a low-resolution PNG for tests' })
   @IsOptional()
@@ -111,4 +125,21 @@ export class PrintDesignListQueryDto {
   @IsOptional()
   @IsIn(['DRAFT', 'ACTIVE', 'ARCHIVED'])
   status?: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
+}
+
+export class StudioPreviewDto {
+  @ApiProperty({ type: 'object', additionalProperties: true })
+  @IsObject()
+  studioDocument: Record<string, unknown>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  guides?: boolean;
+
+  @ApiPropertyOptional({ description: 'Sheet preset (sheet preview only).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  preset?: string;
 }

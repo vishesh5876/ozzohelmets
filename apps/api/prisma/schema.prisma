@@ -1426,8 +1426,10 @@ model PrintDesign {
   name               String             @db.VarChar(120)
   version            Int
   status             PrintDesignStatus  @default(DRAFT)
-  artworkType        PrintArtworkFormat @map("artwork_type")
-  baseArtworkFileId  String             @map("base_artwork_file_id") @db.Uuid
+  /// Null for Print Studio designs.
+  artworkType        PrintArtworkFormat? @map("artwork_type")
+  /// Null for Print Studio designs (CHECK: exactly one of base artwork / studio document).
+  baseArtworkFileId  String?            @map("base_artwork_file_id") @db.Uuid
   coverArtworkFileId String?            @map("cover_artwork_file_id") @db.Uuid
   /// Uniform scale in percent (aspect ratio locked) and offsets in millimetres.
   scalePercent       Float              @default(100) @map("scale_percent")
@@ -1436,6 +1438,8 @@ model PrintDesign {
   /// Artwork drawn over the white Safety ID panel (only the QR, PIN and Safety ID text are kept
   /// clear). False = under the panel: the layering of every version created before this flag.
   artworkOnTop       Boolean            @default(false) @map("artwork_on_top")
+  /// Print Studio layer document (packages/types print-studio.ts), validated on every write.
+  studioDocument     Json?              @map("studio_document")
   validationErrors   Json               @default("[]") @map("validation_errors")
   validationWarnings Json               @default("[]") @map("validation_warnings")
   createdByAdminId   String?            @map("created_by_admin_id") @db.Uuid
@@ -1444,7 +1448,7 @@ model PrintDesign {
   activatedAt        DateTime?          @map("activated_at") @db.Timestamptz(3)
   archivedAt         DateTime?          @map("archived_at") @db.Timestamptz(3)
 
-  baseArtwork  PrintArtworkFile  @relation("PrintDesignBase", fields: [baseArtworkFileId], references: [id], onDelete: Restrict)
+  baseArtwork  PrintArtworkFile? @relation("PrintDesignBase", fields: [baseArtworkFileId], references: [id], onDelete: Restrict)
   coverArtwork PrintArtworkFile? @relation("PrintDesignCover", fields: [coverArtworkFileId], references: [id], onDelete: Restrict)
   creator      AdminUser?        @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
   batches      SafetyIdBatch[]

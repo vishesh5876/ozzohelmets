@@ -84,7 +84,7 @@ export function PrintDesignEditorPage() {
     if (d)
       setForm({
         name: d.name,
-        base: d.baseArtwork,
+        base: d.baseArtwork ?? null,
         cover: d.coverArtwork,
         scalePercent: d.scalePercent,
         offsetXMm: d.offsetXMm,
@@ -96,7 +96,7 @@ export function PrintDesignEditorPage() {
   const dirty =
     !d ||
     form.name !== d.name ||
-    form.base?.id !== d.baseArtwork.id ||
+    (form.base?.id ?? null) !== (d.baseArtwork?.id ?? null) ||
     (form.cover?.id ?? null) !== (d.coverArtwork?.id ?? null) ||
     form.scalePercent !== d.scalePercent ||
     form.offsetXMm !== d.offsetXMm ||
@@ -185,7 +185,8 @@ export function PrintDesignEditorPage() {
         description={
           d ? (
             <span className="inline-flex items-center gap-2">
-              <DesignStatusBadge status={d.status} /> {d.artworkType} · created{' '}
+              <DesignStatusBadge status={d.status} />{' '}
+              {d.kind === 'STUDIO' ? 'Print Studio' : d.artworkType} · created{' '}
               {formatDateTime(d.createdAt)} by {d.createdBy?.name ?? '—'} · used by{' '}
               {d.usedByBatches} batch
               {d.usedByBatches === 1 ? '' : 'es'}
@@ -247,149 +248,174 @@ export function PrintDesignEditorPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Artwork</CardTitle>
-            <CardDescription>
-              Background only. Uploaded files are inspected and sanitized on the server; SVG stays
-              vector in the PDF.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4 text-sm">
-            <Field label="Design Name" htmlFor="pd-name">
-              <Input
-                id="pd-name"
-                maxLength={120}
-                value={form.name}
-                disabled={!canManage}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="OZZO Emergency Black V3"
-              />
-            </Field>
-            <ArtworkSlot
-              label="Base Artwork"
-              hint="Recommended: just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px). It fills exactly the area left of the Safety ID and QR, so nothing can overlap them. A full 4.5 : 1 sticker also works, but only its left 2.2 in shows."
-              file={form.base}
-              inputId="pd-base"
-              disabled={!canManage || upload.isPending}
-              onPick={pickFile('base')}
-            />
-            <p className="-mt-2 text-xs text-body" data-testid="pd-templates">
-              Templates for your designer:{' '}
-              <a
-                className="font-medium text-ink underline underline-offset-2"
-                href="/print-templates/ozzo-emergency-panel-template.svg"
-                download
-              >
-                Emergency panel 2.2 × 1 in (recommended)
-              </a>{' '}
-              ·{' '}
-              <a
-                className="font-medium text-ink underline underline-offset-2"
-                href="/print-templates/ozzo-full-sticker-template.svg"
-                download
-              >
-                Full sticker 4.5 × 1 in
-              </a>
-            </p>
-            <ArtworkSlot
-              label="Cover Artwork (optional)"
-              hint="Fills only the removable cover. Without it the default yellow REMOVE / ONLY IN EMERGENCY / OPEN cover is used."
-              file={form.cover}
-              inputId="pd-cover"
-              disabled={!canManage || upload.isPending}
-              onPick={pickFile('cover')}
-              onRemove={canManage ? () => setForm({ ...form, cover: null }) : undefined}
-            />
-            {admin?.role === 'SUPER_ADMIN' && (
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={testOnly}
-                  onChange={(e) => setTestOnly(e.target.checked)}
-                />
-                Allow a low-resolution PNG for testing only (never usable for production)
-              </label>
-            )}
-            <InlineError error={upload.error} />
-
-            <fieldset className="flex flex-col gap-3" disabled={!canManage}>
-              <legend className="mb-1 font-medium">Artwork Position</legend>
-              <p className="text-xs text-body">
-                Uniform scale only — the aspect ratio is locked. The ID, PIN, QR and cover positions
-                are system-controlled and cannot be moved here.
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                <Field label="Scale (%)" htmlFor="pd-scale">
-                  <Input
-                    id="pd-scale"
-                    type="number"
-                    min={ARTWORK_SCALE_RANGE.min}
-                    max={ARTWORK_SCALE_RANGE.max}
-                    step={1}
-                    value={form.scalePercent}
-                    onChange={(e) =>
-                      setForm({ ...form, scalePercent: e.target.valueAsNumber || 100 })
-                    }
-                  />
-                </Field>
-                <Field label="X (mm)" htmlFor="pd-x">
-                  <Input
-                    id="pd-x"
-                    type="number"
-                    min={-ARTWORK_OFFSET_RANGE_MM}
-                    max={ARTWORK_OFFSET_RANGE_MM}
-                    step={0.1}
-                    value={form.offsetXMm}
-                    onChange={(e) => setForm({ ...form, offsetXMm: e.target.valueAsNumber || 0 })}
-                  />
-                </Field>
-                <Field label="Y (mm)" htmlFor="pd-y">
-                  <Input
-                    id="pd-y"
-                    type="number"
-                    min={-ARTWORK_OFFSET_RANGE_MM}
-                    max={ARTWORK_OFFSET_RANGE_MM}
-                    step={0.1}
-                    value={form.offsetYMm}
-                    onChange={(e) => setForm({ ...form, offsetYMm: e.target.valueAsNumber || 0 })}
-                  />
-                </Field>
-              </div>
-              <p className="text-xs text-body">
-                Scaled artwork box: {widthMm} × {heightMm} mm (unit 114.3 × 25.4 mm).
-              </p>
-              <label className="flex items-start gap-2 rounded-md bg-canvas-soft p-3">
-                <input
-                  type="checkbox"
-                  className="mt-1 accent-primary"
-                  checked={form.artworkOnTop}
-                  onChange={(e) => setForm({ ...form, artworkOnTop: e.target.checked })}
-                  data-testid="pd-on-top"
-                />
-                <span>
-                  <span className="block font-medium">Design on top (recommended)</span>
-                  <span className="block text-xs text-body">
-                    Your artwork is printed over the Safety ID column, so nothing of it is cut off.
-                    Only the QR code, the PIN and the Safety ID text keep small white boxes on top,
-                    so they always scan and read. Off: the white Safety ID column covers everything
-                    right of 2.2 in.
-                  </span>
-                </span>
-              </label>
-            </fieldset>
-            <InlineError error={save.error} />
-            {canManage && (
+        {d?.kind === 'STUDIO' ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Print Studio Design</CardTitle>
+              <CardDescription>
+                Built from {d.studioDocument?.layers.length ?? 0} layers (text, shapes, images) in
+                the Print Studio. The Safety ID, PIN and QR are placed by the system.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 text-sm">
               <Button
-                onClick={() => save.mutate()}
-                loading={save.isPending}
-                disabled={!form.base || !form.name.trim() || (!isNew && !dirty)}
+                onClick={() => navigate(`/print-designs/${d.id}/studio`)}
+                data-testid="open-studio"
               >
-                {isNew ? 'Save Draft' : d!.locked ? 'Save as New Version' : 'Save Draft'}
+                {canManage ? 'Open in Print Studio' : 'View in Print Studio'}
               </Button>
-            )}
-          </CardContent>
-        </Card>
+              {d.locked && canManage && (
+                <p className="text-xs text-body">
+                  This version is locked; saving in the Studio creates a new version.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Artwork</CardTitle>
+              <CardDescription>
+                Background only. Uploaded files are inspected and sanitized on the server; SVG stays
+                vector in the PDF.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 text-sm">
+              <Field label="Design Name" htmlFor="pd-name">
+                <Input
+                  id="pd-name"
+                  maxLength={120}
+                  value={form.name}
+                  disabled={!canManage}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="OZZO Emergency Black V3"
+                />
+              </Field>
+              <ArtworkSlot
+                label="Base Artwork"
+                hint="Recommended: just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px). It fills exactly the area left of the Safety ID and QR, so nothing can overlap them. A full 4.5 : 1 sticker also works, but only its left 2.2 in shows."
+                file={form.base}
+                inputId="pd-base"
+                disabled={!canManage || upload.isPending}
+                onPick={pickFile('base')}
+              />
+              <p className="-mt-2 text-xs text-body" data-testid="pd-templates">
+                Templates for your designer:{' '}
+                <a
+                  className="font-medium text-ink underline underline-offset-2"
+                  href="/print-templates/ozzo-emergency-panel-template.svg"
+                  download
+                >
+                  Emergency panel 2.2 × 1 in (recommended)
+                </a>{' '}
+                ·{' '}
+                <a
+                  className="font-medium text-ink underline underline-offset-2"
+                  href="/print-templates/ozzo-full-sticker-template.svg"
+                  download
+                >
+                  Full sticker 4.5 × 1 in
+                </a>
+              </p>
+              <ArtworkSlot
+                label="Cover Artwork (optional)"
+                hint="Fills only the removable cover. Without it the default yellow REMOVE / ONLY IN EMERGENCY / OPEN cover is used."
+                file={form.cover}
+                inputId="pd-cover"
+                disabled={!canManage || upload.isPending}
+                onPick={pickFile('cover')}
+                onRemove={canManage ? () => setForm({ ...form, cover: null }) : undefined}
+              />
+              {admin?.role === 'SUPER_ADMIN' && (
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={testOnly}
+                    onChange={(e) => setTestOnly(e.target.checked)}
+                  />
+                  Allow a low-resolution PNG for testing only (never usable for production)
+                </label>
+              )}
+              <InlineError error={upload.error} />
+
+              <fieldset className="flex flex-col gap-3" disabled={!canManage}>
+                <legend className="mb-1 font-medium">Artwork Position</legend>
+                <p className="text-xs text-body">
+                  Uniform scale only — the aspect ratio is locked. The ID, PIN, QR and cover
+                  positions are system-controlled and cannot be moved here.
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="Scale (%)" htmlFor="pd-scale">
+                    <Input
+                      id="pd-scale"
+                      type="number"
+                      min={ARTWORK_SCALE_RANGE.min}
+                      max={ARTWORK_SCALE_RANGE.max}
+                      step={1}
+                      value={form.scalePercent}
+                      onChange={(e) =>
+                        setForm({ ...form, scalePercent: e.target.valueAsNumber || 100 })
+                      }
+                    />
+                  </Field>
+                  <Field label="X (mm)" htmlFor="pd-x">
+                    <Input
+                      id="pd-x"
+                      type="number"
+                      min={-ARTWORK_OFFSET_RANGE_MM}
+                      max={ARTWORK_OFFSET_RANGE_MM}
+                      step={0.1}
+                      value={form.offsetXMm}
+                      onChange={(e) => setForm({ ...form, offsetXMm: e.target.valueAsNumber || 0 })}
+                    />
+                  </Field>
+                  <Field label="Y (mm)" htmlFor="pd-y">
+                    <Input
+                      id="pd-y"
+                      type="number"
+                      min={-ARTWORK_OFFSET_RANGE_MM}
+                      max={ARTWORK_OFFSET_RANGE_MM}
+                      step={0.1}
+                      value={form.offsetYMm}
+                      onChange={(e) => setForm({ ...form, offsetYMm: e.target.valueAsNumber || 0 })}
+                    />
+                  </Field>
+                </div>
+                <p className="text-xs text-body">
+                  Scaled artwork box: {widthMm} × {heightMm} mm (unit 114.3 × 25.4 mm).
+                </p>
+                <label className="flex items-start gap-2 rounded-md bg-canvas-soft p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 accent-primary"
+                    checked={form.artworkOnTop}
+                    onChange={(e) => setForm({ ...form, artworkOnTop: e.target.checked })}
+                    data-testid="pd-on-top"
+                  />
+                  <span>
+                    <span className="block font-medium">Design on top (recommended)</span>
+                    <span className="block text-xs text-body">
+                      Your artwork is printed over the Safety ID column, so nothing of it is cut
+                      off. Only the QR code, the PIN and the Safety ID text keep small white boxes
+                      on top, so they always scan and read. Off: the white Safety ID column covers
+                      everything right of 2.2 in.
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
+              <InlineError error={save.error} />
+              {canManage && (
+                <Button
+                  onClick={() => save.mutate()}
+                  loading={save.isPending}
+                  disabled={!form.base || !form.name.trim() || (!isNew && !dirty)}
+                >
+                  {isNew ? 'Save Draft' : d!.locked ? 'Save as New Version' : 'Save Draft'}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="lg:col-span-3">
           <CardHeader>
@@ -413,7 +439,7 @@ export function PrintDesignEditorPage() {
                   Show Guides
                 </label>
                 {!dirty ||
-                (form.base?.id === d!.baseArtwork.id &&
+                (form.base?.id === d!.baseArtwork?.id &&
                   (form.cover?.id ?? null) === (d!.coverArtwork?.id ?? null)) ? (
                   <DesignPreview
                     designId={d!.id}

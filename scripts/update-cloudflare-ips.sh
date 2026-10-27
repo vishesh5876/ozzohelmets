@@ -42,3 +42,4 @@ if [ -n "$("$COMPOSE_DIR/scripts/compose.sh" ps -q edge 2>/dev/null)" ]; then
   "$COMPOSE_DIR/scripts/compose.sh" exec -T edge nginx -s reload
 fi
 echo "Cloudflare ranges updated in $OUT"
+

@@ -4,7 +4,13 @@ import type { ArtworkAsset } from './artwork';
 import { type PrintSheetLayout, placeUnit } from '@helmet/types';
 import { planCuts, sheetSizePt } from './cut-lines';
 import { registrationMarks, sheetMarks } from './sheet-marks';
-import type { DrawElement, StickerGeometry, TextMetrics, Weight } from './sticker-layout';
+import {
+  type DrawElement,
+  type StickerGeometry,
+  type TextMetrics,
+  textLeft,
+  type Weight,
+} from './sticker-layout';
 
 /**
  * True-size vector PDF output (pdfkit). One PDF page = one physical sheet at exact size
@@ -200,7 +206,9 @@ export function drawElements(
         doc.save();
         if (el.radius) doc.roundedRect(ox + el.x, oy + el.y, el.w, el.h, el.radius);
         else doc.rect(ox + el.x, oy + el.y, el.w, el.h);
-        if (el.fill) doc.fill(el.fill);
+        if (el.fill && el.stroke)
+          doc.lineWidth(el.lineWidth ?? 0.5).fillAndStroke(el.fill, el.stroke);
+        else if (el.fill) doc.fill(el.fill);
         else if (el.stroke) {
           if (el.dash) doc.dash(el.dash, { space: el.dash });
           doc.lineWidth(el.lineWidth ?? 0.5).stroke(el.stroke);
@@ -215,8 +223,25 @@ export function drawElements(
           .fill(el.fill);
         doc.restore();
         break;
+      case 'ellipse':
+        doc.save();
+        doc.ellipse(ox + el.cx, oy + el.cy, el.rx, el.ry);
+        if (el.fill && el.stroke)
+          doc.lineWidth(el.lineWidth ?? 0.5).fillAndStroke(el.fill, el.stroke);
+        else if (el.fill) doc.fill(el.fill);
+        else if (el.stroke) doc.lineWidth(el.lineWidth ?? 0.5).stroke(el.stroke);
+        doc.restore();
+        break;
+      case 'group':
+        doc.save();
+        if (el.clip) doc.rect(ox + el.clip.x, oy + el.clip.y, el.clip.w, el.clip.h).clip();
+        if (el.rotate)
+          doc.rotate(el.rotate.deg, { origin: [ox + el.rotate.cx, oy + el.rotate.cy] });
+        drawElements(doc, el.children, ox, oy);
+        doc.restore();
+        break;
       case 'text': {
-        const left = el.anchor === 'middle' ? el.x - el.width / 2 : el.x;
+        const left = textLeft(el);
         doc.save();
         if (el.rotate) doc.rotate(el.rotate, { origin: [ox + el.x, oy + el.y] });
         doc

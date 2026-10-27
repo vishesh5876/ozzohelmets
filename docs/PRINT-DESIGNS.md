@@ -51,6 +51,45 @@ zone is never printed with base artwork (it is the separate removable cover). Ev
 before this setting keeps `false`, so batches already printed with it re-export identically. The
 editor's "Design on top (recommended)" checkbox switches it (preview `?artworkOnTop=1|0`).
 
+### Print Studio (design in the admin)
+
+**Design in Print Studio** (Print Designs → _Design in Print Studio_, route
+`/print-designs/:id/studio`) builds the whole sticker and its cover from layers instead of an
+uploaded file: text (multi-line, size, bold, colour, alignment, letter spacing, line height),
+boxes (fill, border, corner radius), circles/ellipses, arrows, images/logos (PNG or sanitized
+SVG, uploaded with `role=image`) and a background image. Every layer can be moved, resized,
+rotated, hidden, locked and re-ordered; the canvas snaps to edges, the locked areas and other
+layers; undo/redo, nudging and duplication have keyboard shortcuts. _OZZO starter template_
+fills the canvas with the OZZO layout (red panel, logo box, emergency headline, SCAN TO VIEW
+bar, white frames around the ID and QR, yellow SECURITY COVER).
+
+- **Locked system areas.** The Safety ID, PIN and QR are drawn on the canvas at their true
+  positions from `GET /admin/print-designs/studio/geometry` (the engine's own geometry). They
+  can't be moved: the cover die is cut to fit over them. Layers may run under them; the white
+  keep-clear boxes are printed on top, and validation warns when a layer is partly covered.
+- **Pieces.** Each layer prints on the `sticker` (clipped at the base | cover kiss cut), the
+  removable `cover` (clipped to the cover print box) or `both`. The cover is either the
+  standard yellow cover or the admin's own design (`defaultCover: false`, own background).
+- **Exact preview.** The Studio's _Print preview_ renders the unsaved document through the
+  production engine (`POST /admin/print-designs/studio/preview/unit.svg`, sample data,
+  nothing stored).
+- **Storage.** `print_designs.studio_document` (JSONB, migration
+  `20261028090000_print_design_studio`); `base_artwork_file_id` / `artwork_type` are null for
+  studio designs (CHECK: exactly one of artwork file / studio document). The document is parsed
+  strictly on every write and every print (`parseStudioDocument`: whitelisted fields, #RRGGBB
+  colours, ranged numbers, safe ids, ≤ 200 layers, ≤ 500 characters per text). Image layers
+  reference `print_artwork_files` ids; each file is SHA-256-verified before every print,
+  exactly like base artwork. Versioning, locking, activation, batch binding and test prints
+  are unchanged. Audit records the document hash (`designSha256.studio`) and image hashes.
+- **Rendering.** Text and shapes are vector PDF content in the sticker fonts (Helvetica, or the
+  configured `PRINT_FONT_*`); images are embedded once per PDF, never stretched (contain /
+  cover inside the layer box). Drawing order: sticker background → sticker layers →
+  keep-clear boxes → ID, PIN, QR → cover marks → cover (background + cover layers, or the
+  default cover).
+- **Validation.** Errors: a missing image file, a test-only image, an image below 300 DPI at
+  its placed size. Warnings: layers under the keep-clear boxes, off-piece layers, cover layers
+  while the default cover is on, text below 4 pt.
+
 ## 2. Data model
 
 `print_artwork_files` (immutable, content-addressed): `storage_key` (`print-designs/<uuid>.svg|png`,
@@ -158,13 +197,14 @@ need a separate _Advanced Print Layout Editor_ with its own validation (not buil
 
 ## 8. API and permissions
 
-| Endpoint                                                                                                    | Permission              |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `GET /admin/print-designs`, `/active`, `/:id`, previews, `test-print.pdf`                                   | `print-design:view`     |
-| `POST /admin/print-designs/artwork` (multipart `file`, `role`, `testOnly`)                                  | `print-design:manage`   |
-| `POST /admin/print-designs`, `PATCH /:id`, `POST /:id/new-version`, `/duplicate`, `/archive`, `DELETE /:id` | `print-design:manage`   |
-| `POST /admin/print-designs/:id/activate`                                                                    | `print-design:activate` |
-| `POST /admin/safety-id-batches` `{ printDesignId? }`                                                        | `safety-ids:generate`   |
+| Endpoint                                                                                                       | Permission              |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `GET /admin/print-designs`, `/active`, `/:id`, previews, `test-print.pdf`                                      | `print-design:view`     |
+| `POST /admin/print-designs/artwork` (multipart `file`, `role` = base/cover/image, `testOnly`)                  | `print-design:manage`   |
+| `GET /admin/print-designs/artwork/:fileId/content`, `GET …/studio/geometry`, `POST …/studio/preview/:kind.svg` | `print-design:view`     |
+| `POST /admin/print-designs`, `PATCH /:id`, `POST /:id/new-version`, `/duplicate`, `/archive`, `DELETE /:id`    | `print-design:manage`   |
+| `POST /admin/print-designs/:id/activate`                                                                       | `print-design:activate` |
+| `POST /admin/safety-id-batches` `{ printDesignId? }`                                                           | `safety-ids:generate`   |
 
 Roles: SUPER_ADMIN all; ADMIN view / manage / activate; MANUFACTURING view (and choose a design
 when creating a batch); SUPPORT and ANALYTICS_VIEWER none. Test-only uploads: SUPER_ADMIN only.

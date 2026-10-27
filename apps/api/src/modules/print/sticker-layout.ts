@@ -1,4 +1,4 @@
-import { mmToPt } from '@helmet/types';
+import { mmToPt, type StudioDocument, type StudioLayer, studioImageBox } from '@helmet/types';
 import * as QRCode from 'qrcode';
 import {
   type ArtworkAsset,
@@ -63,13 +63,32 @@ export type DrawElement =
     }
   | { kind: 'polygon'; role: string; points: [number, number][]; fill: string }
   | {
+      kind: 'ellipse';
+      role: string;
+      cx: number;
+      cy: number;
+      rx: number;
+      ry: number;
+      fill?: string;
+      stroke?: string;
+      lineWidth?: number;
+    }
+  | {
+      /** Children clipped to `clip` (unit coordinates), then rotated about (cx, cy). */
+      kind: 'group';
+      role: string;
+      clip?: Box;
+      rotate?: { deg: number; cx: number; cy: number };
+      children: DrawElement[];
+    }
+  | {
       kind: 'text';
       role: string;
       text: string;
-      /** Left of the baseline ('start') or its centre ('middle'); rotation origin. */
+      /** Left of the baseline ('start'), its centre ('middle') or its right ('end'); rotation origin. */
       x: number;
       y: number;
-      anchor: 'start' | 'middle';
+      anchor: 'start' | 'middle' | 'end';
       rotate: 0 | -90;
       weight: Weight;
       size: number;
@@ -266,10 +285,173 @@ export interface LayoutContext {
      */
     onTop?: boolean;
   };
+  /** Print Studio design (layers). Mutually exclusive with `artwork`. */
+  studio?: StudioContext;
   /** Sample-data test print: every unit is visibly marked TEST PRINT. */
   testPrint?: boolean;
   /** Layout bleed (pt): artwork reaching a trim edge continues this far past it. */
   bleed?: number;
+}
+
+export interface StudioContext {
+  document: StudioDocument;
+  /** Image layer assets by print artwork file id (hash-verified by the caller). */
+  images: ReadonlyMap<string, ArtworkAsset>;
+}
+
+/** Left edge of a text element's ink box from its anchor. */
+export function textLeft(el: { x: number; width: number; anchor: 'start' | 'middle' | 'end' }) {
+  return el.anchor === 'middle'
+    ? el.x - el.width / 2
+    : el.anchor === 'end'
+      ? el.x - el.width
+      : el.x;
+}
+
+/**
+ * One studio layer as drawing elements (unit coordinates), wrapped in a group when rotated.
+ * Text is one element per line (no wrapping), images keep their aspect ratio (contain / cover,
+ * clipped to the layer box), shapes are vectors.
+ */
+export function studioLayerElements(
+  layer: StudioLayer,
+  images: ReadonlyMap<string, ArtworkAsset>,
+  m: TextMetrics,
+): DrawElement[] {
+  const els: DrawElement[] = [];
+  const role = `studio-${layer.kind}`;
+  switch (layer.kind) {
+    case 'text': {
+      const weight: Weight = layer.bold ? 'bold' : 'regular';
+      const cap = m.capHeight(weight) * layer.sizePt;
+      const anchor =
+        layer.align === 'center' ? 'middle' : layer.align === 'right' ? 'end' : 'start';
+      const x =
+        layer.align === 'center'
+          ? layer.x + layer.w / 2
+          : layer.align === 'right'
+            ? layer.x + layer.w
+            : layer.x;
+      layer.text.split('\n').forEach((line, i) => {
+        if (!line.trim()) return;
+        els.push({
+          kind: 'text',
+          role,
+          text: line,
+          x,
+          y: layer.y + cap + i * layer.sizePt * layer.lineHeight,
+          anchor,
+          rotate: 0,
+          weight,
+          size: layer.sizePt,
+          fill: layer.color,
+          characterSpacing: layer.letterSpacingPt,
+          width: m.width(line, weight, layer.sizePt, layer.letterSpacingPt),
+          capHeight: cap,
+        });
+      });
+      break;
+    }
+    case 'rect': {
+      const stroke = layer.stroke && layer.strokePt > 0 ? layer.stroke : undefined;
+      // The border is drawn inside the box (inset by half its width), as in the editor.
+      const i = stroke ? layer.strokePt / 2 : 0;
+      els.push({
+        kind: 'rect',
+        role,
+        x: layer.x + i,
+        y: layer.y + i,
+        w: Math.max(0.01, layer.w - 2 * i),
+        h: Math.max(0.01, layer.h - 2 * i),
+        fill: layer.fill ?? undefined,
+        stroke,
+        lineWidth: stroke ? layer.strokePt : undefined,
+        radius: layer.radiusPt
+          ? Math.min(layer.radiusPt, (layer.w - 2 * i) / 2, (layer.h - 2 * i) / 2)
+          : undefined,
+      });
+      break;
+    }
+    case 'ellipse': {
+      const stroke = layer.stroke && layer.strokePt > 0 ? layer.stroke : undefined;
+      const i = stroke ? layer.strokePt / 2 : 0;
+      els.push({
+        kind: 'ellipse',
+        role,
+        cx: layer.x + layer.w / 2,
+        cy: layer.y + layer.h / 2,
+        rx: Math.max(0.01, layer.w / 2 - i),
+        ry: Math.max(0.01, layer.h / 2 - i),
+        fill: layer.fill ?? undefined,
+        stroke,
+        lineWidth: stroke ? layer.strokePt : undefined,
+      });
+      break;
+    }
+    case 'arrow': {
+      const mid = layer.y + layer.h / 2;
+      const head = Math.min(layer.w * 0.6, layer.h);
+      const tip = layer.x + layer.w;
+      const headBase = tip - head;
+      const t = Math.min(layer.strokePt, layer.h);
+      if (headBase > layer.x)
+        els.push({
+          kind: 'rect',
+          role,
+          x: layer.x,
+          y: mid - t / 2,
+          w: headBase - layer.x + 0.2,
+          h: t,
+          fill: layer.color,
+        });
+      els.push({
+        kind: 'polygon',
+        role,
+        points: [
+          [tip, mid],
+          [headBase, layer.y],
+          [headBase, layer.y + layer.h],
+        ],
+        fill: layer.color,
+      });
+      break;
+    }
+    case 'image': {
+      const art = images.get(layer.fileId);
+      if (!art) throw new StickerLayoutError(`Image for layer "${layer.name}" is not available.`);
+      els.push({
+        kind: 'artwork',
+        role,
+        artwork: art,
+        ...studioImageBox(layer, artworkAspect(art)),
+        clip: { x: layer.x, y: layer.y, w: layer.w, h: layer.h },
+      });
+      break;
+    }
+  }
+  if (!layer.rotate || !els.length) return els;
+  return [
+    {
+      kind: 'group',
+      role,
+      rotate: { deg: layer.rotate, cx: layer.x + layer.w / 2, cy: layer.y + layer.h / 2 },
+      children: els,
+    },
+  ];
+}
+
+/** Studio layers printed on one piece, clipped to it. */
+function studioPiece(
+  ctx: StudioContext,
+  piece: 'sticker' | 'cover',
+  clip: Box,
+  m: TextMetrics,
+): DrawElement {
+  const children: DrawElement[] = [];
+  for (const l of ctx.document.layers)
+    if (!l.hidden && (l.part === piece || l.part === 'both'))
+      children.push(...studioLayerElements(l, ctx.images, m));
+  return { kind: 'group', role: `studio-${piece}`, clip, children };
 }
 
 const EDGE_EPS = 0.01;
@@ -460,7 +642,24 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
   };
   const cap = (weight: Weight, size: number) => m.capHeight(weight) * size;
 
-  if (ctx.artwork) {
+  if (ctx.studio) {
+    // ── Print Studio design: background → layers (clipped at the base | cover kiss cut) →
+    // keep-clear boxes → ID, PIN, QR. The layers can never cover the QR, PIN or ID.
+    const b = ctx.bleed ?? 0;
+    const sticker = {
+      x: 0 - b,
+      y: 0 - b,
+      w: g.zones.credential.x + g.zones.credential.w + b,
+      h: UNIT_H + 2 * b,
+    };
+    out.push({
+      kind: 'rect',
+      role: 'studio-background',
+      ...sticker,
+      fill: ctx.studio.document.stickerBackground ?? white,
+    });
+    out.push(studioPiece(ctx.studio, 'sticker', sticker, m), ...keepClear(data, g, m));
+  } else if (ctx.artwork) {
     // ── Admin artwork (Print Design) ─────────────────────────────────────────────────────────
     const b = ctx.bleed ?? 0;
     const cred = g.zones.credential;
@@ -655,7 +854,16 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
     });
   }
 
-  if (ctx.artwork?.cover) {
+  if (ctx.studio && !ctx.studio.document.defaultCover) {
+    // ── Studio cover: background + cover layers, clipped to the cover print box ──────────────
+    out.push({
+      kind: 'rect',
+      role: 'studio-cover-background',
+      ...g.coverYellow,
+      fill: ctx.studio.document.coverBackground ?? white,
+    });
+    out.push(studioPiece(ctx.studio, 'cover', g.coverYellow, m));
+  } else if (ctx.artwork?.cover) {
     // ── Custom cover artwork: fills the cover print box (uniform, centred, clipped) ──────────
     const art = ctx.artwork.cover;
     out.push({
@@ -841,6 +1049,37 @@ export function elementBounds(el: DrawElement): Box {
     }
     case 'qr':
       return { x: el.x, y: el.y, w: el.size, h: el.size };
+    case 'ellipse':
+      return { x: el.cx - el.rx, y: el.cy - el.ry, w: 2 * el.rx, h: 2 * el.ry };
+    case 'group': {
+      if (el.clip && !el.rotate) return el.clip;
+      const bs = el.children.map(elementBounds);
+      if (!bs.length) return { x: 0, y: 0, w: 0, h: 0 };
+      let x0 = Math.min(...bs.map((b) => b.x));
+      let y0 = Math.min(...bs.map((b) => b.y));
+      let x1 = Math.max(...bs.map((b) => b.x + b.w));
+      let y1 = Math.max(...bs.map((b) => b.y + b.h));
+      if (el.rotate) {
+        // Conservative: the rotated box's circumscribed square around the rotation centre.
+        const { cx, cy } = el.rotate;
+        const r = Math.max(
+          ...[
+            [x0, y0],
+            [x1, y0],
+            [x0, y1],
+            [x1, y1],
+          ].map(([px, py]) => Math.hypot(px! - cx, py! - cy)),
+        );
+        [x0, y0, x1, y1] = [cx - r, cy - r, cx + r, cy + r];
+      }
+      if (el.clip) {
+        x0 = Math.max(x0, el.clip.x);
+        y0 = Math.max(y0, el.clip.y);
+        x1 = Math.min(x1, el.clip.x + el.clip.w);
+        y1 = Math.min(y1, el.clip.y + el.clip.h);
+      }
+      return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
+    }
     case 'polygon': {
       const xs = el.points.map((p) => p[0]);
       const ys = el.points.map((p) => p[1]);
@@ -858,7 +1097,7 @@ export function elementBounds(el: DrawElement): Box {
       };
     }
     case 'text': {
-      const left = el.anchor === 'middle' ? el.x - el.width / 2 : el.x;
+      const left = textLeft(el);
       if (el.rotate === -90)
         return { x: el.x - el.capHeight, y: el.y - el.width, w: el.capHeight, h: el.width };
       return { x: left, y: el.y - el.capHeight, w: el.width, h: el.capHeight };

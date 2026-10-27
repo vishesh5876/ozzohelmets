@@ -14,10 +14,14 @@ import {
   MIN_PANEL_PNG,
   RECOMMENDED_PANEL_PNG,
   MIN_PRINT_DPI,
+  parseStudioDocument,
   type PrintArtworkFileDto,
   type PrintArtworkRole,
   type PrintDesignDto,
   type PrintSheetLayout,
+  type StudioDocument,
+  StudioDocumentError,
+  studioImageIds,
   unitsPerSheet,
 } from '@helmet/types';
 import { AppException } from '../../common/http/app.exception';
@@ -42,8 +46,13 @@ import {
 } from '../print/artwork';
 import { lastSvgWarnings, SheetPdf } from '../print/pdf-renderer';
 import { type ContextOptions, PrintService } from '../print/print.service';
-import { geometryIssues, layoutUnit } from '../print/sticker-layout';
-import { type ArtworkFacts, checkDesign } from './design-validation';
+import {
+  geometryIssues,
+  layoutUnit,
+  StickerLayoutError,
+  type StudioContext,
+} from '../print/sticker-layout';
+import { type ArtworkFacts, checkDesign, checkStudio } from './design-validation';
 import { inspectPng, isPng } from './png-inspector';
 import { ArtworkError, sanitizeSvg } from './svg-sanitizer';
 
@@ -53,7 +62,28 @@ const include = {
   creator: { select: { id: true, name: true } },
 } satisfies Prisma.PrintDesignInclude;
 type DesignRow = Prisma.PrintDesignGetPayload<{ include: typeof include }>;
-type FileRow = DesignRow['baseArtwork'];
+type FileRow = NonNullable<DesignRow['baseArtwork']>;
+
+/** What a design version prints: one artwork file (+ cover), or a studio layer document. */
+interface DesignContent {
+  base: FileRow | null;
+  cover: FileRow | null;
+  studio: StudioDocument | null;
+  /** Image files the studio document references (found ones only). */
+  images: FileRow[];
+}
+
+/** Writable design fields (create / update / new version). */
+export type DesignInput = Partial<
+  {
+    name: string;
+    baseArtworkFileId: string;
+    coverArtworkFileId: string | null;
+    artworkOnTop: boolean;
+    /** Untrusted until parseStudioDocument() (null = switch back to uploaded artwork). */
+    studioDocument: unknown;
+  } & ArtworkPosition
+>;
 
 /** Loaded, hash-verified artwork for rendering. */
 export interface RenderableDesign {
@@ -63,9 +93,18 @@ export interface RenderableDesign {
   position: ArtworkPosition;
   /** Artwork drawn over the white Safety ID panel (QR, PIN, ID kept clear). */
   artworkOnTop: boolean;
-  base: ArtworkAsset;
+  /** ARTWORK designs. */
+  base: ArtworkAsset | null;
   cover: ArtworkAsset | null;
-  sha256: { base: string; cover: string | null };
+  /** STUDIO designs. */
+  studio: StudioContext | null;
+  sha256: {
+    base: string | null;
+    cover: string | null;
+    /** STUDIO: SHA-256 of the layer document and of each image file. */
+    studio?: string;
+    images?: Record<string, string>;
+  };
 }
 
 export interface UploadedFile {
@@ -196,8 +235,10 @@ export class PrintDesignsService {
       throw err;
     }
 
-    // Role-specific checks at upload (the design is re-validated authoritatively later).
+    // Role-specific checks at upload (the design is re-validated authoritatively later). Studio
+    // images have no fixed size: their DPI is checked where the design places them.
     let effectiveDpi: number | null = null;
+    if (role === 'image') facts.testOnly = false;
     if (role === 'base') {
       const [w, h] =
         format === 'SVG'
@@ -205,7 +246,7 @@ export class PrintDesignsService {
           : [facts.widthPx!, facts.heightPx!];
       if (!baseArtworkFit(w, h)) throw this.invalidArtwork(baseArtworkAspectMessage(w / h));
     }
-    if (format === 'PNG') {
+    if (format === 'PNG' && role !== 'image') {
       const box =
         role === 'base'
           ? placeBaseArtwork(facts.widthPx! / facts.heightPx!, {
@@ -280,37 +321,36 @@ export class PrintDesignsService {
       orderBy: [{ name: 'asc' }, { version: 'desc' }],
     });
     const usage = await this.usage(rows.map((r) => r.id));
-    return rows.map((r) => this.toDto(r, usage.get(r.id) ?? 0));
+    const files = await this.imageRows(rows);
+    return rows.map((r) => this.toDto(r, usage.get(r.id) ?? 0, files));
   }
 
   async get(id: string): Promise<PrintDesignDto> {
     const row = await this.findRow(id);
-    return this.toDto(row, (await this.usage([id])).get(id) ?? 0);
+    return this.toDto(row, (await this.usage([id])).get(id) ?? 0, await this.imageRows([row]));
   }
 
   async active(): Promise<PrintDesignDto | null> {
     const row = await this.prisma.printDesign.findFirst({ where: { status: 'ACTIVE' }, include });
-    return row ? this.toDto(row, (await this.usage([row.id])).get(row.id) ?? 0) : null;
+    return row
+      ? this.toDto(row, (await this.usage([row.id])).get(row.id) ?? 0, await this.imageRows([row]))
+      : null;
   }
 
   async create(
-    input: {
-      name: string;
-      baseArtworkFileId: string;
-      coverArtworkFileId?: string | null;
-      artworkOnTop?: boolean;
-    } & Partial<ArtworkPosition>,
+    input: DesignInput & { name: string },
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
   ): Promise<PrintDesignDto> {
+    if (input.baseArtworkFileId === undefined && input.studioDocument == null)
+      throw this.invalidArtwork('Upload an artwork file or build the design in the Print Studio.');
     const familyId = uuidv7();
     const row = await this.insertVersion(
       {
         familyId,
         version: 1,
         name: input.name,
-        baseArtworkFileId: input.baseArtworkFileId,
-        coverArtworkFileId: input.coverArtworkFileId ?? null,
+        content: await this.resolveContent(input, null),
         position: this.position(input),
         // New designs sit on top by default: nothing of the artwork is cut by the panel.
         artworkOnTop: input.artworkOnTop ?? true,
@@ -324,14 +364,7 @@ export class PrintDesignsService {
   /** Edits a DRAFT that no batch uses. Anything else is immutable: create a new version. */
   async update(
     id: string,
-    input: Partial<
-      {
-        name: string;
-        baseArtworkFileId: string;
-        coverArtworkFileId: string | null;
-        artworkOnTop: boolean;
-      } & ArtworkPosition
-    >,
+    input: DesignInput,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
   ): Promise<PrintDesignDto> {
@@ -342,26 +375,19 @@ export class PrintDesignsService {
         'This design version is locked (active, archived or used by a batch). Create a new version to change it.',
         HttpStatus.CONFLICT,
       );
-    const base = input.baseArtworkFileId
-      ? await this.fileRow(input.baseArtworkFileId)
-      : row.baseArtwork;
-    const coverId =
-      input.coverArtworkFileId === undefined ? row.coverArtworkFileId : input.coverArtworkFileId;
-    const cover = coverId ? await this.fileRow(coverId) : null;
+    const content = await this.resolveContent(input, row);
     const position = this.position({
       scalePercent: input.scalePercent ?? row.scalePercent,
       offsetXMm: input.offsetXMm ?? row.offsetXMm,
       offsetYMm: input.offsetYMm ?? row.offsetYMm,
     });
     const artworkOnTop = input.artworkOnTop ?? row.artworkOnTop;
-    const check = this.check(base, cover, position, artworkOnTop);
+    const check = this.check(content, position, artworkOnTop);
     await this.prisma.printDesign.update({
       where: { id },
       data: {
         name: input.name?.trim() ?? row.name,
-        baseArtworkFileId: base.id,
-        coverArtworkFileId: cover?.id ?? null,
-        artworkType: base.format,
+        ...this.contentData(content),
         ...position,
         artworkOnTop,
         validationErrors: check.errors,
@@ -376,18 +402,12 @@ export class PrintDesignsService {
   /** New DRAFT version in the same family (the source version is never modified). */
   async newVersion(
     id: string,
-    input: Partial<
-      {
-        name: string;
-        baseArtworkFileId: string;
-        coverArtworkFileId: string | null;
-        artworkOnTop: boolean;
-      } & ArtworkPosition
-    >,
+    input: DesignInput,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
   ): Promise<PrintDesignDto> {
     const src = await this.findRow(id);
+    const content = await this.resolveContent(input, src);
     const row = await this.prisma.$transaction(async (tx) => {
       // Serialise version numbering per family.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${src.familyId}))`;
@@ -400,11 +420,7 @@ export class PrintDesignsService {
           familyId: src.familyId,
           version: (max._max.version ?? 0) + 1,
           name: input.name ?? src.name,
-          baseArtworkFileId: input.baseArtworkFileId ?? src.baseArtworkFileId,
-          coverArtworkFileId:
-            input.coverArtworkFileId === undefined
-              ? src.coverArtworkFileId
-              : input.coverArtworkFileId,
+          content,
           position: this.position({
             scalePercent: input.scalePercent ?? src.scalePercent,
             offsetXMm: input.offsetXMm ?? src.offsetXMm,
@@ -435,8 +451,7 @@ export class PrintDesignsService {
         familyId: uuidv7(),
         version: 1,
         name: `${src.name} (copy)`.slice(0, 120),
-        baseArtworkFileId: src.baseArtworkFileId,
-        coverArtworkFileId: src.coverArtworkFileId,
+        content: await this.resolveContent({}, src),
         position: {
           scalePercent: src.scalePercent,
           offsetXMm: src.offsetXMm,
@@ -564,6 +579,8 @@ export class PrintDesignsService {
   async loadRenderable(id: string): Promise<RenderableDesign> {
     const row = await this.prisma.printDesign.findUnique({ where: { id }, include });
     if (!row) throw this.unavailable();
+    if (row.studioDocument !== null) return this.loadStudio(row);
+    if (!row.baseArtwork) throw this.unavailable();
     const base = await this.loadAsset(row.baseArtwork);
     const cover = row.coverArtwork ? await this.loadAsset(row.coverArtwork) : null;
     return {
@@ -578,15 +595,96 @@ export class PrintDesignsService {
       artworkOnTop: row.artworkOnTop,
       base,
       cover,
+      studio: null,
       sha256: { base: row.baseArtwork.sha256, cover: row.coverArtwork?.sha256 ?? null },
     };
   }
 
+  /** A studio design with every image file it uses, each verified by SHA-256. */
+  private async loadStudio(row: DesignRow): Promise<RenderableDesign> {
+    let document: StudioDocument;
+    try {
+      document = parseStudioDocument(row.studioDocument);
+    } catch {
+      throw this.unavailable();
+    }
+    const { images, sha } = await this.loadImages(document);
+    return {
+      id: row.id,
+      name: row.name,
+      version: row.version,
+      position: this.position({}),
+      artworkOnTop: true,
+      base: null,
+      cover: null,
+      studio: { document, images },
+      sha256: { base: null, cover: null, studio: studioSha(document), images: sha },
+    };
+  }
+
+  private async loadImages(
+    document: StudioDocument,
+  ): Promise<{ images: Map<string, ArtworkAsset>; sha: Record<string, string> }> {
+    const ids = studioImageIds(document);
+    const rows = ids.length
+      ? await this.prisma.printArtworkFile.findMany({ where: { id: { in: ids } } })
+      : [];
+    const images = new Map<string, ArtworkAsset>();
+    const sha: Record<string, string> = {};
+    for (const id of ids) {
+      const f = rows.find((r) => r.id === id);
+      if (!f) throw this.unavailable();
+      images.set(id, await this.loadAsset(f));
+      sha[id] = f.sha256;
+    }
+    return { images, sha };
+  }
+
   contextOptions(d: RenderableDesign, extra: ContextOptions = {}): ContextOptions {
+    if (d.studio) return { ...extra, studio: d.studio };
     return {
       ...extra,
-      artwork: { base: d.base, cover: d.cover, position: d.position, onTop: d.artworkOnTop },
+      artwork: { base: d.base!, cover: d.cover, position: d.position, onTop: d.artworkOnTop },
     };
+  }
+
+  /** The editor's locked overlay: where the system prints the ID, PIN, QR and the cover. */
+  studioGeometry() {
+    return this.print.studioGeometry(DEFAULT_PRINT_LAYOUT);
+  }
+
+  /**
+   * Live preview of an UNSAVED studio document through the production engine (sample data).
+   * Same validation and hash-verified image loading as printing; nothing is stored.
+   */
+  async previewStudio(
+    document: unknown,
+    kind: 'unit' | 'sheet',
+    layout: PrintSheetLayout,
+    opts: { guides?: boolean },
+  ): Promise<string> {
+    const doc = this.parseStudio(document);
+    const { images } = await this.loadImages(doc).catch(() => {
+      throw this.invalidArtwork('An image used by the design is missing. Upload it again.');
+    });
+    const ctx: ContextOptions = { studio: { document: doc, images }, guides: opts.guides };
+    try {
+      return kind === 'unit'
+        ? this.print.previewUnitSvg(layout, ctx)
+        : this.print.previewSheetSvg(layout, unitsPerSheet(layout), ctx);
+    } catch (err) {
+      if (err instanceof StickerLayoutError) throw this.invalidArtwork(err.message);
+      throw err;
+    }
+  }
+
+  /** Raw bytes of an artwork file for the editor canvas (sanitized SVG or the original PNG). */
+  async artworkContent(fileId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const f = await this.fileRow(fileId);
+    const asset = await this.loadAsset(f);
+    return asset.format === 'SVG'
+      ? { buffer: Buffer.from(asset.svg!, 'utf8'), mimeType: 'image/svg+xml' }
+      : { buffer: asset.png!, mimeType: 'image/png' };
   }
 
   // ── Previews and test print (sample data only) ──────────────────────────────────────────────
@@ -659,8 +757,7 @@ export class PrintDesignsService {
       familyId: string;
       version: number;
       name: string;
-      baseArtworkFileId: string;
-      coverArtworkFileId: string | null;
+      content: DesignContent;
       position: ArtworkPosition;
       artworkOnTop: boolean;
     },
@@ -669,9 +766,7 @@ export class PrintDesignsService {
   ): Promise<DesignRow> {
     const name = v.name?.trim();
     if (!name) throw this.invalidArtwork('Design name is required.');
-    const base = await this.fileRow(v.baseArtworkFileId, tx);
-    const cover = v.coverArtworkFileId ? await this.fileRow(v.coverArtworkFileId, tx) : null;
-    const check = this.check(base, cover, v.position, v.artworkOnTop);
+    const check = this.check(v.content, v.position, v.artworkOnTop);
     return tx.printDesign.create({
       data: {
         id: uuidv7(),
@@ -679,9 +774,7 @@ export class PrintDesignsService {
         version: v.version,
         name,
         status: 'DRAFT',
-        artworkType: base.format,
-        baseArtworkFileId: base.id,
-        coverArtworkFileId: cover?.id ?? null,
+        ...this.contentData(v.content),
         ...v.position,
         artworkOnTop: v.artworkOnTop,
         validationErrors: check.errors,
@@ -693,18 +786,99 @@ export class PrintDesignsService {
   }
 
   private check(
-    base: FileRow,
-    cover: FileRow | null,
+    content: DesignContent,
     position: ArtworkPosition,
     artworkOnTop: boolean,
-  ) {
+  ): { errors: string[]; warnings: string[] } {
+    const coverBox = this.print.geometry(DEFAULT_PRINT_LAYOUT).coverYellow;
+    if (content.studio)
+      return checkStudio(
+        content.studio,
+        new Map(content.images.map((f) => [f.id, this.facts(f)])),
+        this.print.studioGeometry(DEFAULT_PRINT_LAYOUT).keepClear,
+        coverBox,
+      );
     return checkDesign(
-      this.facts(base),
-      cover ? this.facts(cover) : null,
+      this.facts(content.base!),
+      content.cover ? this.facts(content.cover) : null,
       position,
-      this.print.geometry(DEFAULT_PRINT_LAYOUT).coverYellow,
+      coverBox,
       artworkOnTop,
     );
+  }
+
+  /**
+   * The content a write produces: a studio document given in the input (validated), new artwork
+   * ids, or otherwise the source version's content. Studio and artwork are exclusive.
+   */
+  private async resolveContent(
+    input: DesignInput,
+    src: DesignRow | null,
+    tx: PrismaTx = this.prisma,
+  ): Promise<DesignContent> {
+    const fromStudio = async (doc: StudioDocument): Promise<DesignContent> => {
+      const ids = studioImageIds(doc);
+      const images = ids.length
+        ? await tx.printArtworkFile.findMany({ where: { id: { in: ids } } })
+        : [];
+      return { base: null, cover: null, studio: doc, images };
+    };
+    if (input.studioDocument !== undefined && input.studioDocument !== null)
+      return fromStudio(this.parseStudio(input.studioDocument));
+    if (
+      src &&
+      src.studioDocument !== null &&
+      input.studioDocument !== null &&
+      input.baseArtworkFileId === undefined
+    )
+      return fromStudio(this.parseStudio(src.studioDocument));
+    const baseId = input.baseArtworkFileId ?? src?.baseArtworkFileId;
+    if (!baseId) throw this.invalidArtwork('Upload a base artwork file.');
+    const coverId =
+      input.coverArtworkFileId !== undefined
+        ? input.coverArtworkFileId
+        : src?.studioDocument == null
+          ? (src?.coverArtworkFileId ?? null)
+          : null;
+    return {
+      base: await this.fileRow(baseId, tx),
+      cover: coverId ? await this.fileRow(coverId, tx) : null,
+      studio: null,
+      images: [],
+    };
+  }
+
+  private contentData(c: DesignContent) {
+    return {
+      artworkType: c.base?.format ?? null,
+      baseArtworkFileId: c.base?.id ?? null,
+      coverArtworkFileId: c.cover?.id ?? null,
+      studioDocument: c.studio ? (c.studio as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    };
+  }
+
+  private parseStudio(doc: unknown): StudioDocument {
+    try {
+      return parseStudioDocument(doc);
+    } catch (err) {
+      if (err instanceof StudioDocumentError) throw this.invalidArtwork(err.message);
+      throw err;
+    }
+  }
+
+  /** Image files referenced by studio documents of these rows, by id. */
+  private async imageRows(rows: DesignRow[]): Promise<Map<string, FileRow>> {
+    const ids = new Set<string>();
+    for (const r of rows)
+      if (r.studioDocument !== null)
+        try {
+          for (const id of studioImageIds(parseStudioDocument(r.studioDocument))) ids.add(id);
+        } catch {
+          // An unreadable document shows as invalid in validation; no images to list.
+        }
+    if (!ids.size) return new Map();
+    const files = await this.prisma.printArtworkFile.findMany({ where: { id: { in: [...ids] } } });
+    return new Map(files.map((f) => [f.id, f]));
   }
 
   /**
@@ -717,7 +891,13 @@ export class PrintDesignsService {
       offsetXMm: row.offsetXMm,
       offsetYMm: row.offsetYMm,
     };
-    const check = this.check(row.baseArtwork, row.coverArtwork, position, row.artworkOnTop);
+    let check: { errors: string[]; warnings: string[] };
+    try {
+      check = this.check(await this.resolveContent({}, row), position, row.artworkOnTop);
+    } catch (err) {
+      if (!(err instanceof AppException)) throw err;
+      check = { errors: [err.message], warnings: [] };
+    }
     const errors = [...check.errors];
     const warnings = [...check.warnings];
     if (!errors.length) {
@@ -727,7 +907,10 @@ export class PrintDesignsService {
         const issues = geometryIssues(ctx.geometry);
         if (issues.length) errors.push(...issues);
         await renderSamplePdf(ctx, this.print);
-        for (const key of [d.base.key, d.cover?.key].filter(Boolean) as string[])
+        const keys = d.studio
+          ? [...d.studio.images.values()].map((a) => a.key)
+          : [d.base?.key, d.cover?.key];
+        for (const key of keys.filter(Boolean) as string[])
           for (const w of (lastSvgWarnings.get(key) ?? []).slice(0, 5))
             warnings.push(`Renderer: ${w}`);
       } catch (err) {
@@ -836,12 +1019,68 @@ export class PrintDesignsService {
     };
   }
 
-  private toDto(r: DesignRow, usedByBatches: number): PrintDesignDto {
+  private toDto(
+    r: DesignRow,
+    usedByBatches: number,
+    files: ReadonlyMap<string, FileRow>,
+  ): PrintDesignDto {
     const position = {
       scalePercent: r.scalePercent,
       offsetXMm: r.offsetXMm,
       offsetYMm: r.offsetYMm,
     };
+    const common = {
+      id: r.id,
+      familyId: r.familyId,
+      name: r.name,
+      version: r.version,
+      status: r.status,
+      artworkType: r.artworkType,
+      coverArtwork: r.coverArtwork ? this.fileDto(r.coverArtwork) : null,
+      ...position,
+      artworkOnTop: r.artworkOnTop,
+      validationErrors: (r.validationErrors as string[] | null) ?? [],
+      validationWarnings: (r.validationWarnings as string[] | null) ?? [],
+      locked: r.status !== 'DRAFT' || usedByBatches > 0,
+      usedByBatches,
+      createdBy: r.creator,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      activatedAt: r.activatedAt?.toISOString() ?? null,
+      archivedAt: r.archivedAt?.toISOString() ?? null,
+    };
+    if (r.studioDocument !== null || !r.baseArtwork) {
+      let doc: StudioDocument | null = null;
+      try {
+        doc = parseStudioDocument(r.studioDocument);
+      } catch {
+        doc = null;
+      }
+      const images = doc
+        ? studioImageIds(doc)
+            .map((id) => files.get(id))
+            .filter((f): f is FileRow => !!f)
+        : [];
+      const check = doc
+        ? checkStudio(doc, new Map(images.map((f) => [f.id, this.facts(f)])), [], {
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+          })
+        : null;
+      const hasPng = images.some((f) => f.format === 'PNG');
+      return {
+        ...common,
+        kind: 'STUDIO',
+        baseArtwork: null,
+        studioDocument: doc,
+        studioImages: images.map((f) => this.fileDto(f)),
+        effectiveDpi: check?.effectiveDpi ?? null,
+        quality: hasPng ? artworkQuality('PNG', check?.effectiveDpi ?? null) : 'VECTOR',
+        artworkSizeMm: { width: 114.3, height: 25.4 },
+      };
+    }
     const facts = this.facts(r.baseArtwork);
     const box = placeBaseArtwork(
       artworkAspect({
@@ -858,28 +1097,14 @@ export class PrintDesignsService {
         : null;
     const mmOf = (pt: number) => Math.round((pt * 25.4 * 100) / 72) / 100;
     return {
-      id: r.id,
-      familyId: r.familyId,
-      name: r.name,
-      version: r.version,
-      status: r.status,
-      artworkType: r.artworkType,
+      ...common,
+      kind: 'ARTWORK',
       baseArtwork: this.fileDto(r.baseArtwork),
-      coverArtwork: r.coverArtwork ? this.fileDto(r.coverArtwork) : null,
-      ...position,
-      artworkOnTop: r.artworkOnTop,
+      studioDocument: null,
+      studioImages: [],
       effectiveDpi: dpi,
       quality: artworkQuality(r.baseArtwork.format, dpi),
       artworkSizeMm: { width: mmOf(box.w), height: mmOf(box.h) },
-      validationErrors: (r.validationErrors as string[] | null) ?? [],
-      validationWarnings: (r.validationWarnings as string[] | null) ?? [],
-      locked: r.status !== 'DRAFT' || usedByBatches > 0,
-      usedByBatches,
-      createdBy: r.creator,
-      createdAt: r.createdAt.toISOString(),
-      updatedAt: r.updatedAt.toISOString(),
-      activatedAt: r.activatedAt?.toISOString() ?? null,
-      archivedAt: r.archivedAt?.toISOString() ?? null,
     };
   }
 
@@ -900,7 +1125,10 @@ export class PrintDesignsService {
         name: row.name,
         designVersion: row.version,
         familyId: row.familyId,
-        designSha256: { base: row.baseArtwork.sha256, cover: row.coverArtwork?.sha256 ?? null },
+        designSha256:
+          row.studioDocument !== null
+            ? { studio: studioSha(row.studioDocument) }
+            : { base: row.baseArtwork?.sha256 ?? null, cover: row.coverArtwork?.sha256 ?? null },
         ...extra,
       },
     });
@@ -927,6 +1155,21 @@ function lowResolutionMessage(widthPx: number, heightPx: number, dpi: number): s
   const min = panel ? MIN_PANEL_PNG : MIN_BASE_PNG;
   const rec = panel ? RECOMMENDED_PANEL_PNG : { widthPx: 2700, heightPx: 600 };
   return `PNG resolution too low: ${widthPx} × ${heightPx} px prints at ${dpi} DPI. Minimum ${min.widthPx} × ${min.heightPx} px (300 DPI); recommended ${rec.widthPx} × ${rec.heightPx} px (600 DPI). Low-resolution images are never upscaled.`;
+}
+
+/** SHA-256 of a studio document's canonical JSON (stable key order) for audit trails. */
+export function studioSha(doc: unknown): string {
+  const canon = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canon)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.keys(v as object)
+              .sort()
+              .map((k) => [k, canon((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return sha256(Buffer.from(JSON.stringify(canon(doc)), 'utf8'));
 }
 
 export function sha256(buf: Buffer): string {

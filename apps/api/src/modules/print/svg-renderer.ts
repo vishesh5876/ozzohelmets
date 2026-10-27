@@ -1,7 +1,7 @@
 import { type PrintSheetLayout, inToPt, placeUnit, unitsPerSheet } from '@helmet/types';
 import { planCuts, sheetSizePt } from './cut-lines';
 import { UNIT_H, UNIT_W } from './sticker-design';
-import type { DrawElement, StickerGeometry } from './sticker-layout';
+import { type DrawElement, type StickerGeometry, textLeft } from './sticker-layout';
 
 /**
  * Admin preview only (never a production file): the same display list as the PDF, as SVG in
@@ -23,8 +23,8 @@ export function elementsToSvg(elements: DrawElement[]): string {
       case 'rect': {
         const r = el.radius ? ` rx="${n(el.radius)}"` : '';
         const paint = el.fill
-          ? `fill="${el.fill}"`
-          : `fill="none" stroke="${el.stroke}" stroke-width="${n(el.lineWidth ?? 0.5)}"${
+          ? `fill="${el.fill}"${el.stroke ? ` stroke="${el.stroke}" stroke-width="${n(el.lineWidth ?? 0.5)}"` : ''}`
+          : `fill="none" stroke=""${el.stroke}" stroke-width="${n(el.lineWidth ?? 0.5)}"${
               el.dash ? ` stroke-dasharray="${n(el.dash)}"` : ''
             }`;
         out += `<rect x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}"${r} ${paint}/>`;
@@ -33,8 +33,25 @@ export function elementsToSvg(elements: DrawElement[]): string {
       case 'polygon':
         out += `<polygon points="${el.points.map(([x, y]) => `${n(x)},${n(y)}`).join(' ')}" fill="${el.fill}"/>`;
         break;
+      case 'ellipse':
+        out +=
+          `<ellipse cx="${n(el.cx)}" cy="${n(el.cy)}" rx="${n(el.rx)}" ry="${n(el.ry)}" fill="${el.fill ?? 'none'}"` +
+          (el.stroke ? ` stroke="${el.stroke}" stroke-width="${n(el.lineWidth ?? 0.5)}"` : '') +
+          '/>';
+        break;
+      case 'group': {
+        let inner = elementsToSvg(el.children);
+        if (el.rotate)
+          inner = `<g transform="rotate(${n(el.rotate.deg)} ${n(el.rotate.cx)} ${n(el.rotate.cy)})">${inner}</g>`;
+        const c = el.clip;
+        // A nested viewport clips without ids (the sheet preview reuses the unit via <use>).
+        out += c
+          ? `<svg x="${n(c.x)}" y="${n(c.y)}" width="${n(c.w)}" height="${n(c.h)}" viewBox="${n(c.x)} ${n(c.y)} ${n(c.w)} ${n(c.h)}" overflow="hidden">${inner}</svg>`
+          : inner;
+        break;
+      }
       case 'text': {
-        const left = el.anchor === 'middle' ? el.x - el.width / 2 : el.x;
+        const left = textLeft(el);
         const rot = el.rotate ? ` transform="rotate(${el.rotate} ${n(el.x)} ${n(el.y)})"` : '';
         out +=
           `<text x="${n(left)}" y="${n(el.y)}"${rot} font-family="Helvetica, Arial, sans-serif"` +

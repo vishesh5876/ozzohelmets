@@ -8,6 +8,9 @@ import {
   effectiveDpi,
   MIN_BASE_PNG,
   PANEL_ARTWORK_WIDTH_IN,
+  parseStudioDocument,
+  StudioDocumentError,
+  type StudioTextLayer,
 } from '@helmet/types';
 import {
   artworkAspect,
@@ -18,9 +21,9 @@ import {
   PANEL_W,
 } from '../print/artwork';
 import { UNIT_H, UNIT_W } from '../print/sticker-design';
-import { type ArtworkFacts, checkDesign } from './design-validation';
+import { type ArtworkFacts, checkDesign, checkStudio } from './design-validation';
 import { inspectPng, readPngHeader } from './png-inspector';
-import { safeFilename, sha256 } from './print-designs.service';
+import { safeFilename, sha256, studioSha } from './print-designs.service';
 import { ArtworkError, sanitizeSvg } from './svg-sanitizer';
 
 const FIX = join(__dirname, '../../../test/fixtures/print');
@@ -344,5 +347,133 @@ describe('helpers', () => {
 
   it('ArtworkError is the only rejection type surfaced to admins', () => {
     expect(new ArtworkError('x')).toBeInstanceOf(Error);
+  });
+});
+
+describe('Print Studio documents (untrusted input)', () => {
+  const ok = {
+    version: 1,
+    stickerBackground: '#ec1c22',
+    coverBackground: null,
+    defaultCover: true,
+    layers: [
+      {
+        id: 'a1',
+        kind: 'text',
+        name: 'Title',
+        part: 'sticker',
+        x: 5,
+        y: 5,
+        w: 80,
+        h: 9,
+        text: 'IN AN EMERGENCY',
+        sizePt: 12,
+        color: '#ffffff',
+        evil: '<script>',
+      },
+    ],
+  };
+
+  it('keeps only known fields, normalises colours and defaults', () => {
+    const d = parseStudioDocument(ok);
+    expect(d.stickerBackground).toBe('#EC1C22');
+    const t = d.layers[0] as StudioTextLayer;
+    expect(t.color).toBe('#FFFFFF');
+    expect(t.align).toBe('left');
+    expect(t.rotate).toBe(0);
+    expect('evil' in t).toBe(false);
+  });
+
+  it.each([
+    [{ ...ok, version: 2 }, /version/],
+    [{ ...ok, layers: [{ ...ok.layers[0], color: 'red;fill:url(x)' }] }, /#RRGGBB/],
+    [{ ...ok, layers: [{ ...ok.layers[0], kind: 'script' }] }, /kind/],
+    [{ ...ok, layers: [{ ...ok.layers[0], x: Number.NaN }] }, /x must be/],
+    [{ ...ok, layers: [{ ...ok.layers[0], sizePt: 500 }] }, /font size/],
+    [{ ...ok, layers: [{ ...ok.layers[0], text: 'a\u0000b' }] }, /control/],
+    [{ ...ok, layers: [ok.layers[0], ok.layers[0]] }, /duplicate id/],
+    [{ ...ok, layers: [{ ...ok.layers[0], id: '"><svg' }] }, /bad id/],
+    [
+      { ...ok, layers: [{ ...ok.layers[0], kind: 'image', fileId: '../../etc/passwd' }] },
+      /choose an image/,
+    ],
+    [
+      { ...ok, layers: [{ ...ok.layers[0], kind: 'rect', fill: null, stroke: null }] },
+      /fill or a border/,
+    ],
+    [
+      { ...ok, layers: Array.from({ length: 201 }, (_, i) => ({ ...ok.layers[0], id: `x${i}` })) },
+      /At most/,
+    ],
+  ])('rejects %#', (input, msg) => {
+    expect(() => parseStudioDocument(input)).toThrow(StudioDocumentError);
+    expect(() => parseStudioDocument(input)).toThrow(msg);
+  });
+
+  const geo = {
+    keepClear: [{ x: 174, y: 4, w: 58, h: 64 }],
+    cover: { x: 248, y: 0, w: 68, h: 72 },
+  };
+  const imageLayer = (w: number, h: number) =>
+    parseStudioDocument({
+      ...ok,
+      layers: [
+        {
+          id: 'i1',
+          kind: 'image',
+          name: 'Logo',
+          part: 'sticker',
+          x: 2,
+          y: 2,
+          w,
+          h,
+          fileId: '0190f0a0-0000-7000-8000-000000000001',
+        },
+      ],
+    });
+  const pngFacts = (w: number, h: number): ArtworkFacts => ({
+    format: 'PNG',
+    widthPx: w,
+    heightPx: h,
+    viewBox: null,
+    testOnly: false,
+    warnings: [],
+  });
+
+  it('checks image DPI where the layer places it, and missing files', () => {
+    const id = '0190f0a0-0000-7000-8000-000000000001';
+    // 600 × 300 px drawn 72 × 36 pt (1 × 0.5 in) = 600 DPI; at 4 × 2 in = 150 DPI.
+    expect(
+      checkStudio(imageLayer(72, 36), new Map([[id, pngFacts(600, 300)]]), [], geo.cover),
+    ).toMatchObject({
+      errors: [],
+      effectiveDpi: 600,
+    });
+    expect(
+      checkStudio(imageLayer(288, 144), new Map([[id, pngFacts(600, 300)]]), [], geo.cover)
+        .errors[0],
+    ).toMatch(/150 DPI/);
+    expect(checkStudio(imageLayer(72, 36), new Map(), [], geo.cover).errors[0]).toMatch(/missing/);
+  });
+
+  it('warns about layers under the keep-clear boxes, off-piece layers and tiny text', () => {
+    const d = parseStudioDocument({
+      ...ok,
+      defaultCover: true,
+      layers: [
+        { ...ok.layers[0], id: 'a', x: 170, sizePt: 3.5 },
+        { ...ok.layers[0], id: 'b', x: 250 },
+        { ...ok.layers[0], id: 'c', part: 'cover', x: 260 },
+      ],
+    });
+    const w = checkStudio(d, new Map(), geo.keepClear, geo.cover).warnings.join('\n');
+    expect(w).toMatch(/runs under the white QR/);
+    expect(w).toMatch(/hard to read/);
+    expect(w).toMatch(/won't print/);
+    expect(w).toMatch(/default yellow cover is selected/);
+  });
+
+  it('studio document hash is stable regardless of key order', () => {
+    expect(studioSha({ b: 1, a: [{ y: 2, x: 1 }] })).toBe(studioSha({ a: [{ x: 1, y: 2 }], b: 1 }));
   });
 });

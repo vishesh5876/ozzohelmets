@@ -38,6 +38,11 @@ const PrintDesignEditorPage = lazy(() =>
     default: m.PrintDesignEditorPage,
   })),
 );
+const PrintStudioPage = lazy(() =>
+  import('./features/print-designs/studio/PrintStudioPage').then((m) => ({
+    default: m.PrintStudioPage,
+  })),
+);
 const AuditLogsPage = lazy(() =>
   import('./features/audit/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })),
 );
@@ -209,6 +214,14 @@ export function App() {
           element={
             <Guard permission={Permission.PRINT_DESIGN_VIEW}>
               <PrintDesignsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="print-designs/:id/studio"
+          element={
+            <Guard permission={Permission.PRINT_DESIGN_VIEW}>
+              <PrintStudioPage />
             </Guard>
           }
         />

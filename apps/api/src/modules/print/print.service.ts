@@ -14,6 +14,7 @@ import {
   type PrintSheetLayout,
   type SafetyIdPrintStatusDto,
   type SafetyIdStickerGeometryDto,
+  type StudioGeometryDto,
   unitsPerSheet,
   validatePrintLayout,
 } from '@helmet/types';
@@ -24,6 +25,7 @@ import { createTextMetrics, type PrintFonts } from './pdf-renderer';
 import { COVER_OVERLAP, CUT_TOL, STICKER_DESIGN, UNIT_H, UNIT_W } from './sticker-design';
 import {
   computeStickerGeometry,
+  keepClearBoxes,
   type LayoutContext,
   layoutUnit,
   qrMatrix,
@@ -40,6 +42,7 @@ export interface ContextOptions {
   proof?: boolean;
   guides?: boolean;
   artwork?: LayoutContext['artwork'];
+  studio?: LayoutContext['studio'];
   testPrint?: boolean;
 }
 const mm = (pt: number) => Math.round(pt * PT_TO_MM * 100) / 100;
@@ -125,6 +128,7 @@ export class PrintService {
       proof: opts.proof,
       guides: opts.guides,
       artwork: opts.artwork,
+      studio: opts.studio,
       testPrint: opts.testPrint,
       bleed: mmToPt(layout.bleedMm),
     };
@@ -188,6 +192,39 @@ export class PrintService {
       },
       safeAreaMm: layout.safeAreaMm,
       cutToleranceMm: mm(CUT_TOL),
+    };
+  }
+
+  /** The locked system areas the Print Studio editor draws over its canvas (unit points). */
+  studioGeometry(layout: PrintSheetLayout = DEFAULT_PRINT_LAYOUT): StudioGeometryDto {
+    const g = this.geometry(layout);
+    const sample = this.sampleUnit();
+    const r = (v: number) => Math.round(v * 1000) / 1000;
+    const box = (b: { x: number; y: number; w: number; h: number }) => ({
+      x: r(b.x),
+      y: r(b.y),
+      w: r(b.w),
+      h: r(b.h),
+    });
+    return {
+      unit: { w: UNIT_W, h: UNIT_H },
+      coverZoneX: r(g.zones.cover.x),
+      keepClear: keepClearBoxes(sample, g, this.metrics).map((b) => ({
+        ...box(b),
+        radius: 1,
+      })),
+      qr: box(g.qrBox),
+      pin: {
+        x: r(g.target.x + g.target.w / 2),
+        baselineY: r(g.pinBaselineY),
+        sizePt: STICKER_DESIGN.pin.fontPt,
+      },
+      id: { baselineX: r(g.idBaselineX), centerY: UNIT_H / 2, sizePt: STICKER_DESIGN.id.fontPt },
+      coverFootprint: box(g.coverFootprint),
+      coverDie: box(g.coverDie),
+      coverPrint: box(g.coverYellow),
+      safeInset: r(g.safeInset),
+      sample: { safetyCode: sample.safetyCode, pin: sample.pin },
     };
   }
 

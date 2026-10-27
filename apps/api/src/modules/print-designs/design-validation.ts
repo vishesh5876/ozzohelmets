@@ -5,6 +5,10 @@ import {
   baseArtworkFit,
   MIN_PRINT_DPI,
   type PrintArtworkFormat,
+  STUDIO_COVER_ZONE_X,
+  STUDIO_MIN_READABLE_PT,
+  type StudioDocument,
+  studioImageBox,
 } from '@helmet/types';
 import {
   type ArtworkPosition,
@@ -134,4 +138,67 @@ export function checkDesign(
     }
   }
   return { errors, warnings, effectiveDpi, baseBox };
+}
+
+/**
+ * Static rules for a Print Studio design (no I/O). `images` holds the facts of every image file
+ * the document references (missing = not found). `keepClear` are the white boxes over the QR, PIN
+ * and Safety ID; `coverBox` the cover print box (unit points).
+ */
+export function checkStudio(
+  doc: StudioDocument,
+  images: ReadonlyMap<string, ArtworkFacts>,
+  keepClear: Box[],
+  coverBox: Box,
+): { errors: string[]; warnings: string[]; effectiveDpi: number | null } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  let minDpi: number | null = null;
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const visible = doc.layers.filter((l) => !l.hidden);
+  if (!visible.length && doc.defaultCover)
+    warnings.push('The design has no layers yet: only the background colour prints.');
+  for (const l of visible) {
+    const name = `Layer "${l.name}"`;
+    if (l.kind === 'image') {
+      const f = images.get(l.fileId);
+      if (!f) {
+        errors.push(`${name}: its image file is missing. Upload it again.`);
+        continue;
+      }
+      warnings.push(...f.warnings.map((w) => `${name}: ${w}`));
+      if (f.testOnly)
+        errors.push(`${name}: test-only low-resolution image, not usable for production.`);
+      if (f.format === 'PNG') {
+        const box = studioImageBox(l, factsAspect(f));
+        const dpi = drawnDpi(f.widthPx!, f.heightPx!, box);
+        minDpi = minDpi === null ? dpi : Math.min(minDpi, dpi);
+        if (dpi < MIN_PRINT_DPI)
+          errors.push(
+            `${name} prints at ${dpi} DPI at this size — too low for production (minimum ${MIN_PRINT_DPI} DPI). Use a larger image or make the layer smaller.`,
+          );
+      }
+    }
+    if (l.kind === 'text' && l.sizePt < STUDIO_MIN_READABLE_PT)
+      warnings.push(`${name}: ${l.sizePt} pt text may be hard to read once printed.`);
+    const box = { x: l.x, y: l.y, w: l.w, h: l.h };
+    if (l.part !== 'cover') {
+      if (keepClear.some((k) => overlaps(box, k)))
+        warnings.push(
+          `${name} runs under the white QR / PIN / Safety ID boxes: that part is covered so the QR always scans.`,
+        );
+      if (l.part === 'sticker' && l.x >= STUDIO_COVER_ZONE_X)
+        warnings.push(
+          `${name} is right of the sticker's edge (on the cover zone) and won't print.`,
+        );
+    }
+    if (l.part === 'cover') {
+      if (doc.defaultCover)
+        warnings.push(`${name} is on the cover, but the default yellow cover is selected.`);
+      else if (!overlaps(box, coverBox))
+        warnings.push(`${name} is outside the cover's print area and won't print.`);
+    }
+  }
+  return { errors, warnings: [...new Set(warnings)], effectiveDpi: minDpi };
 }

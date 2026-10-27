@@ -21,6 +21,7 @@ import {
   Permission,
   type PrintArtworkFileDto,
   type PrintDesignDto,
+  type StudioGeometryDto,
   unitsPerSheet,
 } from '@helmet/types';
 import { RawResponse } from '../../common/http/raw-response.decorator';
@@ -32,6 +33,7 @@ import { PrintService } from '../print/print.service';
 import {
   CreatePrintDesignDto,
   PrintDesignListQueryDto,
+  StudioPreviewDto,
   UpdatePrintDesignDto,
   UploadArtworkDto,
 } from './dto/print-design.dto';
@@ -87,6 +89,63 @@ export class PrintDesignsController {
     @ReqMeta() meta: RequestMeta,
   ): Promise<PrintArtworkFileDto> {
     return this.designs.uploadArtwork(file, dto.role, dto.testOnly === 'true', admin, meta);
+  }
+
+  @Get('artwork/:fileId/content')
+  @AdminAuth(Permission.PRINT_DESIGN_VIEW)
+  @RawResponse()
+  @ApiOperation({
+    summary:
+      'An uploaded artwork file (sanitized SVG or original PNG), hash-verified, for the Print Studio canvas.',
+  })
+  async artworkContent(
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const f = await this.designs.artworkContent(fileId);
+    res.setHeader('Cache-Control', 'private, max-age=3600, immutable');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.type(f.mimeType).send(f.buffer);
+  }
+
+  @Get('studio/geometry')
+  @AdminAuth(Permission.PRINT_DESIGN_VIEW)
+  @ApiOperation({
+    summary:
+      'Locked system areas for the Print Studio canvas (ID, PIN, QR, keep-clear boxes, cover), in unit points.',
+  })
+  studioGeometry(): StudioGeometryDto {
+    return this.designs.studioGeometry();
+  }
+
+  @Post('studio/preview/:kind.svg')
+  @HttpCode(HttpStatus.OK)
+  @AdminAuth(Permission.PRINT_DESIGN_VIEW)
+  @RawResponse()
+  @ApiProduces('image/svg+xml')
+  @ApiOperation({
+    summary:
+      'Exact production-engine preview of an unsaved Print Studio document (sample data, nothing stored).',
+  })
+  async studioPreview(
+    @Param('kind') kind: string,
+    @Body() dto: StudioPreviewDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const layout = this.print.resolveLayout(dto.preset ? { preset: dto.preset } : {});
+    const svg = await this.designs.previewStudio(
+      dto.studioDocument,
+      kind === 'sheet' ? 'sheet' : 'unit',
+      layout,
+      { guides: dto.guides },
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    );
+    res.type('image/svg+xml').send(svg);
   }
 
   @Post()

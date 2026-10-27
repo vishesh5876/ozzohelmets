@@ -3,6 +3,8 @@
  * background only; the ID, PIN, QR, quiet zone, credential panel, cut and cover geometry stay
  * system-generated (print engine). Pure, browser-safe rules shared by API and admin.
  */
+import type { StudioDocument } from './print-studio';
+
 type IsoDateString = string;
 
 export const PrintDesignStatus = {
@@ -15,7 +17,11 @@ export type PrintDesignStatus = (typeof PrintDesignStatus)[keyof typeof PrintDes
 export const PrintArtworkFormat = { SVG: 'SVG', PNG: 'PNG' } as const;
 export type PrintArtworkFormat = (typeof PrintArtworkFormat)[keyof typeof PrintArtworkFormat];
 
-export type PrintArtworkRole = 'base' | 'cover';
+/** `image`: a picture placed as a layer in a Print Studio design (any aspect ratio). */
+export type PrintArtworkRole = 'base' | 'cover' | 'image';
+
+/** How a design was made: one uploaded artwork file, or layers built in the Print Studio. */
+export type PrintDesignKind = 'ARTWORK' | 'STUDIO';
 
 /**
  * Base artwork comes in two fits, told apart by the file's aspect ratio. Uniform scaling only —
@@ -118,12 +124,18 @@ export interface PrintDesignDto extends PrintDesignPositionDto {
   name: string;
   version: number;
   status: PrintDesignStatus;
-  artworkType: PrintArtworkFormat;
-  baseArtwork: PrintArtworkFileDto;
+  kind: PrintDesignKind;
+  /** ARTWORK designs: the file's format. STUDIO designs: null. */
+  artworkType: PrintArtworkFormat | null;
+  /** ARTWORK designs only. */
+  baseArtwork: PrintArtworkFileDto | null;
   coverArtwork: PrintArtworkFileDto | null;
+  /** STUDIO designs only: the layer document and the image files it uses. */
+  studioDocument: StudioDocument | null;
+  studioImages: PrintArtworkFileDto[];
   /** Artwork drawn over the white Safety ID panel (QR, PIN and Safety ID text kept clear). */
   artworkOnTop: boolean;
-  /** Base artwork effective DPI at the current scale (PNG). */
+  /** Base artwork effective DPI at the current scale (PNG); studio: the lowest image DPI. */
   effectiveDpi: number | null;
   quality: ArtworkQuality;
   /** Physical size of the scaled base artwork. */
@@ -142,8 +154,12 @@ export interface PrintDesignDto extends PrintDesignPositionDto {
 
 export interface CreatePrintDesignRequest extends Partial<PrintDesignPositionDto> {
   name: string;
-  baseArtworkFileId: string;
+  /** ARTWORK design (exactly one of baseArtworkFileId / studioDocument). */
+  baseArtworkFileId?: string;
   coverArtworkFileId?: string | null;
+  artworkOnTop?: boolean;
+  /** STUDIO design. */
+  studioDocument?: StudioDocument;
 }
 
 export type UpdatePrintDesignRequest = Partial<CreatePrintDesignRequest>;
@@ -154,5 +170,5 @@ export interface BatchPrintDesignDto {
   name: string;
   version: number;
   status: PrintDesignStatus;
-  artworkType: PrintArtworkFormat;
+  artworkType: PrintArtworkFormat | null;
 }
