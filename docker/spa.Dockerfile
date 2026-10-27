@@ -36,6 +36,7 @@ LABEL org.opencontainers.image.title="helmet-${APP}" org.opencontainers.image.ve
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx/spa.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY docker/nginx/security-headers-emergency.conf /etc/nginx/snippets/security-headers-emergency.conf
 COPY --from=build /repo/apps/${APP}/dist /usr/share/nginx/html
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1

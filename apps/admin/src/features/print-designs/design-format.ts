@@ -6,6 +6,7 @@ export function resolutionText(f: PrintArtworkFileDto): string {
 
 export const GUIDE_LEGEND: [string, string][] = [
   ['#5F6368', 'Sticker boundary (4.5 × 1 in)'],
+  ['#00897B', 'Visible artwork area (emergency panel, 2.2 × 1 in)'],
   ['#34A853', 'Print safe area'],
   ['#9AA0A6', 'System credential panel (white)'],
   ['#F29900', 'Dynamic Safety ID'],

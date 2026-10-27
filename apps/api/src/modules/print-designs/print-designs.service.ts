@@ -6,11 +6,13 @@ import PDFDocument from 'pdfkit';
 import type { Response } from 'express';
 import {
   artworkQuality,
-  aspectMatches,
-  BASE_ARTWORK_ASPECT,
+  baseArtworkAspectMessage,
+  baseArtworkFit,
   DEFAULT_PRINT_LAYOUT,
   ErrorCode,
   MIN_BASE_PNG,
+  MIN_PANEL_PNG,
+  RECOMMENDED_PANEL_PNG,
   MIN_PRINT_DPI,
   type PrintArtworkFileDto,
   type PrintArtworkRole,
@@ -59,6 +61,8 @@ export interface RenderableDesign {
   name: string;
   version: number;
   position: ArtworkPosition;
+  /** Artwork drawn over the white Safety ID panel (QR, PIN, ID kept clear). */
+  artworkOnTop: boolean;
   base: ArtworkAsset;
   cover: ArtworkAsset | null;
   sha256: { base: string; cover: string | null };
@@ -140,6 +144,11 @@ export class PrintDesignsService {
     let svgViewBox: string | null = null;
     try {
       if (format === 'SVG') {
+        // The downloadable templates carry their guides in this layer; never print them.
+        if (input.toString('utf8').includes(TEMPLATE_GUIDE_LAYER))
+          throw new ArtworkError(
+            `This file still contains the template guides. Delete the "${TEMPLATE_GUIDE_LAYER}" layer, then export again.`,
+          );
         const clean = sanitizeSvg(
           input,
           {
@@ -194,10 +203,7 @@ export class PrintDesignsService {
         format === 'SVG'
           ? [facts.viewBox!.width, facts.viewBox!.height]
           : [facts.widthPx!, facts.heightPx!];
-      if (!aspectMatches(w, h, BASE_ARTWORK_ASPECT))
-        throw this.invalidArtwork(
-          `Base artwork must be 4.5 : 1 (this file is ${(w / h).toFixed(3)} : 1). Crop it to 4.5 × 1 in — e.g. 2700 × 600 px or viewBox "0 0 450 100". Artwork is never stretched.`,
-        );
+      if (!baseArtworkFit(w, h)) throw this.invalidArtwork(baseArtworkAspectMessage(w / h));
     }
     if (format === 'PNG') {
       const box =
@@ -215,7 +221,7 @@ export class PrintDesignsService {
       if (effectiveDpi < MIN_PRINT_DPI && !testOnly)
         throw this.invalidArtwork(
           role === 'base'
-            ? `PNG resolution too low: ${facts.widthPx} × ${facts.heightPx} px prints at ${effectiveDpi} DPI. Minimum ${MIN_BASE_PNG.widthPx} × ${MIN_BASE_PNG.heightPx} px (300 DPI); recommended 2700 × 600 px (600 DPI). Low-resolution images are never upscaled.`
+            ? lowResolutionMessage(facts.widthPx!, facts.heightPx!, effectiveDpi)
             : `PNG resolution too low for the cover: prints at ${effectiveDpi} DPI (minimum ${MIN_PRINT_DPI}).`,
         );
       if (effectiveDpi >= MIN_PRINT_DPI) facts.testOnly = false;
@@ -292,6 +298,7 @@ export class PrintDesignsService {
       name: string;
       baseArtworkFileId: string;
       coverArtworkFileId?: string | null;
+      artworkOnTop?: boolean;
     } & Partial<ArtworkPosition>,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
@@ -305,6 +312,8 @@ export class PrintDesignsService {
         baseArtworkFileId: input.baseArtworkFileId,
         coverArtworkFileId: input.coverArtworkFileId ?? null,
         position: this.position(input),
+        // New designs sit on top by default: nothing of the artwork is cut by the panel.
+        artworkOnTop: input.artworkOnTop ?? true,
       },
       admin,
     );
@@ -320,6 +329,7 @@ export class PrintDesignsService {
         name: string;
         baseArtworkFileId: string;
         coverArtworkFileId: string | null;
+        artworkOnTop: boolean;
       } & ArtworkPosition
     >,
     admin: AuthenticatedAdmin,
@@ -343,7 +353,8 @@ export class PrintDesignsService {
       offsetXMm: input.offsetXMm ?? row.offsetXMm,
       offsetYMm: input.offsetYMm ?? row.offsetYMm,
     });
-    const check = this.check(base, cover, position);
+    const artworkOnTop = input.artworkOnTop ?? row.artworkOnTop;
+    const check = this.check(base, cover, position, artworkOnTop);
     await this.prisma.printDesign.update({
       where: { id },
       data: {
@@ -352,6 +363,7 @@ export class PrintDesignsService {
         coverArtworkFileId: cover?.id ?? null,
         artworkType: base.format,
         ...position,
+        artworkOnTop,
         validationErrors: check.errors,
         validationWarnings: check.warnings,
       },
@@ -369,6 +381,7 @@ export class PrintDesignsService {
         name: string;
         baseArtworkFileId: string;
         coverArtworkFileId: string | null;
+        artworkOnTop: boolean;
       } & ArtworkPosition
     >,
     admin: AuthenticatedAdmin,
@@ -397,6 +410,7 @@ export class PrintDesignsService {
             offsetXMm: input.offsetXMm ?? src.offsetXMm,
             offsetYMm: input.offsetYMm ?? src.offsetYMm,
           }),
+          artworkOnTop: input.artworkOnTop ?? src.artworkOnTop,
         },
         admin,
         tx,
@@ -428,6 +442,7 @@ export class PrintDesignsService {
           offsetXMm: src.offsetXMm,
           offsetYMm: src.offsetYMm,
         },
+        artworkOnTop: src.artworkOnTop,
       },
       admin,
     );
@@ -560,6 +575,7 @@ export class PrintDesignsService {
         offsetXMm: row.offsetXMm,
         offsetYMm: row.offsetYMm,
       },
+      artworkOnTop: row.artworkOnTop,
       base,
       cover,
       sha256: { base: row.baseArtwork.sha256, cover: row.coverArtwork?.sha256 ?? null },
@@ -567,7 +583,10 @@ export class PrintDesignsService {
   }
 
   contextOptions(d: RenderableDesign, extra: ContextOptions = {}): ContextOptions {
-    return { ...extra, artwork: { base: d.base, cover: d.cover, position: d.position } };
+    return {
+      ...extra,
+      artwork: { base: d.base, cover: d.cover, position: d.position, onTop: d.artworkOnTop },
+    };
   }
 
   // ── Previews and test print (sample data only) ──────────────────────────────────────────────
@@ -576,14 +595,22 @@ export class PrintDesignsService {
     id: string,
     kind: 'unit' | 'sheet',
     layout: PrintSheetLayout,
-    opts: { guides?: boolean; position?: Partial<ArtworkPosition>; filled?: number },
+    opts: {
+      guides?: boolean;
+      position?: Partial<ArtworkPosition>;
+      artworkOnTop?: boolean;
+      filled?: number;
+    },
   ): Promise<string> {
     const d = await this.loadRenderable(id).catch((err) => {
       if (err instanceof AppException) throw err;
       throw this.unavailable();
     });
     const position = this.position({ ...d.position, ...opts.position });
-    const ctx = this.contextOptions({ ...d, position }, { guides: opts.guides });
+    const ctx = this.contextOptions(
+      { ...d, position, artworkOnTop: opts.artworkOnTop ?? d.artworkOnTop },
+      { guides: opts.guides },
+    );
     return kind === 'unit'
       ? this.print.previewUnitSvg(layout, ctx)
       : this.print.previewSheetSvg(layout, opts.filled ?? unitsPerSheet(layout), ctx);
@@ -635,6 +662,7 @@ export class PrintDesignsService {
       baseArtworkFileId: string;
       coverArtworkFileId: string | null;
       position: ArtworkPosition;
+      artworkOnTop: boolean;
     },
     admin: AuthenticatedAdmin,
     tx: PrismaTx = this.prisma,
@@ -643,7 +671,7 @@ export class PrintDesignsService {
     if (!name) throw this.invalidArtwork('Design name is required.');
     const base = await this.fileRow(v.baseArtworkFileId, tx);
     const cover = v.coverArtworkFileId ? await this.fileRow(v.coverArtworkFileId, tx) : null;
-    const check = this.check(base, cover, v.position);
+    const check = this.check(base, cover, v.position, v.artworkOnTop);
     return tx.printDesign.create({
       data: {
         id: uuidv7(),
@@ -655,6 +683,7 @@ export class PrintDesignsService {
         baseArtworkFileId: base.id,
         coverArtworkFileId: cover?.id ?? null,
         ...v.position,
+        artworkOnTop: v.artworkOnTop,
         validationErrors: check.errors,
         validationWarnings: check.warnings,
         createdByAdminId: admin.id,
@@ -663,12 +692,18 @@ export class PrintDesignsService {
     });
   }
 
-  private check(base: FileRow, cover: FileRow | null, position: ArtworkPosition) {
+  private check(
+    base: FileRow,
+    cover: FileRow | null,
+    position: ArtworkPosition,
+    artworkOnTop: boolean,
+  ) {
     return checkDesign(
       this.facts(base),
       cover ? this.facts(cover) : null,
       position,
       this.print.geometry(DEFAULT_PRINT_LAYOUT).coverYellow,
+      artworkOnTop,
     );
   }
 
@@ -682,7 +717,7 @@ export class PrintDesignsService {
       offsetXMm: row.offsetXMm,
       offsetYMm: row.offsetYMm,
     };
-    const check = this.check(row.baseArtwork, row.coverArtwork, position);
+    const check = this.check(row.baseArtwork, row.coverArtwork, position, row.artworkOnTop);
     const errors = [...check.errors];
     const warnings = [...check.warnings];
     if (!errors.length) {
@@ -832,6 +867,7 @@ export class PrintDesignsService {
       baseArtwork: this.fileDto(r.baseArtwork),
       coverArtwork: r.coverArtwork ? this.fileDto(r.coverArtwork) : null,
       ...position,
+      artworkOnTop: r.artworkOnTop,
       effectiveDpi: dpi,
       quality: artworkQuality(r.baseArtwork.format, dpi),
       artworkSizeMm: { width: mmOf(box.w), height: mmOf(box.h) },
@@ -881,6 +917,16 @@ export class PrintDesignsService {
       HttpStatus.CONFLICT,
     );
   }
+}
+
+/** Id of the guides layer in apps/admin/public/print-templates/*.svg. */
+export const TEMPLATE_GUIDE_LAYER = 'GUIDES_DELETE_BEFORE_EXPORT';
+
+function lowResolutionMessage(widthPx: number, heightPx: number, dpi: number): string {
+  const panel = baseArtworkFit(widthPx, heightPx) === 'PANEL';
+  const min = panel ? MIN_PANEL_PNG : MIN_BASE_PNG;
+  const rec = panel ? RECOMMENDED_PANEL_PNG : { widthPx: 2700, heightPx: 600 };
+  return `PNG resolution too low: ${widthPx} × ${heightPx} px prints at ${dpi} DPI. Minimum ${min.widthPx} × ${min.heightPx} px (300 DPI); recommended ${rec.widthPx} × ${rec.heightPx} px (600 DPI). Low-resolution images are never upscaled.`;
 }
 
 export function sha256(buf: Buffer): string {

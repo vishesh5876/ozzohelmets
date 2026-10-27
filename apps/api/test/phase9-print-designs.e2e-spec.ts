@@ -364,7 +364,7 @@ describe('Phase 9 — Print Designs (e2e)', () => {
 
     expect(
       (await upload(admin.token, await png(2700, 700), 'wide.png').expect(400)).body.error.message,
-    ).toMatch(/4.5 : 1/);
+    ).toMatch(/2\.2 : 1.*4\.5 : 1/);
     expect(
       (await upload(admin.token, await png(2700, 600, true), 'big.png').expect(400)).body.error
         .message,
@@ -382,6 +382,77 @@ describe('Phase 9 — Print Designs (e2e)', () => {
     expect(trav.originalFilename).toBe('passwd.png');
     const stored = await ctx.prisma.printArtworkFile.findUniqueOrThrow({ where: { id: trav.id } });
     expect(stored.storageKey).toMatch(/^print-designs\/[0-9a-f-]{36}\.png$/);
+  });
+
+  it('emergency-panel artwork (2.2 : 1) is accepted and placed only in the panel; templates', async () => {
+    const admin = await asAdmin('ADMIN');
+    const panelSvg = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 100"><rect width="220" height="100" fill="#EC1C22"/></svg>',
+    );
+    const file = (await upload(admin.token, panelSvg, 'panel.svg').expect(201)).body.data;
+    const d = await createDesign(admin.token, 'Panel', file.id);
+    expect(d.validationErrors).toEqual([]);
+    expect(d.validationWarnings.join()).not.toMatch(/Full-width artwork/);
+    const unit = (
+      (
+        await ctx
+          .http()
+          .get(`/api/v1/admin/print-designs/${d.id}/preview/unit.svg`)
+          .set(bearer(admin.token))
+          .buffer(true)
+          .parse(binary as never)
+          .expect(200)
+      ).body as Buffer
+    ).toString();
+    // Drawn exactly into the 2.2 × 1 in panel (158.4 × 72 pt); new designs sit on top, so the
+    // clip window reaches the base | cover kiss cut (241.2 pt) while the art stays in the panel.
+    expect(unit).toContain('width="158.4" height="72" preserveAspectRatio');
+    expect(unit).toMatch(/<svg x="0" y="0" width="241\.2" height="72"/);
+
+    const pngPanel = (await upload(admin.token, await png(1320, 600), 'panel.png').expect(201)).body
+      .data;
+    expect(pngPanel).toMatchObject({ effectiveDpi: 600, quality: 'EXCELLENT' });
+
+    // New designs sit on top of the white panel by default (QR / PIN / ID kept clear);
+    // switching it off restores the legacy layering, with a warning about what is hidden.
+    const fullId = (await upload(admin.token, BASE_SVG, 'full.svg').expect(201)).body.data.id;
+    const full = await createDesign(admin.token, 'Full', fullId);
+    expect(full.artworkOnTop).toBe(true);
+    expect(full.validationWarnings.join()).toMatch(/Design on top/);
+    const under = (
+      await ctx
+        .http()
+        .patch(`/api/v1/admin/print-designs/${full.id}`)
+        .set(bearer(admin.token))
+        .send({ artworkOnTop: false })
+        .expect(200)
+    ).body.data;
+    expect(under.artworkOnTop).toBe(false);
+    expect(under.validationWarnings.join()).toMatch(/only its left 2\.2 in/);
+    const onTopSvg = (
+      (
+        await ctx
+          .http()
+          .get(`/api/v1/admin/print-designs/${full.id}/preview/unit.svg?artworkOnTop=1`)
+          .set(bearer(admin.token))
+          .buffer(true)
+          .parse(binary as never)
+          .expect(200)
+      ).body as Buffer
+    ).toString();
+    // Artwork clipped at the base | cover kiss cut (241.2 pt), then white keep-clear boxes.
+    expect(onTopSvg).toMatch(/<svg x="0" y="0" width="241\.2" height="72"/);
+    expect(onTopSvg.indexOf('<svg x="0" y="0" width="241.2"')).toBeLessThan(
+      onTopSvg.indexOf('rx="1" fill="#FFFFFF"'),
+    );
+
+    // A template uploaded with its guide layer still in is refused (guides must never print).
+    const withGuides = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 100"><rect width="220" height="100"/><g id="GUIDES_DELETE_BEFORE_EXPORT"><rect width="10" height="10"/></g></svg>',
+    );
+    expect(
+      (await upload(admin.token, withGuides, 'template.svg').expect(400)).body.error.message,
+    ).toMatch(/template guides/);
   });
 
   it('malicious SVG uploads are rejected and make no external requests', async () => {

@@ -9,3 +9,4 @@ export * from './analytics';
 export * from './safety-id';
 export * from './print-layout';
 export * from './print-design';
+export * from './emergency-scene';

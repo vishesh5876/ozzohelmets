@@ -533,6 +533,79 @@ describe('own printer + cutter: bleed, gaps and sheet marks', () => {
     expect(out).toMatch(/\n-1 0 0 1 [\d.]+ [\d.]+ cm/); // horizontal mirror, magnitude 1
   });
 
+  it('2.2 : 1 panel artwork fills exactly the emergency panel and never reaches the Safety ID', () => {
+    const panel: ArtworkAsset = {
+      ...art,
+      key: 'p',
+      viewBox: { x: 0, y: 0, width: 220, height: 100 },
+    };
+    const els = layoutUnit(unit(1), {
+      ...ctx,
+      bleed,
+      artwork: {
+        base: panel,
+        cover: null,
+        position: { scalePercent: 100, offsetXMm: 0, offsetYMm: 0 },
+      },
+    });
+    const main = pieces(els).find((e) => e.role === 'artwork-base')!;
+    expect({ x: main.x, y: main.y, w: main.w, h: main.h }).toEqual(geometry.zones.emergency);
+    const id = elementBounds(els.find((e) => e.role === 'safety-code')!);
+    for (const p of pieces(els)) {
+      const b = elementBounds(p);
+      expect(b.x + b.w).toBeLessThanOrEqual(geometry.zones.credential.x + 1 + 1e-9);
+      expect(boxesOverlap(b, id)).toBe(false);
+    }
+  });
+
+  it('design on top: artwork over the white panel, QR / PIN / Safety ID kept clear above it', () => {
+    const els = layoutUnit(unit(1), {
+      ...ctx,
+      bleed: 0,
+      artwork: {
+        base: art,
+        cover: null,
+        position: { scalePercent: 100, offsetXMm: 0, offsetYMm: 0 },
+        onTop: true,
+      },
+    });
+    const idx = (role: string) => els.findIndex((e) => e.role === role);
+    const lastIdx = (role: string) => els.map((e) => e.role).lastIndexOf(role);
+    // Order: white panel → artwork → keep-clear boxes → ID / PIN / QR.
+    expect(idx('credential-panel')).toBeLessThan(idx('artwork-base'));
+    expect(lastIdx('artwork-base')).toBeLessThan(idx('keep-clear'));
+    expect(lastIdx('keep-clear')).toBeLessThan(idx('safety-code'));
+    expect(lastIdx('keep-clear')).toBeLessThan(idx('qr'));
+    // Artwork reaches the base | cover kiss cut (not cut at the emergency zone), never the cover.
+    const main = pieces(els).find((e) => e.role === 'artwork-base')!;
+    expect(main.clip.x + main.clip.w).toBeCloseTo(
+      geometry.zones.credential.x + geometry.zones.credential.w,
+      10,
+    );
+    // Keep-clear boxes contain the whole protected target and the whole Safety ID text.
+    const clear = els.filter((e) => e.role === 'keep-clear').map(elementBounds);
+    const inside = (a: { x: number; y: number; w: number; h: number }) =>
+      clear.some(
+        (c) => a.x >= c.x && a.y >= c.y && a.x + a.w <= c.x + c.w && a.y + a.h <= c.y + c.h,
+      );
+    expect(inside(geometry.target)).toBe(true);
+    expect(inside(elementBounds(els.find((e) => e.role === 'safety-code')!))).toBe(true);
+    expect(inside(elementBounds(els.find((e) => e.role === 'pin')!))).toBe(true);
+    // Legacy layering keeps artwork under the panel.
+    const legacy = layoutUnit(unit(1), {
+      ...ctx,
+      artwork: {
+        base: art,
+        cover: null,
+        position: { scalePercent: 100, offsetXMm: 0, offsetYMm: 0 },
+      },
+    });
+    expect(legacy.findIndex((e) => e.role === 'artwork-base')).toBeLessThan(
+      legacy.findIndex((e) => e.role === 'credential-panel'),
+    );
+    expect(legacy.some((e) => e.role === 'keep-clear')).toBe(false);
+  });
+
   it('SVG preview mirrors the same way', () => {
     const svg = unitSvg(layoutUnit(unit(1), artCtx()));
     expect(svg).toContain('scale(-1 1)');

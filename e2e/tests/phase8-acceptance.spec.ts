@@ -209,9 +209,16 @@ test.describe.serial('Phase 8: production acceptance journey', () => {
       expect(loadMs).toBeLessThan(5000);
 
       const headings = (await scan.locator('main h3').allTextContents()).map((t) => t.trim());
-      const order = ['Name', 'Blood group', 'Medical conditions', 'Allergies', 'Medications'].map(
-        (t) => headings.indexOf(t),
-      );
+      // Who, what to do now, then the Medical ID with allergies first, then who to call.
+      const order = [
+        'Name',
+        'What to do now',
+        'Medical ID',
+        'Allergies',
+        'Medical conditions',
+        'Medications',
+      ].map((t) => headings.indexOf(t));
+      await expect(scan.getByLabel(/^Blood group /)).toBeVisible();
       expect(order.every((i) => i >= 0)).toBe(true);
       expect([...order].sort((a, b) => a - b)).toEqual(order);
       expect(headings.indexOf('Emergency contact')).toBeGreaterThan(order.at(-1)!);

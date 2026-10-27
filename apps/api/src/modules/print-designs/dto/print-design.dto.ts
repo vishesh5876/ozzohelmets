@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
@@ -44,6 +45,14 @@ class PositionFields {
   @Min(-ARTWORK_OFFSET_RANGE_MM)
   @Max(ARTWORK_OFFSET_RANGE_MM)
   offsetYMm?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Draw the artwork over the white Safety ID panel; the QR, PIN and Safety ID text always keep white keep-clear boxes above it. Default true for new designs.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  artworkOnTop?: boolean;
 }
 
 export class CreatePrintDesignDto extends PositionFields {

@@ -18,6 +18,39 @@ yellow REMOVE / ONLY IN EMERGENCY / ▲ OPEN cover). Artwork can never reach the
 the PIN or the ID: the white panel is drawn over the artwork, and the QR is always black modules
 on white.
 
+### Two artwork fits (decided by the file's aspect ratio)
+
+Only the **emergency panel** — the left 2.2 × 1 in (55.88 × 25.4 mm) — ever shows artwork. The
+white Safety ID / PIN / QR column and the removable cover are always printed over the rest.
+
+| Fit                        | Aspect  | Example sizes                            | Placed in                                          |
+| -------------------------- | ------- | ---------------------------------------- | -------------------------------------------------- |
+| **Panel** (recommended)    | 2.2 : 1 | viewBox `0 0 220 100`; PNG 1320 × 600 px | exactly the emergency panel: can't touch the ID/QR |
+| Full sticker (still works) | 4.5 : 1 | viewBox `0 0 450 100`; PNG 2700 × 600 px | the whole unit; only its left 2.2 in shows         |
+
+A full-sticker design whose panel is drawn even slightly wider than 2.2 in gets cut straight
+through by the Safety ID column (the "overlap" admins saw), so the editor warns on every 4.5 : 1
+design and recommends the panel fit. Templates for designers are linked in the editor
+(`/print-templates/ozzo-emergency-panel-template.svg`, `…/ozzo-full-sticker-template.svg`); their
+guides live in a `GUIDES_DELETE_BEFORE_EXPORT` layer, and an upload that still contains it is
+refused so guides can never print. The preview's "Show Guides" outlines the visible artwork area.
+
+### Layering: design on top (default for new designs)
+
+`print_designs.artwork_on_top` (migration `20261027090000_print_design_artwork_on_top`):
+
+| Setting                        | Drawing order                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **On top** (new designs)       | white Safety ID panel → **artwork** (clipped at the base / cover kiss cut) → white keep-clear boxes → ID, PIN, QR |
+| Under the panel (old versions) | artwork (emergency zone only) → white Safety ID panel → ID, PIN, QR                                               |
+
+On top, nothing of the design is cut by the Safety ID column. The **keep-clear boxes** (1.5 pt
+white margin) cover the protected target (PIN + QR + 4-module quiet zone) and the rotated Safety ID
+text, so those always scan and read whatever the artwork does; the QR is never covered. The cover
+zone is never printed with base artwork (it is the separate removable cover). Every version created
+before this setting keeps `false`, so batches already printed with it re-export identically. The
+editor's "Design on top (recommended)" checkbox switches it (preview `?artworkOnTop=1|0`).
+
 ## 2. Data model
 
 `print_artwork_files` (immutable, content-addressed): `storage_key` (`print-designs/<uuid>.svg|png`,
@@ -70,8 +103,9 @@ linearGradient radialGradient stop`) and attributes (geometry, transform, presen
    attributes. Every id is prefixed and local `#id`/`url(#id)` references rewritten. The stored
    file is a fresh serialisation of the whitelisted tree. Limits: 5 MB, 50,000 elements, depth 64
    (`PRINT_ARTWORK_SVG_MAX_BYTES`, `PRINT_ARTWORK_SVG_MAX_ELEMENTS`).
-2. **Dimensions**: a numeric `viewBox` is required. Base artwork must be 4.5 : 1 within 1 %
-   (e.g. `0 0 450 100`), otherwise it is rejected — never stretched.
+2. **Dimensions**: a numeric `viewBox` is required. Base artwork must be 2.2 : 1 (panel, e.g.
+   `0 0 220 100`) or 4.5 : 1 (full sticker, `0 0 450 100`) within 1 %, otherwise it is rejected —
+   never stretched.
 3. **PDF**: rendered with svg-to-pdfkit into a **Form XObject** (vector), defined once per PDF and
    referenced by every unit (a 5,000-unit file embeds the artwork once). The renderer gets no
    image, document or font loaders: live text maps only to the PDF standard fonts (a warning
@@ -88,7 +122,8 @@ The admin preview embeds the sanitized SVG inside an SVG served with
   only. Then a bounded full decode (sharp, `limitInputPixels`) rejects corrupt/truncated files,
   and pdfkit must be able to open it. Max 15 MB (`PRINT_ARTWORK_PNG_MAX_BYTES`).
 - **DPI**: effective DPI = pixels ÷ printed inches on the lower axis, at the design's scale.
-  Minimum 1350 × 300 px (300 DPI); recommended 2700 × 600 px (600 DPI). Labels: ≥ 600 DPI
+  Panel: minimum 660 × 300 px, recommended 1320 × 600 px. Full sticker: minimum 1350 × 300 px,
+  recommended 2700 × 600 px (300 / 600 DPI). Labels: ≥ 600 DPI
   _Excellent_, ≥ 300 _Good_, below _Too low for production_. Enlarging the artwork lowers the
   DPI and is re-checked. Low-resolution uploads are refused unless a SUPER_ADMIN ticks
   "test-only": such artwork can be previewed and test-printed but never activated or used for a
@@ -99,8 +134,8 @@ The admin preview embeds the sanitized SVG inside an SVG served with
 
 ## 6. Positioning
 
-Scale (50–200 %, default 100), X and Y offsets (±25 mm, default 0). The unit box is scaled around
-its centre and moved; the artwork is fitted into it **uniformly** (aspect ratio locked) and
+Scale (50–200 %, default 100), X and Y offsets (±25 mm, default 0). The target box (the
+emergency panel for a 2.2 : 1 file, the unit for 4.5 : 1) is scaled around its centre and moved; the artwork is fitted into it **uniformly** (aspect ratio locked) and
 clipped to the unit. There is no independent X/Y scale anywhere (unit tests check that the drawn
 box always has the artwork's own aspect ratio). The editor shows the scaled physical size. Cover
 artwork fills the cover print box uniformly, centred, edges clipped (a warning reports how much
