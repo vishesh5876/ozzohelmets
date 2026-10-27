@@ -136,3 +136,27 @@ Measured with Chromium network throttling (owner profile with contacts, local se
 | 2G (800 ms, 8 KB/s)       | ~4.3 s, 6 requests       | ~2.3 s, 1 request       |
 
 The 2G figure is uncompressed; with production gzip the page is about a third of that size.
+
+## At the scene: steps, Medical ID, send location, dark mode
+
+The page is built for the stranger who scanned the QR as much as for the paramedic:
+
+- **What to do now** (right under the name): call the emergency number, don't remove the helmet
+  unless they aren't breathing, don't move them unless they're in danger, check breathing and keep
+  them warm, show this page to the paramedics (`sceneSteps()` in `@helmet/types`). Also shown on
+  the "not found" and error pages. _The wording should be reviewed by a medical advisor._
+- **Medical ID** card: the blood group as a badge readable at a glance, then allergies (red),
+  conditions and medications.
+- **Send location** (under the first emergency contact): "SMS my location" / "WhatsApp my
+  location". The links already carry the message, so they work without JavaScript; on tap the
+  script asks for the bystander's location **in their browser only** (never sent to our server)
+  and adds a Google Maps link. Permission denied or no fix within 8 s → the message is sent
+  without it. Message: "EMERGENCY: I'm with {name} (scanned their OZZO Safety ID). Please call me
+  back. Location: …" (no name when the owner hides it).
+- **Permissions-Policy**: every other page keeps `geolocation=()`; only the `/e/` locations use
+  `deploy/aapanel/snippets/headers-emergency.conf` / `docker/nginx/security-headers-emergency.conf`
+  with `geolocation=(self)`. Without that the browser refuses location silently.
+- **Dark mode** follows the phone (`prefers-color-scheme`): warm dark canvas, same tokens; the
+  emergency call button stays red with white text. Print is always black on white.
+
+The client fallback page (`apps/portal/src/emergency/main.ts`) renders the same sections.

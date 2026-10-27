@@ -35,8 +35,9 @@ describe('renderEmergencyPage (server-rendered /e/:token)', () => {
     expect(html).toContain('href="tel:+919876543210"');
     expect(html).toContain('href="tel:112"');
     expect(html).toContain('<code>SI-7958-72SA</code>');
-    // No external requests at all: stylesheet inline, data: favicon, no src= scripts.
-    expect(html).not.toMatch(/<link[^>]+stylesheet|<script[^>]+src=|https?:\/\//);
+    // No external requests at all: stylesheet inline, data: favicon, no src= scripts or images.
+    // (Links a person taps, like WhatsApp or a map, are navigation, not page loads.)
+    expect(html).not.toMatch(/<link[^>]+stylesheet|<script[^>]+src=|src="https?:|url\(https?:/);
   });
 
   it('escapes every owner-supplied string', () => {
@@ -100,6 +101,39 @@ describe('renderEmergencyPage (server-rendered /e/:token)', () => {
     expect(page.status).toBe(status);
     expect(page.html).toContain(text);
     expect(page.html).toContain('id="call-emergency"');
+  });
+
+  it('Medical ID: blood group badge, allergies listed first; bystander steps on the page', () => {
+    const { html } = render(active());
+    expect(html).toContain('<div class="blood-badge" aria-label="Blood group O+">');
+    expect(html.indexOf('Allergies')).toBeLessThan(html.indexOf('Medical conditions'));
+    expect(html).toContain('What to do now');
+    expect(html).toContain('Do not remove the helmet unless they are not breathing.');
+    expect(html).toContain('Call 112 now');
+    // Steps also when the QR is unknown or the lookup failed: an emergency may still be on.
+    expect(renderEmergencyPage({ kind: 'not-found' }, opts).html).toContain('What to do now');
+    expect(renderEmergencyPage({ kind: 'error' }, opts).html).toContain('What to do now');
+    // Not for an owner who is just activating, or for a stolen helmet.
+    expect(
+      render({ ...active(), state: PublicHelmetState.NOT_ACTIVATED, profile: null }).html,
+    ).not.toContain('What to do now');
+  });
+
+  it('send location: SMS and WhatsApp to the first contact, working without JavaScript', () => {
+    const { html } = render(active());
+    const msg = encodeURIComponent(
+      "EMERGENCY: I'm with Meera Rao (scanned their OZZO Safety ID). Please call me back.",
+    );
+    // Without JS the links already open the message (no location); JS only adds the map link.
+    expect(html).toContain(`href="sms:+919876543210?&amp;body=${msg.replace(/'/g, '&#39;')}"`);
+    expect(html).toContain(`href="https://wa.me/919876543210?text=${msg.replace(/'/g, '&#39;')}"`);
+    expect(html).toContain('data-loc="sms" data-to="+919876543210"');
+    expect(html).toContain('id="loc-status"');
+    // Owner name not shared: no name in the message.
+    const anon = render(active({ profile: { allergies: ['Latex'] } })).html;
+    expect(anon).toContain('the rider whose Safety ID I scanned');
+    // No contacts, no location block.
+    expect(render(active({ contacts: [] })).html).not.toContain('data-loc=');
   });
 
   it('stays small enough for the first network round trip', () => {

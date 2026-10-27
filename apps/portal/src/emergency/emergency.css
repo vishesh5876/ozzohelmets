@@ -17,7 +17,32 @@
   --primary: #ff4f00;
   --danger: #b42318;
   --danger-soft: #fdecea;
-  color-scheme: light;
+  --danger-line: #f5c9c4;
+  --bar: rgb(255 254 251 / 0.96);
+  color-scheme: light dark;
+}
+/* Dark mode for night-time scenes: same tokens, warm dark canvas; calls stay high-contrast. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f8f4f0;
+    --ink-soft: #e6e0d6;
+    --canvas: #171211;
+    --soft: #221b19;
+    --pressed: #2e2522;
+    --body: #c5c0b1;
+    --body-mid: #9a9689;
+    --line: #3a302c;
+    --on-dark: #171211;
+    --danger: #ff6b5f;
+    --danger-soft: #3a1714;
+    --danger-line: #5c241f;
+    --bar: rgb(23 18 17 / 0.96);
+  }
+  /* More specific than the base .btn-danger rule further down, so it wins in dark mode. */
+  .btn.btn-danger {
+    background: #c42b1f;
+    color: #fff;
+  }
 }
 * {
   box-sizing: border-box;
@@ -69,7 +94,7 @@ body {
 .top.alert {
   background: var(--danger-soft);
   border-top-color: var(--danger);
-  border-bottom-color: #f5c9c4;
+  border-bottom-color: var(--danger-line);
 }
 .top.alert .eyebrow {
   color: var(--danger);
@@ -130,7 +155,7 @@ h3 {
 }
 .card.danger {
   background: var(--danger-soft);
-  border-color: #f5c9c4;
+  border-color: var(--danger-line);
 }
 .card.danger h2 {
   color: var(--danger);
@@ -180,23 +205,68 @@ h3 {
   font-weight: 500;
   font-size: 15px;
 }
-.blood {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+/* Medical ID: blood group as a badge paramedics read at a glance; allergies first, in red. */
+.med-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
-.blood h3 {
-  margin: 0;
+.med-head h3 {
+  margin: 4px 0 0;
 }
-.blood strong {
-  font-size: 34px;
-  line-height: 1;
+.blood-badge {
+  flex: none;
+  min-width: 76px;
+  text-align: center;
+  background: var(--ink);
+  color: var(--on-dark);
+  border-radius: 12px;
+  padding: 6px 12px 8px;
+}
+.blood-badge span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.blood-badge strong {
+  display: block;
+  font-size: 30px;
+  line-height: 1.05;
   font-weight: 700;
-  letter-spacing: -0.5px;
+}
+.med-group:first-of-type {
+  margin-top: 0;
+}
+
+/* At the scene: a few short steps for the person who scanned. */
+.scene {
+  background: var(--canvas);
+  border-color: var(--line);
+  border-left: 4px solid var(--danger);
+}
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 17px;
+  font-weight: 500;
+}
+.steps li + li {
+  margin-top: 4px;
+}
+
+/* Send location to the emergency contact (works without JS: the message only). */
+.share-loc {
+  margin: 14px 0 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.share-loc .muted {
+  margin: 0 0 8px;
 }
 
 /* Medical: one card, grouped lists divided by hairlines; allergies flagged in red. */
@@ -337,7 +407,7 @@ h3 {
 .call-bar {
   position: sticky;
   bottom: 0;
-  background: rgb(255 254 251 / 0.96);
+  background: var(--bar);
   border-top: 1px solid var(--line);
   padding: 12px 16px max(12px, env(safe-area-inset-bottom));
 }
@@ -431,6 +501,15 @@ a {
 
 /* Print: the approved information only, in black on white, without buttons or the call bar. */
 @media print {
+  :root {
+    --ink: #000;
+    --canvas: #fff;
+    --soft: #fff;
+    --body: #333;
+    --line: #000;
+    --on-dark: #fff;
+    --danger: #000;
+  }
   .call-bar,
   .no-print,
   .btn,

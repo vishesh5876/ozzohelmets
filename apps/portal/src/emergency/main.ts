@@ -5,6 +5,11 @@
  */
 import {
   buildEmergencySummaryText,
+  mapsUrl,
+  sceneMessage,
+  sceneSteps,
+  smsHref,
+  whatsappHref,
   type PublicEmergencyContactDto,
   type PublicEmergencyDto,
   type PublicEmergencyProfileDto,
@@ -98,8 +103,8 @@ function profileView(data: PublicEmergencyDto): Node[] {
   if (p.organDonor !== undefined) facts.push(p.organDonor ? 'Organ donor' : 'Not an organ donor');
 
   const nodes: Child[] = [];
-  // Who this is: name, photo, quick facts and blood group together in one calm card.
-  if (p.name || p.photoUrl || facts.length || p.bloodGroupLabel) {
+  // Who this is: name, photo and quick facts in one calm card.
+  if (p.name || p.photoUrl || facts.length) {
     nodes.push(
       h(
         'section',
@@ -121,29 +126,39 @@ function profileView(data: PublicEmergencyDto): Node[] {
         facts.length
           ? h('div', { class: 'facts' }, ...facts.map((f) => h('span', { class: 'fact' }, f)))
           : null,
-        p.bloodGroupLabel
-          ? h(
-              'div',
-              { class: 'blood' },
-              h('h3', {}, 'Blood group'),
-              h('strong', {}, p.bloodGroupLabel),
-            )
-          : null,
       ),
     );
   }
-  // Phase 8 order: critical medical facts first, then who to call, then free-text notes.
-  // Phase 9: the page is about the person — no product, model, batch or warranty at all.
+  // Same order as the server-rendered page: who, what to do, the Medical ID (blood group badge,
+  // allergies first), who to call, notes. No product, model, batch or warranty at all.
+  nodes.push(sceneCard());
   const medical = [
-    medGroup('Medical conditions', p.medicalConditions),
     medGroup('Allergies', p.allergies, 'allergy'),
+    medGroup('Medical conditions', p.medicalConditions),
     medGroup('Medications', p.medications),
   ].filter((g): g is HTMLElement => g !== null);
-  if (medical.length)
+  if (medical.length || p.bloodGroupLabel)
     nodes.push(
-      h('section', { class: 'card medical', 'aria-label': 'Medical information' }, ...medical),
+      h(
+        'section',
+        { class: 'card medical', 'aria-label': 'Medical information' },
+        h(
+          'div',
+          { class: 'med-head' },
+          h('h3', {}, 'Medical ID'),
+          p.bloodGroupLabel
+            ? h(
+                'div',
+                { class: 'blood-badge', 'aria-label': `Blood group ${p.bloodGroupLabel}` },
+                h('span', {}, 'Blood'),
+                h('strong', {}, p.bloodGroupLabel),
+              )
+            : null,
+        ),
+        ...medical,
+      ),
     );
-  if (data.contacts?.length) nodes.push(contactsCard(data.contacts));
+  if (data.contacts?.length) nodes.push(contactsCard(data.contacts, p.name));
   if (p.emergencyNotes)
     nodes.push(
       h(
@@ -153,7 +168,7 @@ function profileView(data: PublicEmergencyDto): Node[] {
         h('p', { class: 'notes' }, p.emergencyNotes),
       ),
     );
-  if (nodes.every((n) => !n))
+  if (nodes.filter(Boolean).length === 1)
     nodes.push(
       messageCard('Emergency profile', 'The owner has chosen not to share details publicly.'),
     );
@@ -199,7 +214,65 @@ function summaryActions(summary: string): HTMLElement {
   );
 }
 
-function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
+function sceneCard(): HTMLElement {
+  return h(
+    'section',
+    { class: 'card scene', 'aria-labelledby': 'scene-h' },
+    h('h3', { id: 'scene-h' }, 'What to do now'),
+    h('ol', { class: 'steps' }, ...sceneSteps(EMERGENCY_NUMBER).map((s) => h('li', {}, s))),
+  );
+}
+
+/**
+ * "Tell {first} where you are": the links carry the message even if location is refused; on tap
+ * the bystander's location is read in their browser only (never sent to us) and added as a map
+ * link. Gives up on location after 8 s so the message always goes.
+ */
+function shareLocation(contact: PublicEmergencyContactDto, ownerName?: string): HTMLElement {
+  const first = contact.name.split(' ')[0] || contact.name;
+  const status = h('p', { class: 'muted', role: 'status', 'aria-live': 'polite' });
+  const link = (kind: 'sms' | 'wa', label: string) => {
+    const build = (url?: string) =>
+      kind === 'sms'
+        ? smsHref(contact.phone, sceneMessage(ownerName, url))
+        : whatsappHref(contact.phone, sceneMessage(ownerName, url));
+    const a = h('a', { class: 'btn btn-secondary', href: build() }, label);
+    a.addEventListener('click', (e) => {
+      if (!navigator.geolocation) return;
+      e.preventDefault();
+      status.textContent = 'Getting your location…';
+      let done = false;
+      const go = (p: GeolocationPosition | null) => {
+        if (done) return;
+        done = true;
+        status.textContent = p
+          ? 'Location added. Opening…'
+          : 'No location (permission off). Sending the message without it…';
+        location.href = build(p ? mapsUrl(p.coords.latitude, p.coords.longitude) : undefined);
+      };
+      setTimeout(() => go(null), 8000);
+      navigator.geolocation.getCurrentPosition(go, () => go(null), {
+        timeout: 8000,
+        maximumAge: 60000,
+      });
+    });
+    return a;
+  };
+  return h(
+    'div',
+    { class: 'share-loc no-print' },
+    h('p', { class: 'muted' }, `Tell ${first} what happened and where you are:`),
+    h(
+      'div',
+      { class: 'actions' },
+      link('sms', 'SMS my location'),
+      link('wa', 'WhatsApp my location'),
+    ),
+    status,
+  );
+}
+
+function contactsCard(contacts: PublicEmergencyContactDto[], ownerName?: string): HTMLElement {
   return h(
     'section',
     { class: 'card strong', 'aria-labelledby': 'contacts-h' },
@@ -236,6 +309,7 @@ function contactsCard(contacts: PublicEmergencyContactDto[]): HTMLElement {
           : null,
       );
     }),
+    shareLocation(contacts[0]!, ownerName),
   );
 }
 
@@ -328,6 +402,7 @@ function render(token: string, result: Lookup | null): void {
         'We could not find this Safety ID',
         'This QR code is not in the registry. It may be damaged or mistyped. In an emergency, call the number below.',
       ),
+      sceneCard(),
     );
   } else if (result.kind === 'rate-limited') {
     main.append(
@@ -351,6 +426,7 @@ function render(token: string, result: Lookup | null): void {
         ),
         retry,
       ),
+      sceneCard(),
     );
   }
   // "View product information" only when a product is linked (standalone Safety IDs have none).
