@@ -178,7 +178,7 @@ export class PrintDesignsController {
   @ApiProduces('image/svg+xml')
   @ApiOperation({
     summary:
-      'Sample-data preview from the production layout engine. scalePercent/offsetXMm/offsetYMm preview unsaved positions; guides=1 shows the safe-zone overlay.',
+      'Sample-data preview from the production layout engine. scalePercent/offsetXMm/offsetYMm and artworkOnTop=1|0 preview unsaved settings; guides=1 shows the safe-zone overlay.',
   })
   async preview(
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -196,6 +196,7 @@ export class PrintDesignsController {
         offsetXMm: num(q.offsetXMm),
         offsetYMm: num(q.offsetYMm),
       },
+      artworkOnTop: q.artworkOnTop === undefined ? undefined : q.artworkOnTop === '1',
       filled:
         filled !== undefined && Number.isInteger(filled)
           ? Math.max(0, Math.min(unitsPerSheet(layout), filled))

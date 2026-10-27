@@ -61,6 +61,8 @@ export interface RenderableDesign {
   name: string;
   version: number;
   position: ArtworkPosition;
+  /** Artwork drawn over the white Safety ID panel (QR, PIN, ID kept clear). */
+  artworkOnTop: boolean;
   base: ArtworkAsset;
   cover: ArtworkAsset | null;
   sha256: { base: string; cover: string | null };
@@ -296,6 +298,7 @@ export class PrintDesignsService {
       name: string;
       baseArtworkFileId: string;
       coverArtworkFileId?: string | null;
+      artworkOnTop?: boolean;
     } & Partial<ArtworkPosition>,
     admin: AuthenticatedAdmin,
     meta: RequestMeta,
@@ -309,6 +312,8 @@ export class PrintDesignsService {
         baseArtworkFileId: input.baseArtworkFileId,
         coverArtworkFileId: input.coverArtworkFileId ?? null,
         position: this.position(input),
+        // New designs sit on top by default: nothing of the artwork is cut by the panel.
+        artworkOnTop: input.artworkOnTop ?? true,
       },
       admin,
     );
@@ -324,6 +329,7 @@ export class PrintDesignsService {
         name: string;
         baseArtworkFileId: string;
         coverArtworkFileId: string | null;
+        artworkOnTop: boolean;
       } & ArtworkPosition
     >,
     admin: AuthenticatedAdmin,
@@ -347,7 +353,8 @@ export class PrintDesignsService {
       offsetXMm: input.offsetXMm ?? row.offsetXMm,
       offsetYMm: input.offsetYMm ?? row.offsetYMm,
     });
-    const check = this.check(base, cover, position);
+    const artworkOnTop = input.artworkOnTop ?? row.artworkOnTop;
+    const check = this.check(base, cover, position, artworkOnTop);
     await this.prisma.printDesign.update({
       where: { id },
       data: {
@@ -356,6 +363,7 @@ export class PrintDesignsService {
         coverArtworkFileId: cover?.id ?? null,
         artworkType: base.format,
         ...position,
+        artworkOnTop,
         validationErrors: check.errors,
         validationWarnings: check.warnings,
       },
@@ -373,6 +381,7 @@ export class PrintDesignsService {
         name: string;
         baseArtworkFileId: string;
         coverArtworkFileId: string | null;
+        artworkOnTop: boolean;
       } & ArtworkPosition
     >,
     admin: AuthenticatedAdmin,
@@ -401,6 +410,7 @@ export class PrintDesignsService {
             offsetXMm: input.offsetXMm ?? src.offsetXMm,
             offsetYMm: input.offsetYMm ?? src.offsetYMm,
           }),
+          artworkOnTop: input.artworkOnTop ?? src.artworkOnTop,
         },
         admin,
         tx,
@@ -432,6 +442,7 @@ export class PrintDesignsService {
           offsetXMm: src.offsetXMm,
           offsetYMm: src.offsetYMm,
         },
+        artworkOnTop: src.artworkOnTop,
       },
       admin,
     );
@@ -564,6 +575,7 @@ export class PrintDesignsService {
         offsetXMm: row.offsetXMm,
         offsetYMm: row.offsetYMm,
       },
+      artworkOnTop: row.artworkOnTop,
       base,
       cover,
       sha256: { base: row.baseArtwork.sha256, cover: row.coverArtwork?.sha256 ?? null },
@@ -571,7 +583,10 @@ export class PrintDesignsService {
   }
 
   contextOptions(d: RenderableDesign, extra: ContextOptions = {}): ContextOptions {
-    return { ...extra, artwork: { base: d.base, cover: d.cover, position: d.position } };
+    return {
+      ...extra,
+      artwork: { base: d.base, cover: d.cover, position: d.position, onTop: d.artworkOnTop },
+    };
   }
 
   // ── Previews and test print (sample data only) ──────────────────────────────────────────────
@@ -580,14 +595,22 @@ export class PrintDesignsService {
     id: string,
     kind: 'unit' | 'sheet',
     layout: PrintSheetLayout,
-    opts: { guides?: boolean; position?: Partial<ArtworkPosition>; filled?: number },
+    opts: {
+      guides?: boolean;
+      position?: Partial<ArtworkPosition>;
+      artworkOnTop?: boolean;
+      filled?: number;
+    },
   ): Promise<string> {
     const d = await this.loadRenderable(id).catch((err) => {
       if (err instanceof AppException) throw err;
       throw this.unavailable();
     });
     const position = this.position({ ...d.position, ...opts.position });
-    const ctx = this.contextOptions({ ...d, position }, { guides: opts.guides });
+    const ctx = this.contextOptions(
+      { ...d, position, artworkOnTop: opts.artworkOnTop ?? d.artworkOnTop },
+      { guides: opts.guides },
+    );
     return kind === 'unit'
       ? this.print.previewUnitSvg(layout, ctx)
       : this.print.previewSheetSvg(layout, opts.filled ?? unitsPerSheet(layout), ctx);
@@ -639,6 +662,7 @@ export class PrintDesignsService {
       baseArtworkFileId: string;
       coverArtworkFileId: string | null;
       position: ArtworkPosition;
+      artworkOnTop: boolean;
     },
     admin: AuthenticatedAdmin,
     tx: PrismaTx = this.prisma,
@@ -647,7 +671,7 @@ export class PrintDesignsService {
     if (!name) throw this.invalidArtwork('Design name is required.');
     const base = await this.fileRow(v.baseArtworkFileId, tx);
     const cover = v.coverArtworkFileId ? await this.fileRow(v.coverArtworkFileId, tx) : null;
-    const check = this.check(base, cover, v.position);
+    const check = this.check(base, cover, v.position, v.artworkOnTop);
     return tx.printDesign.create({
       data: {
         id: uuidv7(),
@@ -659,6 +683,7 @@ export class PrintDesignsService {
         baseArtworkFileId: base.id,
         coverArtworkFileId: cover?.id ?? null,
         ...v.position,
+        artworkOnTop: v.artworkOnTop,
         validationErrors: check.errors,
         validationWarnings: check.warnings,
         createdByAdminId: admin.id,
@@ -667,12 +692,18 @@ export class PrintDesignsService {
     });
   }
 
-  private check(base: FileRow, cover: FileRow | null, position: ArtworkPosition) {
+  private check(
+    base: FileRow,
+    cover: FileRow | null,
+    position: ArtworkPosition,
+    artworkOnTop: boolean,
+  ) {
     return checkDesign(
       this.facts(base),
       cover ? this.facts(cover) : null,
       position,
       this.print.geometry(DEFAULT_PRINT_LAYOUT).coverYellow,
+      artworkOnTop,
     );
   }
 
@@ -686,7 +717,7 @@ export class PrintDesignsService {
       offsetXMm: row.offsetXMm,
       offsetYMm: row.offsetYMm,
     };
-    const check = this.check(row.baseArtwork, row.coverArtwork, position);
+    const check = this.check(row.baseArtwork, row.coverArtwork, position, row.artworkOnTop);
     const errors = [...check.errors];
     const warnings = [...check.warnings];
     if (!errors.length) {
@@ -836,6 +867,7 @@ export class PrintDesignsService {
       baseArtwork: this.fileDto(r.baseArtwork),
       coverArtwork: r.coverArtwork ? this.fileDto(r.coverArtwork) : null,
       ...position,
+      artworkOnTop: r.artworkOnTop,
       effectiveDpi: dpi,
       quality: artworkQuality(r.baseArtwork.format, dpi),
       artworkSizeMm: { width: mmOf(box.w), height: mmOf(box.h) },

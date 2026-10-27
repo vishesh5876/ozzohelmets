@@ -309,6 +309,15 @@ describe('design validation', () => {
     expect(baseArtworkFit(400, 100)).toBeNull();
   });
 
+  it('layering decides the full-width warning', () => {
+    expect(checkDesign(svg(), null, pos, coverBox, true).warnings.join()).toMatch(
+      /Design on top: .*keep white boxes/,
+    );
+    expect(checkDesign(svg(), null, pos, coverBox, false).warnings.join()).toMatch(
+      /Turn on "Design on top"/,
+    );
+  });
+
   it('cover artwork: trim warning and DPI check', () => {
     const c = checkDesign(svg(), svg(300, 100), pos, coverBox);
     expect(c.warnings.join()).toMatch(/trimmed/);

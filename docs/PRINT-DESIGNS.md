@@ -35,6 +35,22 @@ design and recommends the panel fit. Templates for designers are linked in the e
 guides live in a `GUIDES_DELETE_BEFORE_EXPORT` layer, and an upload that still contains it is
 refused so guides can never print. The preview's "Show Guides" outlines the visible artwork area.
 
+### Layering: design on top (default for new designs)
+
+`print_designs.artwork_on_top` (migration `20261027090000_print_design_artwork_on_top`):
+
+| Setting                        | Drawing order                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| **On top** (new designs)       | white Safety ID panel → **artwork** (clipped at the base / cover kiss cut) → white keep-clear boxes → ID, PIN, QR |
+| Under the panel (old versions) | artwork (emergency zone only) → white Safety ID panel → ID, PIN, QR                                               |
+
+On top, nothing of the design is cut by the Safety ID column. The **keep-clear boxes** (1.5 pt
+white margin) cover the protected target (PIN + QR + 4-module quiet zone) and the rotated Safety ID
+text, so those always scan and read whatever the artwork does; the QR is never covered. The cover
+zone is never printed with base artwork (it is the separate removable cover). Every version created
+before this setting keeps `false`, so batches already printed with it re-export identically. The
+editor's "Design on top (recommended)" checkbox switches it (preview `?artworkOnTop=1|0`).
+
 ## 2. Data model
 
 `print_artwork_files` (immutable, content-addressed): `storage_key` (`print-designs/<uuid>.svg|png`,

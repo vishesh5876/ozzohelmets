@@ -42,6 +42,7 @@ interface FormState {
   scalePercent: number;
   offsetXMm: number;
   offsetYMm: number;
+  artworkOnTop: boolean;
 }
 
 const EMPTY: FormState = {
@@ -51,6 +52,7 @@ const EMPTY: FormState = {
   scalePercent: 100,
   offsetXMm: 0,
   offsetYMm: 0,
+  artworkOnTop: true,
 };
 
 /**
@@ -87,6 +89,7 @@ export function PrintDesignEditorPage() {
         scalePercent: d.scalePercent,
         offsetXMm: d.offsetXMm,
         offsetYMm: d.offsetYMm,
+        artworkOnTop: d.artworkOnTop,
       });
   }, [d]);
 
@@ -97,7 +100,8 @@ export function PrintDesignEditorPage() {
     (form.cover?.id ?? null) !== (d.coverArtwork?.id ?? null) ||
     form.scalePercent !== d.scalePercent ||
     form.offsetXMm !== d.offsetXMm ||
-    form.offsetYMm !== d.offsetYMm;
+    form.offsetYMm !== d.offsetYMm ||
+    form.artworkOnTop !== d.artworkOnTop;
   const canManage = can(Permission.PRINT_DESIGN_MANAGE);
 
   const upload = useMutation({
@@ -123,6 +127,7 @@ export function PrintDesignEditorPage() {
         scalePercent: form.scalePercent,
         offsetXMm: form.offsetXMm,
         offsetYMm: form.offsetYMm,
+        artworkOnTop: form.artworkOnTop,
       };
       if (isNew) return api.post<PrintDesignDto>('/admin/print-designs', body);
       if (d!.locked)
@@ -162,6 +167,7 @@ export function PrintDesignEditorPage() {
     scalePercent: form.scalePercent,
     offsetXMm: form.offsetXMm,
     offsetYMm: form.offsetYMm,
+    artworkOnTop: form.artworkOnTop ? '1' : '0',
   };
   const widthMm = Math.round(114.3 * form.scalePercent) / 100;
   const heightMm = Math.round(25.4 * form.scalePercent) / 100;
@@ -353,6 +359,24 @@ export function PrintDesignEditorPage() {
               <p className="text-xs text-body">
                 Scaled artwork box: {widthMm} × {heightMm} mm (unit 114.3 × 25.4 mm).
               </p>
+              <label className="flex items-start gap-2 rounded-md bg-canvas-soft p-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 accent-primary"
+                  checked={form.artworkOnTop}
+                  onChange={(e) => setForm({ ...form, artworkOnTop: e.target.checked })}
+                  data-testid="pd-on-top"
+                />
+                <span>
+                  <span className="block font-medium">Design on top (recommended)</span>
+                  <span className="block text-xs text-body">
+                    Your artwork is printed over the Safety ID column, so nothing of it is cut off.
+                    Only the QR code, the PIN and the Safety ID text keep small white boxes on top,
+                    so they always scan and read. Off: the white Safety ID column covers everything
+                    right of 2.2 in.
+                  </span>
+                </span>
+              </label>
             </fieldset>
             <InlineError error={save.error} />
             {canManage && (

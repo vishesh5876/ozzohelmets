@@ -121,6 +121,8 @@ export interface PrintDesignDto extends PrintDesignPositionDto {
   artworkType: PrintArtworkFormat;
   baseArtwork: PrintArtworkFileDto;
   coverArtwork: PrintArtworkFileDto | null;
+  /** Artwork drawn over the white Safety ID panel (QR, PIN and Safety ID text kept clear). */
+  artworkOnTop: boolean;
   /** Base artwork effective DPI at the current scale (PNG). */
   effectiveDpi: number | null;
   quality: ArtworkQuality;

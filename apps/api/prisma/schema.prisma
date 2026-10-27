@@ -1433,6 +1433,9 @@ model PrintDesign {
   scalePercent       Float              @default(100) @map("scale_percent")
   offsetXMm          Float              @default(0) @map("offset_x_mm")
   offsetYMm          Float              @default(0) @map("offset_y_mm")
+  /// Artwork drawn over the white Safety ID panel (only the QR, PIN and Safety ID text are kept
+  /// clear). False = under the panel: the layering of every version created before this flag.
+  artworkOnTop       Boolean            @default(false) @map("artwork_on_top")
   validationErrors   Json               @default("[]") @map("validation_errors")
   validationWarnings Json               @default("[]") @map("validation_warnings")
   createdByAdminId   String?            @map("created_by_admin_id") @db.Uuid

@@ -404,21 +404,47 @@ describe('Phase 9 — Print Designs (e2e)', () => {
           .expect(200)
       ).body as Buffer
     ).toString();
-    // Drawn into the 2.2 × 1 in panel (158.4 × 72 pt), clipped before the Safety ID column.
+    // Drawn exactly into the 2.2 × 1 in panel (158.4 × 72 pt); new designs sit on top, so the
+    // clip window reaches the base | cover kiss cut (241.2 pt) while the art stays in the panel.
     expect(unit).toContain('width="158.4" height="72" preserveAspectRatio');
-    expect(unit).toMatch(/<svg x="0" y="0" width="159\.4" height="72"/);
+    expect(unit).toMatch(/<svg x="0" y="0" width="241\.2" height="72"/);
 
     const pngPanel = (await upload(admin.token, await png(1320, 600), 'panel.png').expect(201)).body
       .data;
     expect(pngPanel).toMatchObject({ effectiveDpi: 600, quality: 'EXCELLENT' });
 
-    // A full-width design still works, with a warning about what is hidden.
-    const full = await createDesign(
-      admin.token,
-      'Full',
-      (await upload(admin.token, BASE_SVG, 'full.svg').expect(201)).body.data.id,
+    // New designs sit on top of the white panel by default (QR / PIN / ID kept clear);
+    // switching it off restores the legacy layering, with a warning about what is hidden.
+    const fullId = (await upload(admin.token, BASE_SVG, 'full.svg').expect(201)).body.data.id;
+    const full = await createDesign(admin.token, 'Full', fullId);
+    expect(full.artworkOnTop).toBe(true);
+    expect(full.validationWarnings.join()).toMatch(/Design on top/);
+    const under = (
+      await ctx
+        .http()
+        .patch(`/api/v1/admin/print-designs/${full.id}`)
+        .set(bearer(admin.token))
+        .send({ artworkOnTop: false })
+        .expect(200)
+    ).body.data;
+    expect(under.artworkOnTop).toBe(false);
+    expect(under.validationWarnings.join()).toMatch(/only its left 2\.2 in/);
+    const onTopSvg = (
+      (
+        await ctx
+          .http()
+          .get(`/api/v1/admin/print-designs/${full.id}/preview/unit.svg?artworkOnTop=1`)
+          .set(bearer(admin.token))
+          .buffer(true)
+          .parse(binary as never)
+          .expect(200)
+      ).body as Buffer
+    ).toString();
+    // Artwork clipped at the base | cover kiss cut (241.2 pt), then white keep-clear boxes.
+    expect(onTopSvg).toMatch(/<svg x="0" y="0" width="241\.2" height="72"/);
+    expect(onTopSvg.indexOf('<svg x="0" y="0" width="241.2"')).toBeLessThan(
+      onTopSvg.indexOf('rx="1" fill="#FFFFFF"'),
     );
-    expect(full.validationWarnings.join()).toMatch(/only its left 2\.2 in/);
 
     // A template uploaded with its guide layer still in is refused (guides must never print).
     const withGuides = Buffer.from(

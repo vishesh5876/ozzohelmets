@@ -49,6 +49,7 @@ export function checkDesign(
   cover: ArtworkFacts | null,
   pos: ArtworkPosition,
   coverBox: Box,
+  artworkOnTop = false,
 ): DesignCheck {
   const errors: string[] = [];
   const warnings: string[] = [...base.warnings.map((w) => `Base artwork: ${w}`)];
@@ -100,13 +101,15 @@ export function checkDesign(
       warnings.push(
         'At this position the artwork does not fill the emergency panel (left 2.2 × 1 in): uncovered areas print white.',
       );
-    if (fit === 'PANEL' && baseBox.x + baseBox.w > PANEL_W + 0.01)
+    if (!artworkOnTop && fit === 'PANEL' && baseBox.x + baseBox.w > PANEL_W + 0.01)
       warnings.push(
         'At this scale/offset part of the panel artwork runs under the Safety ID column and is hidden.',
       );
     if (fit === 'FULL')
       warnings.push(
-        'Full-width artwork: only its left 2.2 in (55.9 mm) shows. The Safety ID / QR column and the cover are always printed over the rest, cutting through anything placed there. For an exact fit, upload just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px).',
+        artworkOnTop
+          ? 'Design on top: the artwork shows across the Safety ID column too; only the QR, PIN and Safety ID text keep white boxes above it. The removable cover area (right 1.15 in) is never printed with the artwork.'
+          : 'Full-width artwork under the Safety ID panel: only its left 2.2 in (55.9 mm) shows; the white Safety ID / QR column cuts through anything placed further right. Turn on "Design on top", or upload just the emergency panel at 2.2 : 1 (viewBox 0 0 220 100, or 1320 × 600 px).',
       );
   }
 

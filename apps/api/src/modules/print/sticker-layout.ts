@@ -260,6 +260,11 @@ export interface LayoutContext {
     base: ArtworkAsset;
     cover: ArtworkAsset | null;
     position: ArtworkPosition;
+    /**
+     * Artwork over the white Safety ID panel; only the keep-clear areas (QR + quiet zone + PIN,
+     * Safety ID text) stay white and on top. False: artwork under the panel (legacy layering).
+     */
+    onTop?: boolean;
   };
   /** Sample-data test print: every unit is visibly marked TEST PRINT. */
   testPrint?: boolean;
@@ -283,13 +288,14 @@ export function baseArtwork(
   position: ArtworkPosition,
   g: StickerGeometry,
   bleed: number,
+  onTop = false,
 ): DrawElement[] {
   const box = placeBaseArtwork(artworkAspect(art), position);
   const b = Math.max(0, bleed);
-  // Only the emergency zone shows artwork: the white credential panel is drawn over the rest.
-  // Stopping 1 pt under the panel (instead of running under all of it) leaves no coincident
-  // edges for a RIP to anti-alias into a hairline at the bleed line.
-  const right = g.zones.credential.x + 1;
+  // On top: the whole base sticker (up to the base | cover kiss cut). Under the panel: only the
+  // emergency zone shows, so stop 1 pt under the panel (instead of running under all of it):
+  // no coincident edges for a RIP to anti-alias into a hairline at the bleed line.
+  const right = onTop ? g.zones.credential.x + g.zones.credential.w : g.zones.credential.x + 1;
   const piece = (
     role: string,
     x: number,
@@ -380,6 +386,38 @@ export function baseArtwork(
   return [...mirrors, main];
 }
 
+/** White margin around each keep-clear area (pt). */
+export const KEEP_CLEAR_PAD = 1.5;
+
+/**
+ * Areas artwork may never cover (design-on-top layering): the protected target (PIN + QR + quiet
+ * zone) and the rotated Safety ID text, each with a small white margin.
+ */
+export function keepClearBoxes(data: UnitData, g: StickerGeometry, m: TextMetrics): Box[] {
+  const p = KEEP_CLEAR_PAD;
+  const idLen = m.width(`ID: ${data.safetyCode}`, 'bold', D.id.fontPt);
+  const idCap = m.capHeight('bold') * D.id.fontPt;
+  return [
+    { x: g.target.x - p, y: g.target.y - p, w: g.target.w + 2 * p, h: g.target.h + 2 * p },
+    {
+      x: g.idBaselineX - idCap - p,
+      y: (UNIT_H - idLen) / 2 - p,
+      w: idCap + 2 * p,
+      h: idLen + 2 * p,
+    },
+  ];
+}
+
+function keepClear(data: UnitData, g: StickerGeometry, m: TextMetrics): DrawElement[] {
+  return keepClearBoxes(data, g, m).map((b) => ({
+    kind: 'rect',
+    role: 'keep-clear',
+    ...b,
+    fill: D.colors.white,
+    radius: 1,
+  }));
+}
+
 /** Minimum printed QR module (Safety ID scans must work from a phone at arm's length). */
 export const MIN_QR_MODULE_MM = 0.33;
 export const MIN_PIN_FONT_PT = 5;
@@ -424,13 +462,10 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
 
   if (ctx.artwork) {
     // ── Admin artwork (Print Design) ─────────────────────────────────────────────────────────
-    out.push(...baseArtwork(ctx.artwork.base, ctx.artwork.position, g, ctx.bleed ?? 0));
-    // System-controlled white credential panel: no artwork colour or texture behind the ID,
-    // PIN, QR or its quiet zone, whatever the design. It runs through the bleed too, so a
-    // trim drift never shows artwork above or below it.
     const b = ctx.bleed ?? 0;
     const cred = g.zones.credential;
-    out.push({
+    // White credential panel (runs through the bleed so trim drift never shows artwork there).
+    const panel: DrawElement = {
       kind: 'rect',
       role: 'credential-panel',
       x: cred.x,
@@ -438,7 +473,16 @@ export function layoutUnit(data: UnitData, ctx: LayoutContext): DrawElement[] {
       w: cred.w,
       h: UNIT_H + 2 * b,
       fill: white,
-    });
+    };
+    const { base, position, onTop } = ctx.artwork;
+    if (onTop) {
+      // Design on top: nothing of it is cut by the panel. The QR (with its quiet zone), the PIN
+      // and the Safety ID text keep solid white backgrounds above it, so they always scan/read.
+      out.push(panel, ...baseArtwork(base, position, g, b, true), ...keepClear(data, g, m));
+    } else {
+      // Legacy layering: the panel covers everything of the artwork right of the emergency zone.
+      out.push(...baseArtwork(base, position, g, b, false), panel);
+    }
   } else {
     // ── Emergency panel ────────────────────────────────────────────────────────────────────────
     const E = D.emergency;
