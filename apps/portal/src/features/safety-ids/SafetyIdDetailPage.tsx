@@ -15,7 +15,7 @@ import { postWithRecentAuth } from '../../lib/recent-auth';
 import { RecentAuthGate } from '../lifecycle/ConfirmPassword';
 import { warrantyLine } from '../warranty/warranty-labels';
 import { canShare, SAFETY_ID_STATUS, sharingLine } from './safety-id-labels';
-import { TRANSFERS_ENABLED } from '../../lib/config';
+import { HELMETS_ENABLED, TRANSFERS_ENABLED } from '../../lib/config';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -123,38 +123,40 @@ export function SafetyIdDetailPage() {
             </CardContent>
           </Card>
 
-          <Card data-testid="safety-linked">
-            <CardContent>
-              <h2 className="mb-2 font-bold">Linked product</h2>
-              {s.linkedHelmet ? (
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">
-                      {s.linkedHelmet.brand} {s.linkedHelmet.modelName}
-                    </p>
-                    <p className="font-mono text-sm text-body">{s.linkedHelmet.helmetCode}</p>
-                    {s.linkedWarranty && (
-                      <p className="mt-1 text-sm text-body">{warrantyLine(s.linkedWarranty)}</p>
-                    )}
+          {HELMETS_ENABLED && (
+            <Card data-testid="safety-linked">
+              <CardContent>
+                <h2 className="mb-2 font-bold">Linked product</h2>
+                {s.linkedHelmet ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">
+                        {s.linkedHelmet.brand} {s.linkedHelmet.modelName}
+                      </p>
+                      <p className="font-mono text-sm text-body">{s.linkedHelmet.helmetCode}</p>
+                      {s.linkedWarranty && (
+                        <p className="mt-1 text-sm text-body">{warrantyLine(s.linkedWarranty)}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <HelmetStatusBadge status={s.linkedHelmet.status} />
+                      <Link
+                        to={`/app/helmets/${s.linkedHelmet.id}`}
+                        className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+                      >
+                        View helmet
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <HelmetStatusBadge status={s.linkedHelmet.status} />
-                    <Link
-                      to={`/app/helmets/${s.linkedHelmet.id}`}
-                      className={buttonVariants({ variant: 'subtle', size: 'sm' })}
-                    >
-                      View helmet
-                    </Link>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-body">
-                  This Safety ID is not linked to a helmet. It works on its own as a sticker or
-                  card. There is no product warranty for a standalone Safety ID.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                ) : (
+                  <p className="text-sm text-body">
+                    This Safety ID is not linked to a helmet. It works on its own as a sticker or
+                    card. There is no product warranty for a standalone Safety ID.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardContent>

@@ -1,17 +1,18 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '@helmet/ui';
 import { useCustomerAuth } from '../lib/auth-context';
+import { HELMETS_ENABLED } from '../lib/config';
 
 const NAV = [
   { to: '/app', label: 'Dashboard', end: true },
   { to: '/app/safety-ids', label: 'My Safety IDs' },
-  { to: '/app/helmets', label: 'My helmets' },
+  { to: '/app/helmets', label: 'My helmets', helmets: true },
   { to: '/app/profile', label: 'Emergency profile' },
   { to: '/app/contacts', label: 'Emergency contacts' },
   { to: '/app/privacy', label: 'Privacy' },
-  { to: '/app/warranty', label: 'Warranty' },
+  { to: '/app/warranty', label: 'Warranty', helmets: true },
   { to: '/app/account', label: 'Account' },
-];
+].filter((n) => HELMETS_ENABLED || !n.helmets);
 
 export function AppLayout() {
   const { customer } = useCustomerAuth();

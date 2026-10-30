@@ -14,6 +14,7 @@ import { PageTitle } from '../../components/AppLayout';
 import { ErrorState, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
+import { HELMETS_ENABLED } from '../../lib/config';
 import { keys } from '../../lib/query';
 import { AddMobileCard } from '../account/AddMobileCard';
 import { HelmetCard } from '../helmets/HelmetCard';
@@ -155,7 +156,7 @@ export function DashboardPage() {
           </section>
         )}
 
-        {data.helmets.length > 0 && (
+        {HELMETS_ENABLED && data.helmets.length > 0 && (
           <section aria-labelledby="helmets-h">
             <div className="mb-3 flex items-center justify-between">
               <h2 id="helmets-h" className="text-display-sm font-semibold">
@@ -215,28 +216,33 @@ export function DashboardPage() {
           </section>
 
           <div className="flex flex-col gap-3">
-            <section className="rounded-xl border border-hairline p-5" aria-labelledby="warranty-h">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 id="warranty-h" className="font-bold">
-                  Warranty
-                </h2>
-                <Link
-                  to="/app/warranty"
-                  className="text-sm font-medium underline underline-offset-4"
-                >
-                  View
-                </Link>
-              </div>
-              <p className="mt-2 text-sm text-body">
-                <span className="font-bold text-ink tabular-nums">{data.warranty.active}</span>{' '}
-                active
-                {' · '}
-                <span className="font-bold text-ink tabular-nums">
-                  {data.warranty.notRegistered}
-                </span>{' '}
-                not registered
-              </p>
-            </section>
+            {HELMETS_ENABLED && (
+              <section
+                className="rounded-xl border border-hairline p-5"
+                aria-labelledby="warranty-h"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 id="warranty-h" className="font-bold">
+                    Warranty
+                  </h2>
+                  <Link
+                    to="/app/warranty"
+                    className="text-sm font-medium underline underline-offset-4"
+                  >
+                    View
+                  </Link>
+                </div>
+                <p className="mt-2 text-sm text-body">
+                  <span className="font-bold text-ink tabular-nums">{data.warranty.active}</span>{' '}
+                  active
+                  {' · '}
+                  <span className="font-bold text-ink tabular-nums">
+                    {data.warranty.notRegistered}
+                  </span>{' '}
+                  not registered
+                </p>
+              </section>
+            )}
             <section className="rounded-xl border border-hairline p-5" aria-labelledby="security-h">
               <div className="flex items-baseline justify-between gap-3">
                 <h2 id="security-h" className="font-bold">

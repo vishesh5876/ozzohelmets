@@ -46,7 +46,11 @@ export default defineConfig({
         {
           command: 'pnpm --filter @helmet/portal dev',
           // Transfers are hidden in the portal by default; the lifecycle specs exercise them.
-          env: { VITE_TRANSFERS_ENABLED: 'true', VITE_EMAIL_VERIFICATION: 'false' },
+          env: {
+            VITE_TRANSFERS_ENABLED: 'true',
+            VITE_HELMETS_ENABLED: 'true',
+            VITE_EMAIL_VERIFICATION: 'false',
+          },
           url: PORTAL_URL,
           reuseExistingServer: true,
           timeout: 120_000,

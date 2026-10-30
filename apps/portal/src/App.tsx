@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
 import { LoadingState } from './components/States';
 import { useCustomerAuth } from './lib/auth-context';
+import { HELMETS_ENABLED } from './lib/config';
 
 const page = <T extends Record<string, unknown>>(loader: () => Promise<T>, name: keyof T) =>
   lazy(() => loader().then((m) => ({ default: m[name] as React.ComponentType })));
@@ -76,15 +77,24 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="safety-ids" element={<SafetyIdsPage />} />
           <Route path="safety-ids/:id" element={<SafetyIdDetailPage />} />
-          <Route path="helmets" element={<HelmetsPage />} />
-          <Route path="helmets/:id" element={<HelmetDetailPage />} />
-          <Route path="helmets/:id/warranty" element={<WarrantyPage />} />
-          <Route path="helmets/:id/:action" element={<HelmetActionPage />} />
+          {HELMETS_ENABLED ? (
+            <>
+              <Route path="helmets" element={<HelmetsPage />} />
+              <Route path="helmets/:id" element={<HelmetDetailPage />} />
+              <Route path="helmets/:id/warranty" element={<WarrantyPage />} />
+              <Route path="helmets/:id/:action" element={<HelmetActionPage />} />
+              <Route path="warranty" element={<WarrantyOverviewPage />} />
+            </>
+          ) : (
+            <>
+              <Route path="helmets/*" element={<Navigate to="/app" replace />} />
+              <Route path="warranty" element={<Navigate to="/app" replace />} />
+            </>
+          )}
           <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="contacts" element={<ContactsPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
-          <Route path="warranty" element={<WarrantyOverviewPage />} />
           <Route path="account" element={<AccountPage />} />
         </Route>
         <Route
