@@ -134,6 +134,7 @@ export class TransferClaimController {
       dto.password,
       dto.name,
       meta,
+      dto.emailProof,
     );
     const options: CookieOptions = {
       httpOnly: true,

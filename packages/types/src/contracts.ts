@@ -313,12 +313,12 @@ export interface CustomerProfile {
   customerId: string;
   name: string | null;
   /**
-   * Account email: the normal sign-in identifier (unique, bound at first activation). NOT
-   * verified and never proof of helmet possession — the Activation PIN is. Null only for
-   * accounts created before email sign-in existed.
+   * Account email: the normal sign-in identifier (unique, bound at first activation). Never
+   * proof of helmet possession — the Activation PIN is. Null only for accounts created before
+   * email sign-in existed.
    */
   email: string | null;
-  /** Always false today: there is no email verification (no OTP, no links). */
+  /** The address was proven with an emailed code (sign-up, email change or a reset by email). */
   emailVerified: boolean;
   /** Optional, owner-provided and NOT verified — never used for authentication or recovery. */
   mobile: string | null;
@@ -334,6 +334,20 @@ export interface CustomerLoginResponse {
 /** Returned once when a recovery code is created or rotated. Never retrievable again. */
 export interface RecoveryCodeIssued {
   recoveryCode: string;
+}
+
+/** An emailed one-time code was issued (password reset answers the same for unknown emails). */
+export interface EmailCodeSentResponse {
+  /** Seconds the code stays valid. */
+  expiresIn: number;
+  /** Seconds before another code can be requested. */
+  resendIn: number;
+}
+
+/** A verified address: send `emailProof` with the sign-up (activation / claim) request. */
+export interface EmailProofResponse {
+  emailProof: string;
+  expiresIn: number;
 }
 
 export interface CustomerRecoverResponse {

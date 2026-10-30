@@ -175,6 +175,7 @@ export class SafetyIdTransferService {
     password: string,
     name: string | undefined,
     meta: RequestMeta,
+    emailProof?: string,
   ): Promise<{
     result: CustomerSession['response'] & RecoveryCodeIssued & { safetyId: CustomerSafetyIdDto };
     session: CustomerSession;
@@ -185,6 +186,7 @@ export class SafetyIdTransferService {
       mobile,
       helmetCode: safetyCode,
       name,
+      emailProof,
     });
     const { safetyId, userId } = await this.execute(
       safetyCode,

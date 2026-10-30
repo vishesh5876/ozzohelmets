@@ -16,6 +16,7 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { useSignupEmailProof } from '../auth/useSignupEmailProof';
 import { EmailField } from '../auth/EmailField';
 import { emailClientProblem } from '../auth/email-check';
 import { MobileField } from '../auth/MobileField';
@@ -51,6 +52,7 @@ function ClaimHelmetPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const emailProof = useSignupEmailProof(email, 'claim-email');
   const [mobile, setMobile] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -94,6 +96,7 @@ function ClaimHelmetPage() {
         mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
+        emailProof: emailProof.token,
       });
     },
     onSuccess: (r) => {
@@ -118,7 +121,11 @@ function ClaimHelmetPage() {
   };
   const submitNew = (e: FormEvent) => {
     e.preventDefault();
-    const p = emailClientProblem(email) ?? mobileClientProblem(mobile) ?? passwordClientProblem(pw);
+    const p =
+      emailClientProblem(email) ??
+      emailProof.problem ??
+      mobileClientProblem(mobile) ??
+      passwordClientProblem(pw);
     setFormError(p);
     if (!p) register.mutate();
   };
@@ -258,6 +265,7 @@ function ClaimHelmetPage() {
                           />
                         </Field>
                         <EmailField id="claim-email" value={email} onChange={setEmail} />
+                        {emailProof.box}
                         <MobileField id="claim-mobile" value={mobile} onChange={setMobile} />
                         <PasswordFields value={pw} onChange={setPw} idPrefix="claim" />
                         {formError && <p className="text-sm text-danger">{formError}</p>}

@@ -92,6 +92,31 @@ export const envSchema = z
     RECOVERY_LOCKOUT_BASE_SECONDS: z.coerce.number().int().min(10).default(900),
     RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR: z.coerce.number().int().min(1).default(10),
     RECOVERY_RESET_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+    // Email: one-time codes for verification at sign-up, email change and password reset.
+    /**
+     * `resend` sends through the Resend HTTPS API (port 443, no SMTP ports needed); `smtp` through
+     * any SMTP server; `log` writes the message (and code) to the API log — dev only.
+     */
+    MAIL_TRANSPORT: z.enum(['resend', 'smtp', 'log']).default('log'),
+    /** Resend API key (re_…), "Sending access" scope is enough. */
+    RESEND_API_KEY: z.string().trim().optional(),
+    SMTP_HOST: z.string().trim().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    /** true = implicit TLS (port 465); false = STARTTLS upgrade (587), always required. */
+    SMTP_SECURE: bool.default('false'),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    MAIL_FROM: z.string().min(3).default('OZZO Safety ID <no-reply@ozzohelmets.cloud>'),
+    /** New accounts and email changes must prove the address with a code. */
+    EMAIL_VERIFICATION_REQUIRED: bool.default('true'),
+    EMAIL_OTP_TTL_SECONDS: z.coerce.number().int().min(60).max(1800).default(600),
+    EMAIL_OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    /** Minimum gap between two codes to the same address. */
+    EMAIL_OTP_RESEND_SECONDS: z.coerce.number().int().min(10).max(600).default(60),
+    EMAIL_OTP_MAX_SENDS_PER_ADDRESS_PER_HOUR: z.coerce.number().int().min(1).max(50).default(5),
+    EMAIL_OTP_MAX_SENDS_PER_IP_PER_HOUR: z.coerce.number().int().min(1).max(500).default(20),
+    /** How long a verified-address proof stays usable to finish sign-up. */
+    EMAIL_PROOF_TTL_SECONDS: z.coerce.number().int().min(300).max(7200).default(1800),
     // Phase 5: support recovery grants, security-event retention, public abuse controls.
     RECOVERY_GRANT_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(60),
     SECURITY_EVENT_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(365),
@@ -252,6 +277,20 @@ export const envSchema = z
     THROTTLE_DEFAULT_LIMIT: z.coerce.number().int().min(1).default(300),
     THROTTLE_AUTH_LIMIT: z.coerce.number().int().min(1).default(10),
     THROTTLE_PUBLIC_LIMIT: z.coerce.number().int().min(1).default(300),
+  })
+  .superRefine((env, ctx) => {
+    if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_HOST)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SMTP_HOST'],
+        message: 'SMTP_HOST is required when MAIL_TRANSPORT=smtp',
+      });
+    if (env.MAIL_TRANSPORT === 'resend' && !env.RESEND_API_KEY?.startsWith('re_'))
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RESEND_API_KEY'],
+        message: 'RESEND_API_KEY (re_…) is required when MAIL_TRANSPORT=resend',
+      });
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

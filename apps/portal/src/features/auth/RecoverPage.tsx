@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   type CustomerRecoverResponse,
   type CustomerResetPasswordResponse,
+  type EmailCodeSentResponse,
   parseAccountIdentifier,
 } from '@helmet/types';
 import { Button, Card, CardContent, Field, Input } from '@helmet/ui';
@@ -11,20 +12,26 @@ import { InlineError } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { EmailCodeBox } from './EmailCodeBox';
+import { EmailField } from './EmailField';
+import { emailClientProblem } from './email-check';
 import { PasswordFields } from './PasswordFields';
 import { passwordClientProblem, type PasswordValue } from './password-check';
 import { RecoveryCodeNotice } from './RecoveryCodeNotice';
 
-type Step = 'verify' | 'reset' | 'code';
+type Step = 'email' | 'verify' | 'reset' | 'code';
 
 /**
- * Forgot password: email, Customer ID or Helmet ID + Recovery Code → new password → new
- * Recovery Code (shown once). Works without access to the mailbox.
+ * Forgot password: a 6-digit code emailed to the account address (default), or — without the
+ * mailbox — email / Customer ID / Helmet ID + Recovery Code. Then a new password and a new
+ * Recovery Code (shown once).
  */
 export function RecoverPage() {
   const navigate = useNavigate();
   const { signIn, restored } = useCustomerAuth();
-  const [step, setStep] = useState<Step>('verify');
+  const [step, setStep] = useState<Step>('email');
+  const [email, setEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [helmetCode, setHelmetCode] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -42,6 +49,18 @@ export function RecoverPage() {
     onSuccess: (res) => {
       setResetToken(res.resetToken);
       setRecoveryCode('');
+      setStep('reset');
+    },
+  });
+  const verifyEmail = useMutation({
+    mutationFn: () =>
+      api.post<CustomerRecoverResponse>('/customer/auth/recover/email/verify', {
+        email: email.trim(),
+        code: emailCode,
+      }),
+    onSuccess: (res) => {
+      setResetToken(res.resetToken);
+      setEmailCode('');
       setStep('reset');
     },
   });
@@ -82,6 +101,11 @@ export function RecoverPage() {
         <h1 className="text-display-lg font-medium">
           {step === 'code' ? 'Password changed' : 'Reset your password'}
         </h1>
+        {step === 'email' && (
+          <p className="mt-2 text-body">
+            Enter your account email. We’ll send you a 6-digit code to reset your password.
+          </p>
+        )}
         {step === 'verify' && (
           <p className="mt-2 text-body">
             Enter your account email (or Customer ID / Helmet ID) and the Recovery Code you saved.
@@ -89,6 +113,56 @@ export function RecoverPage() {
         )}
         <Card className="mt-8">
           <CardContent>
+            {step === 'email' && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (emailCode.length === 6) verifyEmail.mutate();
+                }}
+                noValidate
+                className="flex flex-col gap-4"
+                data-testid="recover-email"
+              >
+                <EmailField
+                  id="rec-email"
+                  label="Account email"
+                  value={email}
+                  onChange={setEmail}
+                  hint=""
+                  autoFocus
+                />
+                <EmailCodeBox
+                  email={email}
+                  idPrefix="rec-email"
+                  onCode={setEmailCode}
+                  sendLabel="Email me a code"
+                  send={() =>
+                    api.post<EmailCodeSentResponse>('/customer/auth/recover/email', {
+                      email: email.trim(),
+                    })
+                  }
+                />
+                <InlineError error={verifyEmail.error} />
+                <Button
+                  type="submit"
+                  size="lg"
+                  loading={verifyEmail.isPending}
+                  disabled={!!emailClientProblem(email) || emailCode.length !== 6}
+                >
+                  Continue
+                </Button>
+                <p className="text-sm text-body">
+                  No access to this email?{' '}
+                  <button
+                    type="button"
+                    className="font-medium text-ink underline underline-offset-4"
+                    onClick={() => setStep('verify')}
+                  >
+                    Use your Recovery Code instead
+                  </button>
+                </p>
+              </form>
+            )}
             {step === 'verify' && (
               <form onSubmit={submitVerify} noValidate className="flex flex-col gap-4">
                 <Field
@@ -135,6 +209,13 @@ export function RecoverPage() {
                   Lost your Recovery Code too? Contact support. After verifying your identity they
                   can give you a one-time code by phone — never by email.
                 </p>
+                <button
+                  type="button"
+                  className="self-start text-sm font-medium underline underline-offset-4"
+                  onClick={() => setStep('email')}
+                >
+                  ← Get a code by email instead
+                </button>
               </form>
             )}
             {step === 'reset' && (

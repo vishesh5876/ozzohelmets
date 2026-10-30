@@ -1,8 +1,35 @@
 # Account recovery
 
-## 1. Normal recovery (self-service, no mailbox needed)
+## 0. Forgot password by email (default)
 
-`/recover`: email, Customer ID or owned Helmet ID **+ recovery code** (`RK-XXXX-XXXX-XXXX`) →
+`/recover` starts here: the account email → `POST /customer/auth/recover/email` sends a six-digit
+code (always the same answer, whether or not an account uses the address — no enumeration) →
+`POST /customer/auth/recover/email/verify` with the code → the same single-use reset token as
+below → new password (all sessions revoked, recovery code rotated and shown once). A successful
+email reset also marks the address verified.
+
+Codes (`EmailOtpService`): 6 digits (CSPRNG), only an HMAC (credential pepper) stored in Redis
+for `EMAIL_OTP_TTL_SECONDS` (10 min), bound to purpose + address (+ account for email changes),
+single use, destroyed after `EMAIL_OTP_MAX_ATTEMPTS` (5) wrong guesses; wrong codes are also
+capped per IP. Sending: one code per address per `EMAIL_OTP_RESEND_SECONDS` (60 s), at most
+`EMAIL_OTP_MAX_SENDS_PER_ADDRESS_PER_HOUR` (5) per address and
+`EMAIL_OTP_MAX_SENDS_PER_IP_PER_HOUR` (20) per IP. Addresses and codes never appear in clear in
+Redis keys or logs (`MAIL_TRANSPORT=log`, development only, prints the message).
+
+The same codes verify the address at **sign-up** (activation and transfer claims:
+`POST /customer/auth/email/send-code` → `…/email/verify-code` → `emailProof`, sent with the
+registration; required while `EMAIL_VERIFICATION_REQUIRED=true`) and on **email change**
+(`POST /customer/auth/email/change-code` to the new address; the code goes with
+`POST /customer/auth/email` together with the current password).
+
+Production mail goes through Resend's HTTPS API (`MAIL_TRANSPORT=resend`, `RESEND_API_KEY`,
+`MAIL_FROM` on a domain verified in Resend). Plain SMTP remains available as an alternative
+(`MAIL_TRANSPORT=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`);
+TLS is always required.
+
+## 1. Recovery code (self-service, no mailbox needed)
+
+`/recover` → _Use your Recovery Code instead_: email, Customer ID or owned Helmet ID **+ recovery code** (`RK-XXXX-XXXX-XXXX`) →
 single-use reset token → new password. All sessions are revoked, the recovery code is replaced and
 the new code is shown once (acknowledgement recorded). Details: [CUSTOMER-AUTH](CUSTOMER-AUTH.md).
 

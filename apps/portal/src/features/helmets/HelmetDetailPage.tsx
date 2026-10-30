@@ -9,6 +9,7 @@ import { keys } from '../../lib/query';
 import { ACTION_PAGES, TIMELINE_LABELS } from './lifecycle-labels';
 import { warrantyLine } from '../warranty/warranty-labels';
 import { PROFILE_LABEL } from './profile-label';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -49,6 +50,7 @@ export function HelmetDetailPage() {
     return <ErrorState error={error} action={<Link to="/app/helmets">Back to my helmets</Link>} />;
   const profile = PROFILE_LABEL[helmet.emergencyProfileStatus];
   const actions = helmet.availableActions
+    .filter((a) => TRANSFERS_ENABLED || a !== 'TRANSFER')
     .map((a) => ACTION_PAGES[a])
     .filter((a): a is NonNullable<typeof a> => Boolean(a));
   const canEnable = helmet.availableActions.includes('ENABLE_EMERGENCY');

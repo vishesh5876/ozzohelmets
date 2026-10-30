@@ -6,6 +6,7 @@ import { RequestMetaMiddleware } from './common/utils/request-meta.middleware';
 import { AppConfigModule } from './config/config.module';
 import { LoggingModule } from './infrastructure/logging/logging.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { MailModule } from './infrastructure/mail/mail.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { ActivationModule } from './modules/activation/activation.module';
@@ -43,6 +44,7 @@ import { SecurityModule } from './security/security.module';
     AppConfigModule,
     LoggingModule,
     PrismaModule,
+    MailModule,
     RedisModule,
     SecurityModule,
     RateLimitModule,

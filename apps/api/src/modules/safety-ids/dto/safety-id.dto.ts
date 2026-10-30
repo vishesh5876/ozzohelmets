@@ -55,6 +55,15 @@ export class SafetyIdClaimRegisterDto extends SafetyIdClaimDto {
   @MaxLength(PASSWORD_MAX_LENGTH)
   password: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Proof that the email was verified: from POST /customer/auth/email/verify-code. Required unless EMAIL_VERIFICATION_REQUIRED=false.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  emailProof?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(trim)

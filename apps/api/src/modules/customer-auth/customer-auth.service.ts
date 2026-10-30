@@ -35,6 +35,7 @@ import { CustomerAccountsService } from './customer-accounts.service';
 import { CustomerCredentialsService } from './customer-credentials.service';
 import { CustomerTokenService } from './customer-token.service';
 import type { UpdateCustomerDto } from './dto/customer-auth.dto';
+import { type EmailOtpSent, EmailOtpService } from './email-otp.service';
 
 export interface CustomerSession {
   response: CustomerLoginResponse;
@@ -53,10 +54,12 @@ const HOUR = 3600;
 const sha = (v: string) => createHash('sha256').update(v).digest('hex');
 
 /**
- * Customer authentication (no OTP, no paid providers):
+ * Customer authentication:
  *  - login: account email (normal), Customer ID or a currently owned Helmet ID + password
- *  - recovery: same identifiers + offline recovery code → single-use reset token → new password
- * The email is a sign-in identifier only; the activation PIN is what proves possession.
+ *  - recovery: a six-digit code emailed to the account address, or (no mailbox needed) the same
+ *    identifiers + offline recovery code → single-use reset token → new password
+ *  - the account email is verified with an emailed code at sign-up and on every change
+ * The activation PIN is what proves possession of a Safety ID.
  * All failures for unknown identifiers, unowned helmets and wrong secrets are indistinguishable.
  */
 @Injectable()
@@ -72,8 +75,124 @@ export class CustomerAuthService {
     private readonly recentAuth: RecentAuthService,
     private readonly accounts: CustomerAccountsService,
     private readonly events: SecurityEventsService,
+    private readonly emailOtp: EmailOtpService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
+
+  // ── Email codes ─────────────────────────────────────────────────────────────────────────────
+
+  /** Sign-up step: emails a code to an address no live account uses yet. */
+  async sendSignupCode(rawEmail: string, meta: RequestMeta): Promise<EmailOtpSent> {
+    const email = this.accounts.parseEmail(rawEmail);
+    await this.accounts.assertEmailAvailable(this.prisma, email);
+    return this.emailOtp.send('signup', email, meta);
+  }
+
+  /** Sign-up step: the right code returns a short-lived proof to send with the registration. */
+  async verifySignupCode(
+    rawEmail: string,
+    code: string,
+    meta: RequestMeta,
+  ): Promise<{ emailProof: string; expiresIn: number }> {
+    const email = this.accounts.parseEmail(rawEmail);
+    await this.assertVerifyBudget(meta);
+    if (!(await this.emailOtp.verify('signup', email, code))) {
+      await this.countVerifyFailure(meta);
+      throw this.emailOtp.invalidCode();
+    }
+    return this.emailOtp.issueProof(email);
+  }
+
+  /** Signed-in: emails a code to the NEW address (bound to this account). */
+  async sendEmailChangeCode(
+    customer: AuthenticatedCustomer,
+    rawEmail: string,
+    meta: RequestMeta,
+  ): Promise<EmailOtpSent> {
+    const email = this.accounts.parseEmail(rawEmail);
+    await this.accounts.assertEmailAvailable(this.prisma, email, customer.id);
+    return this.emailOtp.send('email-change', email, meta, { userId: customer.id });
+  }
+
+  /**
+   * Forgot password, step 1: a code to the account's email. The answer is the same whether or
+   * not an active account uses the address (no enumeration); limits apply either way.
+   */
+  async startEmailRecovery(rawEmail: string, meta: RequestMeta): Promise<EmailOtpSent> {
+    const email = this.accounts.parseEmail(rawEmail);
+    const user = await this.prisma.user.findFirst({
+      where: { emailNormalized: email.normalized, status: 'ACTIVE' },
+      select: { id: true, email: true },
+    });
+    const sent = await this.emailOtp.send(
+      'password-reset',
+      // Send to the address exactly as the account stores it.
+      user?.email ? { ...email, email: user.email } : email,
+      meta,
+      { deliver: !!user },
+    );
+    if (user)
+      await this.audit.record({
+        action: AuditAction.CUSTOMER_RECOVERY_EMAIL_SENT,
+        entityType: 'user',
+        entityId: user.id,
+        userId: user.id,
+        ipHash: meta.ipHash,
+      });
+    return sent;
+  }
+
+  /** Forgot password, step 2: the emailed code → the same single-use reset token as recover(). */
+  async verifyEmailRecovery(
+    rawEmail: string,
+    code: string,
+    meta: RequestMeta,
+  ): Promise<CustomerRecoverResponse> {
+    const email = this.accounts.parseEmail(rawEmail);
+    await this.assertVerifyBudget(meta);
+    const user = await this.prisma.user.findFirst({
+      where: { emailNormalized: email.normalized, status: 'ACTIVE' },
+    });
+    if (!user || !(await this.emailOtp.verify('password-reset', email, code))) {
+      await this.countVerifyFailure(meta);
+      throw this.emailOtp.invalidCode();
+    }
+    // Receiving the code proves the mailbox.
+    if (!user.emailVerified)
+      await this.prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+    await this.audit.record({
+      action: AuditAction.CUSTOMER_RECOVERY_VERIFIED,
+      entityType: 'user',
+      entityId: user.id,
+      userId: user.id,
+      ipHash: meta.ipHash,
+      metadata: { method: 'email' },
+    });
+    return this.issueResetToken(user);
+  }
+
+  /** Wrong codes per IP (across addresses) are capped on top of the per-code attempt limit. */
+  private async assertVerifyBudget(meta: RequestMeta): Promise<void> {
+    const state = await this.limiter.peek(
+      `email-otp-verify-fail:ip:${meta.ipHash}`,
+      this.config.get('RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR') * 3,
+    );
+    if (!state.allowed)
+      throw new AppException(
+        ErrorCode.RATE_LIMITED,
+        'Too many wrong codes. Try again later.',
+        HttpStatus.TOO_MANY_REQUESTS,
+        { retryAfter: state.retryAfter },
+      );
+  }
+
+  private async countVerifyFailure(meta: RequestMeta): Promise<void> {
+    await this.limiter.hit(
+      `email-otp-verify-fail:ip:${meta.ipHash}`,
+      this.config.get('RECOVERY_MAX_FAILURES_PER_IP_PER_HOUR') * 3,
+      HOUR,
+    );
+  }
 
   /**
    * Password re-check for sensitive actions. Returns a short-lived token bound to this session.
@@ -135,16 +254,17 @@ export class CustomerAuthService {
   }
 
   /**
-   * Changes the sign-in email: current password + the new address typed twice. The address is
-   * unique among live accounts, stored unverified, and other sessions are revoked. No OTP.
+   * Changes the sign-in email: current password + the code emailed to the new address (see
+   * sendEmailChangeCode). The address is unique among live accounts and stored verified; other
+   * sessions are revoked. `confirmEmail` (typed twice) is still accepted.
    */
   async changeEmail(
     customer: AuthenticatedCustomer,
-    dto: { currentPassword: string; newEmail: string; confirmEmail: string },
+    dto: { currentPassword: string; newEmail: string; confirmEmail?: string; emailCode?: string },
     meta: RequestMeta,
   ): Promise<CustomerProfile> {
     const email = this.accounts.parseEmail(dto.newEmail);
-    const confirm = normalizeEmail(dto.confirmEmail);
+    const confirm = dto.confirmEmail === undefined ? email : normalizeEmail(dto.confirmEmail);
     if (!confirm || confirm.normalized !== email.normalized) {
       throw new AppException(
         ErrorCode.VALIDATION_ERROR,
@@ -153,6 +273,11 @@ export class CustomerAuthService {
       );
     }
     const user = await this.verifyCurrentPassword(customer, dto.currentPassword, meta);
+    const verified =
+      !!dto.emailCode &&
+      (await this.emailOtp.verify('email-change', email, dto.emailCode, user.id));
+    if (!verified && this.config.get('EMAIL_VERIFICATION_REQUIRED'))
+      throw this.emailOtp.invalidCode();
     const changed = user.emailNormalized !== email.normalized;
     let updated: User;
     try {
@@ -160,7 +285,7 @@ export class CustomerAuthService {
         await this.accounts.assertEmailAvailable(tx, email, user.id);
         const next = await tx.user.update({
           where: { id: user.id },
-          data: { email: email.email, emailNormalized: email.normalized, emailVerified: false },
+          data: { email: email.email, emailNormalized: email.normalized, emailVerified: verified },
         });
         await this.audit.record(
           {
@@ -298,7 +423,21 @@ export class CustomerAuthService {
       throw this.invalidCredentials('The email, ID or Recovery Code is incorrect.');
     }
     await Promise.all(keys.map((k) => this.lockout.reset(k)));
+    await this.audit.record({
+      action: AuditAction.CUSTOMER_RECOVERY_VERIFIED,
+      entityType: 'user',
+      entityId: user.id,
+      userId: user.id,
+      ipHash: meta.ipHash,
+    });
+    return this.issueResetToken(user, grantId);
+  }
 
+  /**
+   * Single-use reset token (stored hashed in Redis). It captures the current recovery-code hash,
+   * so the reset fails if that changed in between, and a reset rotates it: one use only.
+   */
+  private async issueResetToken(user: User, grantId?: string): Promise<CustomerRecoverResponse> {
     const resetToken = opaqueToken(32);
     const ttl = this.config.get('RECOVERY_RESET_TOKEN_TTL_SECONDS');
     const ticket: ResetTicket = {
@@ -307,13 +446,6 @@ export class CustomerAuthService {
       ...(grantId ? { grantId } : {}),
     };
     await this.redis.set(`customer-reset:${sha(resetToken)}`, JSON.stringify(ticket), 'EX', ttl);
-    await this.audit.record({
-      action: AuditAction.CUSTOMER_RECOVERY_VERIFIED,
-      entityType: 'user',
-      entityId: user.id,
-      userId: user.id,
-      ipHash: meta.ipHash,
-    });
     return { resetToken, expiresIn: ttl };
   }
 

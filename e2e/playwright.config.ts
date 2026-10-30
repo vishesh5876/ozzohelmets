@@ -29,6 +29,8 @@ export default defineConfig({
     ? [
         {
           command: 'pnpm --filter @helmet/api dev',
+          // Browser specs sign up without reading mail (EmailOtpService has its own tests).
+          env: { EMAIL_VERIFICATION_REQUIRED: 'false', MAIL_TRANSPORT: 'log' },
           url: `${API_URL}/api/v1/health`,
           reuseExistingServer: true,
           timeout: 120_000,
@@ -43,6 +45,8 @@ export default defineConfig({
         },
         {
           command: 'pnpm --filter @helmet/portal dev',
+          // Transfers are hidden in the portal by default; the lifecycle specs exercise them.
+          env: { VITE_TRANSFERS_ENABLED: 'true', VITE_EMAIL_VERIFICATION: 'false' },
           url: PORTAL_URL,
           reuseExistingServer: true,
           timeout: 120_000,

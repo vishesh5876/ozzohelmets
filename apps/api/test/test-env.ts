@@ -41,6 +41,9 @@ export const TEST_ENV: Record<string, string> = {
   PUBLIC_MISS_LIMIT_PER_IP: '6',
   PUBLIC_UNCACHED_LIMIT_WHEN_FLAGGED: '2',
   RECOVERY_GRANT_TTL_MINUTES: '30',
+  // Sign-up suites register without the emailed code (EmailOtpService has its own tests).
+  EMAIL_VERIFICATION_REQUIRED: 'false',
+  MAIL_TRANSPORT: 'log',
   // Phase 6: small thresholds so detection scenarios stay fast and deterministic.
   ENUMERATION_INVALID_TOKEN_LIMIT: '5',
   VALID_TOKEN_SCRAPE_LIMIT: '4',

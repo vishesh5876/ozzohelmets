@@ -20,6 +20,8 @@ import {
   type CustomerRecoverResponse,
   type CustomerResetPasswordResponse,
   type CustomerSessionDto,
+  type EmailCodeSentResponse,
+  type EmailProofResponse,
   ErrorCode,
   type RecentAuthResponse,
   type RecoveryCodeIssued,
@@ -42,6 +44,9 @@ import {
   ChangePasswordDto,
   ConfirmPasswordDto,
   CustomerLoginDto,
+  EmailCodeDto,
+  EmailDto,
+  NewEmailDto,
   RecoverDto,
   ResetPasswordDto,
   UpdateCustomerDto,
@@ -86,6 +91,75 @@ export class CustomerAuthController {
   })
   recover(@Body() dto: RecoverDto, @ReqMeta() meta: RequestMeta): Promise<CustomerRecoverResponse> {
     return this.auth.recover(dto.identifier ?? dto.helmetCode ?? '', dto.recoveryCode, meta);
+  }
+
+  @Post('recover/email')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Forgot password step 1: email a six-digit code to the account address. Same answer whether or not an account uses it.',
+  })
+  startEmailRecovery(
+    @Body() dto: EmailDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<EmailCodeSentResponse> {
+    return this.auth.startEmailRecovery(dto.email, meta);
+  }
+
+  @Post('recover/email/verify')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Forgot password step 2: the emailed code → single-use reset token (then reset-password).',
+  })
+  verifyEmailRecovery(
+    @Body() dto: EmailCodeDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<CustomerRecoverResponse> {
+    return this.auth.verifyEmailRecovery(dto.email, dto.code, meta);
+  }
+
+  @Post('email/send-code')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Sign-up: email a six-digit code to a new account address (409 if an account already uses it).',
+  })
+  sendSignupCode(
+    @Body() dto: EmailDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<EmailCodeSentResponse> {
+    return this.auth.sendSignupCode(dto.email, meta);
+  }
+
+  @Post('email/verify-code')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit('auth')
+  @ApiOperation({
+    summary:
+      'Sign-up: the right code returns `emailProof`, sent with activation / claim registration.',
+  })
+  verifySignupCode(
+    @Body() dto: EmailCodeDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<EmailProofResponse> {
+    return this.auth.verifySignupCode(dto.email, dto.code, meta);
+  }
+
+  @Post('email/change-code')
+  @HttpCode(HttpStatus.OK)
+  @CustomerAuth()
+  @RateLimit('auth')
+  @ApiOperation({ summary: 'Email a code to the NEW address before changing the sign-in email.' })
+  sendEmailChangeCode(
+    @CurrentCustomer() customer: AuthenticatedCustomer,
+    @Body() dto: NewEmailDto,
+    @ReqMeta() meta: RequestMeta,
+  ): Promise<EmailCodeSentResponse> {
+    return this.auth.sendEmailChangeCode(customer, dto.newEmail, meta);
   }
 
   @Post('reset-password')
@@ -159,7 +233,7 @@ export class CustomerAuthController {
   @RateLimit('auth')
   @ApiOperation({
     summary:
-      'Change the sign-in email (current password + confirmation). Unique among accounts; other sessions are revoked. No OTP.',
+      'Change the sign-in email: current password + the code emailed to the new address (email/change-code). Unique among accounts; other sessions are revoked.',
   })
   changeEmail(
     @CurrentCustomer() customer: AuthenticatedCustomer,

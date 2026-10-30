@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '@helmet/types';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -86,7 +86,33 @@ export class ConfirmPasswordDto {
   password: string;
 }
 
-/** Email change: password + typed-twice confirmation. No OTP; the address stays unverified. */
+export class EmailDto {
+  @ApiProperty({ example: 'rider@example.com' })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  email: string;
+}
+
+const CODE_DESCRIPTION = 'Six-digit code from the email (spaces ignored).';
+
+export class EmailCodeDto extends EmailDto {
+  @ApiProperty({ example: '482913', description: CODE_DESCRIPTION })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\s+/g, '') : value,
+  )
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'Enter the six-digit code from the email.' })
+  code: string;
+}
+
+export class NewEmailDto {
+  @ApiProperty({ example: 'new@example.com' })
+  @IsString()
+  @MaxLength(EMAIL_MAX_LENGTH)
+  newEmail: string;
+}
+
+/** Email change: password + the code emailed to the new address. */
 export class ChangeEmailDto {
   @ApiProperty({ format: 'password' })
   @IsString()
@@ -98,10 +124,26 @@ export class ChangeEmailDto {
   @MaxLength(EMAIL_MAX_LENGTH)
   newEmail: string;
 
-  @ApiProperty({ example: 'new@example.com', description: 'Must match `newEmail`' })
+  @ApiPropertyOptional({
+    example: 'new@example.com',
+    description: 'If sent, must match `newEmail`',
+  })
+  @IsOptional()
   @IsString()
   @MaxLength(EMAIL_MAX_LENGTH)
-  confirmEmail: string;
+  confirmEmail?: string;
+
+  @ApiPropertyOptional({
+    example: '482913',
+    description: `${CODE_DESCRIPTION} Sent to the new address by POST /customer/auth/email/change-code.`,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\s+/g, '') : value,
+  )
+  @IsString()
+  @MaxLength(12)
+  emailCode?: string;
 }
 
 /**

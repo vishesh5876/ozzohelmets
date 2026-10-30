@@ -19,6 +19,7 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { keys, queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { useSignupEmailProof } from '../auth/useSignupEmailProof';
 import { EmailField } from '../auth/EmailField';
 import { MobileField } from '../auth/MobileField';
 import { mobileClientProblem } from '../auth/mobile-check';
@@ -63,6 +64,7 @@ export function ActivatePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const emailProof = useSignupEmailProof(email, 'reg-email');
   const [mobile, setMobile] = useState('');
   const [mobileError, setMobileError] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
@@ -88,6 +90,7 @@ export function ActivatePage() {
         mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
+        emailProof: emailProof.token,
       });
     },
     onSuccess: async (res) => {
@@ -150,7 +153,9 @@ export function ActivatePage() {
     setEmailError(emailProblem);
     setMobileError(mobileProblem);
     setPwError(problem);
-    if (!problem && !emailProblem && !mobileProblem) register.mutate();
+    const unverified = emailProblem ? null : emailProof.problem;
+    if (unverified) setEmailError(unverified);
+    if (!problem && !emailProblem && !mobileProblem && !unverified) register.mutate();
   };
 
   const busy = validate.isPending || addHelmet.isPending;
@@ -290,10 +295,14 @@ export function ActivatePage() {
                 <EmailField
                   id="reg-email"
                   value={email}
-                  onChange={setEmail}
+                  onChange={(v) => {
+                    setEmail(v);
+                    setEmailError(null);
+                  }}
                   error={emailError}
                   autoFocus
                 />
+                {emailProof.box}
                 <MobileField
                   id="reg-mobile"
                   value={mobile}

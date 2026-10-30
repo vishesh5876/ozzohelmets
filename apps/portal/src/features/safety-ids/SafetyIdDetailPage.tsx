@@ -15,6 +15,7 @@ import { postWithRecentAuth } from '../../lib/recent-auth';
 import { RecentAuthGate } from '../lifecycle/ConfirmPassword';
 import { warrantyLine } from '../warranty/warranty-labels';
 import { canShare, SAFETY_ID_STATUS, sharingLine } from './safety-id-labels';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const dateTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -169,7 +170,10 @@ export function SafetyIdDetailPage() {
             </CardContent>
           </Card>
 
-          {(s.canTransfer || s.pendingTransfer) && <TransferCard safetyId={s} />}
+          {/* A code issued before transfers were hidden can still be cancelled here. */}
+          {((TRANSFERS_ENABLED && s.canTransfer) || s.pendingTransfer) && (
+            <TransferCard safetyId={s} />
+          )}
         </div>
         <Card>
           <CardContent className="flex flex-col items-center gap-3">

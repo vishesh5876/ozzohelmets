@@ -8,6 +8,7 @@ import {
   type CustomerSecurityEventDto,
   type CustomerSecurityStatusDto,
   type CustomerSessionDto,
+  type EmailCodeSentResponse,
   normalizeEmail,
   type RecoveryCodeIssued,
 } from '@helmet/types';
@@ -18,6 +19,8 @@ import { PageTitle } from '../../components/AppLayout';
 import { InlineError, LoadingState, SavedNote } from '../../components/States';
 import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
+import { EMAIL_VERIFICATION_ENABLED } from '../../lib/config';
+import { EmailCodeBox } from '../auth/EmailCodeBox';
 import { EmailField } from '../auth/EmailField';
 import { MobileField } from '../auth/MobileField';
 import { mobileClientProblem } from '../auth/mobile-check';
@@ -568,6 +571,7 @@ function AccountEmailCard() {
   const [step, setStep] = useState<EmailStep>('view');
   const [email, setEmail] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [emailCode, setEmailCode] = useState('');
   const [password, setPassword] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
@@ -576,12 +580,13 @@ function AccountEmailCard() {
       api.post<CustomerProfile>('/customer/auth/email', {
         currentPassword: password,
         newEmail: email.trim(),
-        confirmEmail: confirm.trim(),
+        ...(EMAIL_VERIFICATION_ENABLED ? { emailCode } : { confirmEmail: confirm.trim() }),
       }),
     onSuccess: (c) => {
       setCustomer(c);
       setEmail('');
       setConfirm('');
+      setEmailCode('');
       setPassword('');
       setChanged(true);
       setStep('view');
@@ -599,9 +604,13 @@ function AccountEmailCard() {
     e.preventDefault();
     const p =
       emailClientProblem(email) ??
-      (normalizeEmail(email)?.normalized !== normalizeEmail(confirm)?.normalized
-        ? 'The two email addresses do not match.'
-        : null) ??
+      (EMAIL_VERIFICATION_ENABLED
+        ? emailCode.length === 6
+          ? null
+          : 'Enter the 6-digit code we emailed to the new address.'
+        : normalizeEmail(email)?.normalized !== normalizeEmail(confirm)?.normalized
+          ? 'The two email addresses do not match.'
+          : null) ??
       (password ? null : 'Enter your current password.');
     setProblem(p);
     if (!p) setStep('confirm');
@@ -643,13 +652,27 @@ function AccountEmailCard() {
               onChange={setEmail}
               autoFocus
             />
-            <EmailField
-              id="ce-confirm"
-              label="Confirm new email"
-              value={confirm}
-              onChange={setConfirm}
-              hint=""
-            />
+            {EMAIL_VERIFICATION_ENABLED ? (
+              <EmailCodeBox
+                email={email}
+                idPrefix="ce-email"
+                onCode={setEmailCode}
+                sendLabel="Email a code to the new address"
+                send={() =>
+                  api.post<EmailCodeSentResponse>('/customer/auth/email/change-code', {
+                    newEmail: email.trim(),
+                  })
+                }
+              />
+            ) : (
+              <EmailField
+                id="ce-confirm"
+                label="Confirm new email"
+                value={confirm}
+                onChange={setConfirm}
+                hint=""
+              />
+            )}
             <Field label="Current password" htmlFor="ce-password">
               <Input
                 id="ce-password"

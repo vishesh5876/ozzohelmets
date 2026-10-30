@@ -228,10 +228,17 @@ export class TransferService {
     password: string,
     name: string | undefined,
     meta: RequestMeta,
+    emailProof?: string,
   ): Promise<{ result: TransferClaimRegisterResponse; session: CustomerSession }> {
     const { helmetCode, code } = await this.begin(rawHelmetCode, rawCode, meta);
     // Email + password policy and hashing before any lock is taken.
-    const account = await this.accounts.prepare(password, { email, mobile, helmetCode, name });
+    const account = await this.accounts.prepare(password, {
+      email,
+      mobile,
+      helmetCode,
+      name,
+      emailProof,
+    });
     const { helmetId, userId } = await this.execute(
       helmetCode,
       code,

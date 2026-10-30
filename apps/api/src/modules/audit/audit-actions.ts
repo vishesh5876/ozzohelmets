@@ -24,6 +24,8 @@ export const AuditAction = {
   CUSTOMER_PASSWORD_CHANGED: 'customer.password.changed',
   CUSTOMER_PASSWORD_RESET: 'customer.password.reset',
   CUSTOMER_RECOVERY_VERIFIED: 'customer.recovery.verified',
+  /** Password-reset code emailed to an existing account (never the code or address). */
+  CUSTOMER_RECOVERY_EMAIL_SENT: 'customer.recovery.email_sent',
   CUSTOMER_RECOVERY_FAILED: 'customer.recovery.failed',
   CUSTOMER_RECOVERY_LOCKED: 'customer.recovery.locked',
   CUSTOMER_RECOVERY_CODE_ROTATED: 'customer.recovery_code.rotated',

@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { SiteFrame } from '../../pages/SiteFrame';
 import { safeNext } from './safe-next';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 /**
  * Sign in with your account email and password. The Customer ID or a currently owned Helmet ID
@@ -102,9 +103,11 @@ export function LoginPage() {
                 <Link to="/activate" className="font-medium underline underline-offset-4">
                   New helmet? Activate it
                 </Link>
-                <Link to="/claim" className="font-medium underline underline-offset-4">
-                  Received a helmet? Claim it
-                </Link>
+                {TRANSFERS_ENABLED && (
+                  <Link to="/claim" className="font-medium underline underline-offset-4">
+                    Received a helmet? Claim it
+                  </Link>
+                )}
               </div>
             </form>
           </CardContent>

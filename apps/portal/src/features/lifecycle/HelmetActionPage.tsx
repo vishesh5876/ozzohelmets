@@ -14,6 +14,7 @@ import { keys } from '../../lib/query';
 import { postWithRecentAuth } from '../../lib/recent-auth';
 import { ACTION_PAGES, type ActionSlug } from '../helmets/lifecycle-labels';
 import { RecentAuthGate } from './ConfirmPassword';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 const SLUG_ACTION = Object.fromEntries(
   Object.entries(ACTION_PAGES).map(([action, page]) => [page!.slug, action]),
@@ -33,7 +34,9 @@ export function HelmetActionPage() {
   });
   if (isLoading) return <LoadingState />;
   if (error || !helmet) return <ErrorState error={error} />;
-  const allowed = helmet.availableActions.includes(SLUG_ACTION[slug] as never);
+  const allowed =
+    helmet.availableActions.includes(SLUG_ACTION[slug] as never) &&
+    (TRANSFERS_ENABLED || slug !== 'transfer' || !!helmet.pendingTransfer);
 
   return (
     <div className="flex max-w-xl flex-col gap-4">

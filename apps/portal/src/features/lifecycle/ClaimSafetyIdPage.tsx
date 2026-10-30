@@ -15,6 +15,7 @@ import { api } from '../../lib/api';
 import { useCustomerAuth } from '../../lib/auth-context';
 import { queryClient } from '../../lib/query';
 import { SiteFrame } from '../../pages/SiteFrame';
+import { useSignupEmailProof } from '../auth/useSignupEmailProof';
 import { EmailField } from '../auth/EmailField';
 import { emailClientProblem } from '../auth/email-check';
 import { MobileField } from '../auth/MobileField';
@@ -39,6 +40,7 @@ export function ClaimSafetyIdPage() {
   const [transferCode, setTransferCode] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
+  const emailProof = useSignupEmailProof(email, 'claim-email');
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
   const [pw, setPw] = useState<PasswordValue>({ password: '', confirm: '' });
@@ -69,6 +71,7 @@ export function ClaimSafetyIdPage() {
         mobile: mobile.trim(),
         password: pw.password,
         name: name.trim() || undefined,
+        emailProof: emailProof.token,
       });
     },
     onSuccess: (r) => {
@@ -95,7 +98,11 @@ export function ClaimSafetyIdPage() {
   };
   const submitAccount = (e: FormEvent) => {
     e.preventDefault();
-    const p = emailClientProblem(email) ?? mobileClientProblem(mobile) ?? passwordClientProblem(pw);
+    const p =
+      emailClientProblem(email) ??
+      emailProof.problem ??
+      mobileClientProblem(mobile) ??
+      passwordClientProblem(pw);
     setFormError(p);
     if (!p) register.mutate();
   };
@@ -156,6 +163,7 @@ export function ClaimSafetyIdPage() {
               <form onSubmit={submitAccount} noValidate className="flex flex-col gap-4">
                 <p className="text-body">Create your account to claim this Safety ID.</p>
                 <EmailField id="claim-email" value={email} onChange={setEmail} autoFocus />
+                {emailProof.box}
                 <MobileField id="claim-mobile" value={mobile} onChange={setMobile} />
                 <Field label="Your name (optional)" htmlFor="claim-name">
                   <Input

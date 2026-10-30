@@ -48,7 +48,7 @@ export class RegisterActivationDto extends ActivationPinDto {
   @ApiProperty({
     example: 'rider@example.com',
     description:
-      'Account email — the normal sign-in identifier. Not verified and not proof of ownership.',
+      'Account email — the normal sign-in identifier, verified with an emailed code (emailProof).',
   })
   @IsString()
   @MaxLength(EMAIL_MAX_LENGTH)
@@ -72,6 +72,15 @@ export class RegisterActivationDto extends ActivationPinDto {
   @IsString()
   @MaxLength(PASSWORD_MAX_LENGTH)
   password: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Proof that the email was verified: from POST /customer/auth/email/verify-code. Required unless EMAIL_VERIFICATION_REQUIRED=false.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  emailProof?: string;
 
   @ApiPropertyOptional({ maxLength: 120 })
   @IsOptional()

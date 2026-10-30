@@ -10,6 +10,7 @@ import { uuidv7 } from '../../security/uuid';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/audit-actions';
 import { CustomerCredentialsService } from './customer-credentials.service';
+import { EmailOtpService } from './email-otp.service';
 
 /** Hashed credentials for an account about to be created; `recoveryCode` is shown once. */
 export interface PreparedAccount {
@@ -20,6 +21,8 @@ export interface PreparedAccount {
   /** E.164 (`+919876543210`). Contact detail for the owner; not verified, never a sign-in. */
   mobile: string;
   name?: string;
+  /** The address was proven with an emailed code before the account was created. */
+  emailVerified: boolean;
 }
 
 const EMAIL_TAKEN_MESSAGE =
@@ -35,6 +38,7 @@ export class CustomerAccountsService {
     private readonly credentials: CustomerCredentialsService,
     private readonly audit: AuditService,
     private readonly config: AppConfigService,
+    private readonly emailOtp: EmailOtpService,
   ) {}
 
   /** Validates and canonicalises an email; throws INVALID_EMAIL (400). */
@@ -88,8 +92,9 @@ export class CustomerAccountsService {
   }
 
   /**
-   * Validates the email and password policy, then hashes the password and a fresh recovery
-   * code. Email is a sign-in identifier only — the activation PIN stays the possession proof.
+   * Validates the email (and its verification proof when EMAIL_VERIFICATION_REQUIRED) and the
+   * password policy, then hashes the password and a fresh recovery code. The activation PIN
+   * stays the proof of possessing the Safety ID; the email proof shows the address is real.
    */
   async prepare(
     password: string,
@@ -99,10 +104,18 @@ export class CustomerAccountsService {
       helmetCode?: string;
       activationPin?: string;
       name?: string;
+      emailProof?: string;
     },
   ): Promise<PreparedAccount> {
     const email = this.parseEmail(context.email);
     const mobile = this.parseMobile(context.mobile);
+    const emailVerified = await this.emailOtp.checkProof(context.emailProof, email);
+    if (!emailVerified && this.config.get('EMAIL_VERIFICATION_REQUIRED'))
+      throw new AppException(
+        ErrorCode.EMAIL_NOT_VERIFIED,
+        'Verify your email with the code we send you, then try again.',
+        HttpStatus.BAD_REQUEST,
+      );
     this.credentials.assertAcceptablePassword(password, { ...context, email: email.email });
     const [passwordHash, recovery] = await Promise.all([
       this.credentials.hashPassword(password),
@@ -115,6 +128,7 @@ export class CustomerAccountsService {
       email,
       mobile,
       name: context.name,
+      emailVerified,
     };
   }
 
@@ -140,7 +154,7 @@ export class CustomerAccountsService {
         name: account.name,
         email: account.email.email,
         emailNormalized: account.email.normalized,
-        emailVerified: false,
+        emailVerified: account.emailVerified,
         mobile: account.mobile,
         mobileVerified: false,
         passwordHash: account.passwordHash,

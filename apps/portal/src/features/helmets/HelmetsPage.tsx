@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { keys } from '../../lib/query';
 import { HelmetCard } from './HelmetCard';
 import { GROUP_TITLES } from './lifecycle-labels';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 const ORDER: HelmetListGroup[] = ['ACTIVE', 'NEEDS_ATTENTION', 'RETIRED'];
 
@@ -24,9 +25,11 @@ export function HelmetsPage() {
         title="My helmets"
         action={
           <div className="flex gap-2">
-            <Link to="/claim" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
-              Claim a helmet
-            </Link>
+            {TRANSFERS_ENABLED && (
+              <Link to="/claim" className={buttonVariants({ variant: 'subtle', size: 'sm' })}>
+                Claim a helmet
+              </Link>
+            )}
             <Link to="/activate" className={buttonVariants({ size: 'sm' })}>
               Activate Safety ID
             </Link>

@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { api } from '../../lib/api';
 import { keys } from '../../lib/query';
 import { SAFETY_ID_STATUS, sharingLine } from './safety-id-labels';
+import { TRANSFERS_ENABLED } from '../../lib/config';
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
@@ -24,12 +25,14 @@ export function SafetyIdsPage() {
         title="My Safety IDs"
         action={
           <div className="flex gap-2">
-            <Link
-              to="/claim?type=safety-id"
-              className={buttonVariants({ variant: 'subtle', size: 'sm' })}
-            >
-              Claim a Safety ID
-            </Link>
+            {TRANSFERS_ENABLED && (
+              <Link
+                to="/claim?type=safety-id"
+                className={buttonVariants({ variant: 'subtle', size: 'sm' })}
+              >
+                Claim a Safety ID
+              </Link>
+            )}
             <Link to="/activate" className={buttonVariants({ size: 'sm' })}>
               Add a Safety ID
             </Link>

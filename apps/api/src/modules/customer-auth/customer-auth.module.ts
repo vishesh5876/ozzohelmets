@@ -5,6 +5,7 @@ import { CustomerAuthService } from './customer-auth.service';
 import { CustomerAccountsService } from './customer-accounts.service';
 import { CustomerCredentialsService } from './customer-credentials.service';
 import { CustomerTokenService } from './customer-token.service';
+import { EmailOtpService } from './email-otp.service';
 import { CustomerJwtGuard } from './guards/customer-jwt.guard';
 
 /** Global so feature modules can use `@CustomerAuth()` without re-importing guard dependencies. */
@@ -18,6 +19,7 @@ import { CustomerJwtGuard } from './guards/customer-jwt.guard';
     CustomerAccountsService,
     CustomerTokenService,
     CustomerJwtGuard,
+    EmailOtpService,
   ],
   exports: [
     CustomerJwtGuard,
@@ -25,6 +27,7 @@ import { CustomerJwtGuard } from './guards/customer-jwt.guard';
     CustomerCredentialsService,
     CustomerAccountsService,
     CustomerTokenService,
+    EmailOtpService,
     JwtModule,
   ],
 })

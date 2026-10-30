@@ -171,6 +171,7 @@ export class ActivationService {
       helmetCode: safetyCode,
       activationPin: dto.pin,
       name: dto.name,
+      emailProof: dto.emailProof,
     });
     const outcome = await this.activate(safetyId, dto.pin, meta, {
       kind: 'new-account',
